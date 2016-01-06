@@ -39,6 +39,7 @@ public class QSConstants {
 	public static final String TILE_REBOOT = "reboot";
 	public static final String TILE_AMBIENT_DISPLAY = "ambient_display";
 	public static final String TILE_VOLUME = "volume_panel";
+        public static final String TILE_LTE = "lte";
 	public static final String TILE_EDIT = "edit";
 
     protected static final ArrayList<String> STATIC_TILES_AVAILABLE = new ArrayList<String>();
@@ -64,7 +65,7 @@ public class QSConstants {
 		STATIC_TILES_AVAILABLE.add(TILE_REBOOT);
 		STATIC_TILES_AVAILABLE.add(TILE_AMBIENT_DISPLAY);
 		STATIC_TILES_AVAILABLE.add(TILE_VOLUME);
-
+                STATIC_TILES_AVAILABLE.add(TILE_LTE);
         TILES_AVAILABLE.addAll(STATIC_TILES_AVAILABLE);
     }
 }
