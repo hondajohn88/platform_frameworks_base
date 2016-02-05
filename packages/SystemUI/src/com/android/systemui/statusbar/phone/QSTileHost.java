@@ -168,7 +168,7 @@ public class QSTileHost implements QSTile.Host, Tunable {
         mStatusBar.postStartActivityDismissingKeyguard(intent, 0);
     }
 
-	public void startActivityDismissingKeyguard(PendingIntent intent) {
+    public void startActivityDismissingKeyguard(PendingIntent intent) {
         mStatusBar.postStartActivityDismissingKeyguard(intent);
     }
 
@@ -244,7 +244,7 @@ public class QSTileHost implements QSTile.Host, Tunable {
     public SecurityController getSecurityController() {
         return mSecurity;
     }
-    
+
     @Override
     public void onTuningChanged(String key, String newValue) {
         if (!TILES_SETTING.equals(key)) {
@@ -294,13 +294,13 @@ public class QSTileHost implements QSTile.Host, Tunable {
         else if (tileSpec.equals("cast")) return new CastTile(this);
         else if (tileSpec.equals("hotspot")) return new HotspotTile(this);
         else if (tileSpec.equals("edit")) return new EditTile(this);
-		else if (tileSpec.equals("adb_network")) return new AdbOverNetworkTile(this);
-		else if (tileSpec.equals("screen_timeout")) return new ScreenTimeoutTile(this);
-		else if (tileSpec.equals("lockscreen")) return  new LockscreenToggleTile(this);
-		else if (tileSpec.equals("screen_off")) return  new ScreenOffTile(this);
-		else if (tileSpec.equals("reboot")) return  new RebootTile(this);
-		else if (tileSpec.equals("ambient_display")) return new AmbientDisplayTile(this);
-		else if (tileSpec.equals("volume_panel")) return new VolumeTile(this);
+        else if (tileSpec.equals("adb_network")) return new AdbOverNetworkTile(this);
+        else if (tileSpec.equals("screen_timeout")) return new ScreenTimeoutTile(this);
+        else if (tileSpec.equals("lockscreen")) return  new LockscreenToggleTile(this);
+        else if (tileSpec.equals("screen_off")) return  new ScreenOffTile(this);
+        else if (tileSpec.equals("reboot")) return  new RebootTile(this);
+        else if (tileSpec.equals("ambient_display")) return new AmbientDisplayTile(this);
+        else if (tileSpec.equals("volume_panel")) return new VolumeTile(this);
         else if (tileSpec.startsWith(IntentTile.PREFIX)) return IntentTile.create(this,tileSpec);
         else throw new IllegalArgumentException("Bad tile spec: " + tileSpec);
     }
@@ -328,15 +328,8 @@ public class QSTileHost implements QSTile.Host, Tunable {
                 tiles.add(tile);
             }
         }
-        // ensure edit tile is present
-        if (tiles.size() < TILES_PER_PAGE && !tiles.contains("edit")) {
-            tiles.add("edit");
-        } else if (tiles.size() > TILES_PER_PAGE && !tiles.contains("edit")) {
-            tiles.add((TILES_PER_PAGE - 1), "edit");
-        }
         return tiles;
     }
-
     public void remove(String tile) {
         MetricsLogger.action(getContext(), MetricsLogger.TUNER_QS_REMOVE, tile);
         List<String> tiles = new ArrayList<>(mTileSpecs);
@@ -369,13 +362,13 @@ public class QSTileHost implements QSTile.Host, Tunable {
         else if (spec.equals("cast")) return R.string.quick_settings_cast_title;
         else if (spec.equals("hotspot")) return R.string.quick_settings_hotspot_label;
         else if (spec.equals("edit")) return R.string.quick_settings_edit_label;
-		else if (spec.equals("adb_network")) return R.string.quick_settings_network_adb_label;
-		else if (spec.equals("screen_timeout")) return R.string.quick_settings_screen_timeout_detail_title;
-		else if (spec.equals("lockscreen")) return R.string.quick_settings_lockscreen_label;
-		else if (spec.equals("screen_off")) return R.string.quick_settings_screen_off;
-		else if (spec.equals("reboot")) return R.string.quick_settings_reboot_label;
-		else if (spec.equals("ambient_display")) return R.string.quick_settings_ambient_display_label;
-		else if (spec.equals("volume_panel")) return R.string.quick_settings_volume_panel_label;
+        else if (spec.equals("adb_network")) return R.string.quick_settings_network_adb_label;
+        else if (spec.equals("screen_timeout")) return R.string.quick_settings_screen_timeout_detail_title;
+        else if (spec.equals("lockscreen")) return R.string.quick_settings_lockscreen_label;
+        else if (spec.equals("screen_off")) return R.string.quick_settings_screen_off;
+        else if (spec.equals("reboot")) return R.string.quick_settings_reboot_label;
+        else if (spec.equals("ambient_display")) return R.string.quick_settings_ambient_display_label;
+        else if (spec.equals("volume_panel")) return R.string.quick_settings_volume_panel_label;
         return 0;
     }
 }
