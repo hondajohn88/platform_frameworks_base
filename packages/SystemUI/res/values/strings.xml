@@ -1138,5 +1138,7 @@
 
     <!-- Bluetooth enablement ok text [CHAR LIMIT=40] -->
     <string name="enable_bluetooth_confirmation_ok">Turn on</string>
+    
+    <string name="quick_settings_title_enlarge_first_row">Enlarge first row</string>
 
 </resources>
