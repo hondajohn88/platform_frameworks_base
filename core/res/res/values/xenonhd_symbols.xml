@@ -44,5 +44,10 @@
 	<java-symbol type="bool" name="config_invert_colors_on_doze" />
 
 	<!-- Quick Settings tile defaults -->
-    <java-symbol type="string" name="config_defaultQuickSettingsTiles" />
+        <java-symbol type="string" name="config_defaultQuickSettingsTiles" />
+
+        <!-- Proximity check on screen on -->
+        <java-symbol type="bool" name="config_proximityCheckOnWake" />
+        <java-symbol type="integer" name="config_proximityCheckTimeout" />
+
 </resources>
