@@ -15,8 +15,9 @@
 <resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
   <!-- LuckyPatcher carnt dialog -->
   <string name="lucky_patcher_installed_title">LuckyPatcher encontrado!!!</string>
-  <string name="lucky_patcher_installed_message">Por este meio admito que sou um incapaz, ladrão e pirata, Adoro roubar dinheiro dos desenvolvedores que trabalham duro e se gabar disso.</string>
+  <string name="lucky_patcher_installed_message">Por este meio admito que sou um incapaz, ladrão e pirata, Adoro roubar dinheiro dos desenvolvedores que trabalham duro e me gabar disso.</string>
   <string name="lucky_patcher_admit">Eu admito</string>
   <!-- Title of an application permission, listed so the user can choose whether they want to allow the application to do this. -->
   <!-- Description of an application permission, listed so the user can choose whether they want to allow the application to do this. -->
+  <string name="permdesc_fakePackageSignature">Permite que o aplicativo finja ser um aplicativo diferente. Aplicativos maliciosos podem usar isso para acessar dados privados de outros aplicativos. Conceda esta permissão com cautela!</string>
 </resources>
