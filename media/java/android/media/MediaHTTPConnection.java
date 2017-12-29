@@ -140,7 +140,13 @@ public class MediaHTTPConnection extends IMediaHTTPConnection.Stub {
                     mInputStream.close();
                 } catch (IOException e) {
                 }
+            if (mInputStream != null) {
+                try {
+                    mInputStream.close();
+                } catch (IOException e) {
+                }
                 mInputStream = null;
+            }
             }
 
             mConnection.disconnect();
