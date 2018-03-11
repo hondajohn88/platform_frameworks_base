@@ -23,7 +23,6 @@ import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.drawable.ColorDrawable;
 import android.os.Handler;
-import android.provider.Settings;
 import android.support.v4.view.ViewCompat;
 import android.support.v7.widget.GridLayoutManager.SpanSizeLookup;
 import android.support.v7.widget.RecyclerView;
@@ -41,14 +40,14 @@ import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import com.android.internal.logging.MetricsLogger;
-import com.android.internal.logging.MetricsProto;
+import com.android.internal.logging.nano.MetricsProto;
 import com.android.systemui.R;
-import com.android.systemui.qs.QSIconView;
+import com.android.systemui.qs.tileimpl.QSIconViewImpl;
 import com.android.systemui.qs.customize.TileAdapter.Holder;
 import com.android.systemui.qs.customize.TileQueryHelper.TileInfo;
 import com.android.systemui.qs.customize.TileQueryHelper.TileStateListener;
 import com.android.systemui.qs.external.CustomTile;
-import com.android.systemui.statusbar.phone.QSTileHost;
+import com.android.systemui.qs.QSTileHost;
 import com.android.systemui.statusbar.phone.SystemUIDialog;
 
 import java.util.ArrayList;
@@ -113,6 +112,12 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
         }
         host.changeTiles(mCurrentSpecs, newSpecs);
         mCurrentSpecs = newSpecs;
+    }
+
+    public void resetTileSpecs(QSTileHost host, List<String> specs) {
+        // Notify the host so the tiles get removed callbacks.
+        host.changeTiles(mCurrentSpecs, specs);
+        setTileSpecs(specs);
     }
 
     public void setTileSpecs(List<String> currentSpecs) {
@@ -191,7 +196,7 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
         }
         FrameLayout frame = (FrameLayout) inflater.inflate(R.layout.qs_customize_tile_frame, parent,
                 false);
-        frame.addView(new CustomizeTileView(context, new QSIconView(context)));
+        frame.addView(new CustomizeTileView(context, new QSIconViewImpl(context)));
         return new Holder(frame);
     }
 
@@ -216,7 +221,7 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
         if (holder.getItemViewType() == TYPE_EDIT) {
             ((TextView) holder.itemView.findViewById(android.R.id.title)).setText(
                     mCurrentDrag != null ? R.string.drag_to_remove_tiles
-                    : R.string.drag_to_add_tiles);
+                    : R.string.drag_or_tap_to_add_tiles);
             return;
         }
         if (holder.getItemViewType() == TYPE_ACCESSIBLE_DROP) {
@@ -266,14 +271,12 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
         holder.mTileView.setAppLabel(info.appLabel);
         holder.mTileView.setShowAppLabel(position > mEditIndex && !info.isSystem);
 
-        if (isSingleTapEnabled()) {
-             holder.mTileView.setOnClickListener(new OnClickListener() {
-                 @Override
-                 public void onClick(View v) {
-                     move(holder.getAdapterPosition(), mEditIndex, holder.mTileView);
-                 }
-             });
-        }
+        holder.mTileView.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                move(holder.getAdapterPosition(), mEditIndex, holder.mTileView);
+            }
+        });
 
         if (mAccessibilityManager.isTouchExplorationEnabled()) {
             final boolean selectable = !mAccessibilityMoving || position < mEditIndex;
@@ -311,13 +314,9 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
         if (position == mEditIndex) position--;
 
         move(mAccessibilityFromIndex, position, v);
+
         notifyDataSetChanged();
     }
-
-    public boolean isSingleTapEnabled() {
-         return Settings.System.getInt(mContext.getContentResolver(),
-             Settings.System.QUICK_TILE_ADD, 0) == 1;
-     }
 
     private void showAccessibilityDialog(final int position, final View v) {
         final TileInfo info = mTiles.get(position);
@@ -486,9 +485,10 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
         private TileItemDecoration(Context context) {
             TypedArray ta =
                     context.obtainStyledAttributes(new int[]{android.R.attr.colorSecondary});
-            mDrawable = new ColorDrawable();
+            mDrawable = new ColorDrawable(ta.getColor(0, 0));
             ta.recycle();
         }
+
 
         @Override
         public void onDraw(Canvas c, RecyclerView parent, State state) {
@@ -508,9 +508,6 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
                         .getLayoutParams();
                 final int top = child.getTop() + params.topMargin +
                         Math.round(ViewCompat.getTranslationY(child));
-                // Set drawable color
-                mDrawable.setColor(mContext.getResources().getColor(
-                        R.color.qs_edit_item_decoration_bg));
                 // Draw full width, in case there aren't tiles all the way across.
                 mDrawable.setBounds(0, top, width, bottom);
                 mDrawable.draw(c);

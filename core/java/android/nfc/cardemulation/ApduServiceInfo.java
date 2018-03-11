@@ -1,7 +1,4 @@
 /*
- * Copyright (c) 2015, The Linux Foundation. All rights reserved.
- * Not a Contribution.
- *
  * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -51,53 +48,53 @@ import java.util.Map;
 /**
  * @hide
  */
-public class ApduServiceInfo implements Parcelable {
+public final class ApduServiceInfo implements Parcelable {
     static final String TAG = "ApduServiceInfo";
 
     /**
      * The service that implements this
      */
-    protected ResolveInfo mService;
+    final ResolveInfo mService;
 
     /**
      * Description of the service
      */
-    protected String mDescription;
+    final String mDescription;
 
     /**
      * Whether this service represents AIDs running on the host CPU
      */
-    protected boolean mOnHost;
+    final boolean mOnHost;
 
     /**
      * Mapping from category to static AID group
      */
-    protected HashMap<String, AidGroup> mStaticAidGroups;
+    final HashMap<String, AidGroup> mStaticAidGroups;
 
     /**
      * Mapping from category to dynamic AID group
      */
-    protected HashMap<String, AidGroup> mDynamicAidGroups;
+    final HashMap<String, AidGroup> mDynamicAidGroups;
 
     /**
      * Whether this service should only be started when the device is unlocked.
      */
-    protected boolean mRequiresDeviceUnlock;
+    final boolean mRequiresDeviceUnlock;
 
     /**
      * The id of the service banner specified in XML.
      */
-    protected int mBannerResourceId;
+    final int mBannerResourceId;
 
     /**
      * The uid of the package the service belongs to
      */
-    protected int mUid;
+    final int mUid;
 
     /**
      * Settings Activity for this service
      */
-    protected String mSettingsActivityName;
+    final String mSettingsActivityName;
 
     /**
      * @hide
@@ -256,6 +253,20 @@ public class ApduServiceInfo implements Parcelable {
                         Log.e(TAG, "Ignoring invalid or duplicate aid: " + aid);
                     }
                     a.recycle();
+                } else if (eventType == XmlPullParser.START_TAG &&
+                        tagName.equals("aid-suffix-filter") && currentGroup != null) {
+                    final TypedArray a = res.obtainAttributes(attrs,
+                            com.android.internal.R.styleable.AidFilter);
+                    String aid = a.getString(com.android.internal.R.styleable.AidFilter_name).
+                            toUpperCase();
+                    // Add wildcard char to indicate suffix
+                    aid = aid.concat("#");
+                    if (CardEmulation.isValidAid(aid) && !currentGroup.aids.contains(aid)) {
+                        currentGroup.aids.add(aid);
+                    } else {
+                        Log.e(TAG, "Ignoring invalid or duplicate aid: " + aid);
+                    }
+                    a.recycle();
                 }
             }
         } catch (NameNotFoundException e) {
@@ -300,6 +311,17 @@ public class ApduServiceInfo implements Parcelable {
         return prefixAids;
     }
 
+    public List<String> getSubsetAids() {
+        final ArrayList<String> subsetAids = new ArrayList<String>();
+        for (AidGroup group : getAidGroups()) {
+            for (String aid : group.aids) {
+                if (aid.endsWith("#")) {
+                    subsetAids.add(aid);
+                }
+            }
+        }
+        return subsetAids;
+    }
     /**
      * Returns the registered AID group for this category.
      */

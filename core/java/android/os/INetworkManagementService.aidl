@@ -20,11 +20,11 @@ package android.os;
 import android.net.InterfaceConfiguration;
 import android.net.INetd;
 import android.net.INetworkManagementEventObserver;
+import android.net.ITetheringStatsProvider;
 import android.net.Network;
 import android.net.NetworkStats;
 import android.net.RouteInfo;
 import android.net.UidRange;
-import android.net.wifi.WifiConfiguration;
 import android.os.INetworkActivityListener;
 
 /**
@@ -96,6 +96,12 @@ interface INetworkManagementService
      * Enable IPv6 on an interface
      */
     void enableIpv6(String iface);
+
+    /**
+     * Set IPv6 autoconf address generation mode.
+     * This is a no-op if an unsupported mode is requested.
+     */
+    void setIPv6AddrGenMode(String iface, int mode);
 
     /**
      * Enables or enables IPv6 ND offload.
@@ -202,6 +208,33 @@ interface INetworkManagementService
     void disableNat(String internalInterface, String externalInterface);
 
     /**
+     * Registers a {@code ITetheringStatsProvider} to provide tethering statistics.
+     * All registered providers will be called in order, and their results will be added together.
+     * Netd is always registered as a tethering stats provider.
+     */
+    void registerTetheringStatsProvider(ITetheringStatsProvider provider, String name);
+
+    /**
+     * Unregisters a previously-registered {@code ITetheringStatsProvider}.
+     */
+    void unregisterTetheringStatsProvider(ITetheringStatsProvider provider);
+
+    /**
+     * Reports that a tethering provider has reached a data limit.
+     *
+     * Currently triggers a global alert, which causes NetworkStatsService to poll counters and
+     * re-evaluate data usage.
+     *
+     * This does not take an interface name because:
+     * 1. The tethering offload stats provider cannot reliably determine the interface on which the
+     *    limit was reached, because the HAL does not provide it.
+     * 2. Firing an interface-specific alert instead of a global alert isn't really useful since in
+     *    all cases of interest, the system responds to both in the same way - it polls stats, and
+     *    then notifies NetworkPolicyManagerService of the fact.
+     */
+    void tetherLimitReached(ITetheringStatsProvider provider);
+
+    /**
      ** PPPD
      **/
 
@@ -221,37 +254,6 @@ interface INetworkManagementService
      * Detaches a PPP server daemon from the specified TTY.
      */
     void detachPppd(String tty);
-
-    /**
-     * Load firmware for operation in the given mode. Currently the three
-     * modes supported are "AP", "STA" and "P2P".
-     */
-    void wifiFirmwareReload(String wlanIface, String mode);
-
-    /**
-     * Start Wifi Access Point
-     */
-    void startAccessPoint(in WifiConfiguration wifiConfig, String iface);
-
-    /**
-     * Start Wigig Access Point
-     */
-    void startWigigAccessPoint();
-
-    /**
-     * Stop Wifi Access Point
-     */
-    void stopAccessPoint(String iface);
-
-    /**
-     * Stop Wigig Access Point
-     */
-    void stopWigigAccessPoint();
-
-    /**
-     * Set Access Point config
-     */
-    void setAccessPoint(in WifiConfiguration wifiConfig, String iface);
 
     /**
      ** DATA USAGE RELATED
@@ -279,7 +281,7 @@ interface INetworkManagementService
     /**
      * Return summary of network statistics all tethering interfaces.
      */
-    NetworkStats getNetworkStatsTethering();
+    NetworkStats getNetworkStatsTethering(int how);
 
     /**
      * Set quota for an interface.
@@ -344,16 +346,9 @@ interface INetworkManagementService
      */
     void setDnsConfigurationForNetwork(int netId, in String[] servers, String domains);
 
-    /**
-     * Bind name servers to a network in the DNS resolver.
-     */
-    void setDnsServersForNetwork(int netId, in String[] servers, String domains);
-
     void setFirewallEnabled(boolean enabled);
     boolean isFirewallEnabled();
     void setFirewallInterfaceRule(String iface, boolean allow);
-    void setFirewallEgressSourceRule(String addr, boolean allow);
-    void setFirewallEgressDestRule(String addr, int port, boolean allow);
     void setFirewallUidRule(int chain, int uid, int rule);
     void setFirewallUidRules(int chain, in int[] uids, in int[] rules);
     void setFirewallChainEnabled(int chain, boolean enable);
@@ -455,19 +450,6 @@ interface INetworkManagementService
     int removeRoutesFromLocalNetwork(in List<RouteInfo> routes);
 
     void setAllowOnlyVpnForUids(boolean enable, in UidRange[] uidRanges);
-    /**
-     * Create SoftAp Interface
-     */
-    void createSoftApInterface(String wlanIface);
 
-     /**
-     * Delete SoftAp Interface
-     */
-    void deleteSoftApInterface(String wlanIface);
-
-    /**
-     * Restrict UID from accessing data/wifi
-     */
-    void restrictAppOnData(int uid, boolean restrict);
-    void restrictAppOnWifi(int uid, boolean restrict);
+    boolean isNetworkRestricted(int uid);
 }

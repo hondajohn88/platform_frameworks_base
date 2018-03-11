@@ -242,8 +242,6 @@ public class RequestThreadManager {
                     }
                 } catch (LegacyExceptionUtils.BufferQueueAbandonedException e) {
                     Log.w(TAG, "Surface abandoned, dropping frame. ", e);
-                } catch (IllegalArgumentException e) {
-                    Log.w(TAG, "no valid native surface, dropping frame. ", e);
                 }
             }
 
@@ -506,6 +504,15 @@ public class RequestThreadManager {
             previews.add(new Pair<>(p, previewSizeIter.next()));
         }
         mGLThreadManager.setConfigurationAndWait(previews, mCaptureCollector);
+
+        for (Surface p : mPreviewOutputs) {
+            try {
+                LegacyCameraDevice.setSurfaceOrientation(p, facing, orientation);
+            } catch (LegacyExceptionUtils.BufferQueueAbandonedException e) {
+                Log.e(TAG, "Surface abandoned, skipping setSurfaceOrientation()", e);
+            }
+        }
+
         mGLThreadManager.allowNewFrames();
         mPreviewTexture = mGLThreadManager.getCurrentSurfaceTexture();
         if (mPreviewTexture != null) {
@@ -715,7 +722,7 @@ public class RequestThreadManager {
                     boolean anyRequestOutputAbandoned = false;
 
                     // Get the next burst from the request queue.
-                    Pair<BurstHolder, Long> nextBurst = mRequestQueue.getNext();
+                    RequestQueue.RequestQueueEntry nextBurst = mRequestQueue.getNext();
 
                     if (nextBurst == null) {
                         // If there are no further requests queued, wait for any currently executing
@@ -750,11 +757,17 @@ public class RequestThreadManager {
                     if (nextBurst != null) {
                         // Queue another capture if we did not get the last burst.
                         handler.sendEmptyMessage(MSG_SUBMIT_CAPTURE_REQUEST);
+
+                        // Check whether capture queue becomes empty
+                        if (nextBurst.isQueueEmpty()) {
+                            mDeviceState.setRequestQueueEmpty();
+                        }
                     }
 
                     // Complete each request in the burst
+                    BurstHolder burstHolder = nextBurst.getBurstHolder();
                     List<RequestHolder> requests =
-                            nextBurst.first.produceRequestHolders(nextBurst.second);
+                            burstHolder.produceRequestHolders(nextBurst.getFrameNumber());
                     for (RequestHolder holder : requests) {
                         CaptureRequest request = holder.getRequest();
 
@@ -920,13 +933,14 @@ public class RequestThreadManager {
                     }
 
                     // Stop the repeating request if any of its output surfaces is abandoned.
-                    if (anyRequestOutputAbandoned && nextBurst.first.isRepeating()) {
-                        long lastFrameNumber = cancelRepeating(nextBurst.first.getRequestId());
+                    if (anyRequestOutputAbandoned && burstHolder.isRepeating()) {
+                        long lastFrameNumber = cancelRepeating(burstHolder.getRequestId());
                         if (DEBUG) {
                             Log.d(TAG, "Stopped repeating request. Last frame number is " +
                                     lastFrameNumber);
                         }
-                        mDeviceState.setRepeatingRequestError(lastFrameNumber);
+                        mDeviceState.setRepeatingRequestError(lastFrameNumber,
+                                burstHolder.getRequestId());
                     }
 
                     if (DEBUG) {

@@ -91,6 +91,9 @@ CacheBlock* CacheBlock::removeBlock(CacheBlock* head, CacheBlock* blockToRemove)
     CacheBlock* prevBlock = blockToRemove->mPrev;
 
     if (prevBlock) {
+        // If this doesn't hold, we have a use-after-free below.
+        LOG_ALWAYS_FATAL_IF(head == blockToRemove,
+                "removeBlock: head should not have a previous block");
         prevBlock->mNext = nextBlock;
     } else {
         newHead = nextBlock;
@@ -180,7 +183,12 @@ void CacheTexture::allocatePixelBuffer() {
         mPixelBuffer = PixelBuffer::create(mFormat, getWidth(), getHeight());
     }
 
-    mTexture.resize(mWidth, mHeight, mFormat);
+    GLint internalFormat = mFormat;
+    if (mFormat == GL_RGBA) {
+        internalFormat = mCaches.rgbaInternalFormat();
+    }
+
+    mTexture.resize(mWidth, mHeight, internalFormat, mFormat);
     mTexture.setFilter(getLinearFiltering() ? GL_LINEAR : GL_NEAREST);
     mTexture.setWrap(GL_CLAMP_TO_EDGE);
 }

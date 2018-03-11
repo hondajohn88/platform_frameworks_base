@@ -16,6 +16,7 @@
 
 package android.net;
 
+import android.content.Intent;
 import android.os.Environment;
 import android.os.Parcel;
 import android.os.Parcelable;
@@ -1065,7 +1066,7 @@ public abstract class Uri implements Parcelable, Comparable<Uri> {
                 return null;
             }
 
-            int end = authority.indexOf('@');
+            int end = authority.lastIndexOf('@');
             return end == NOT_FOUND ? null : authority.substring(0, end);
         }
 
@@ -1089,7 +1090,7 @@ public abstract class Uri implements Parcelable, Comparable<Uri> {
             }
 
             // Parse out user info and then port.
-            int userInfoSeparator = authority.indexOf('@');
+            int userInfoSeparator = authority.lastIndexOf('@');
             int portSeparator = authority.indexOf(':', userInfoSeparator);
 
             String encodedHost = portSeparator == NOT_FOUND
@@ -1115,7 +1116,7 @@ public abstract class Uri implements Parcelable, Comparable<Uri> {
 
             // Make sure we look for the port separtor *after* the user info
             // separator. We have URLs with a ':' in the user info.
-            int userInfoSeparator = authority.indexOf('@');
+            int userInfoSeparator = authority.lastIndexOf('@');
             int portSeparator = authority.indexOf(':', userInfoSeparator);
 
             if (portSeparator == NOT_FOUND) {
@@ -2342,9 +2343,22 @@ public abstract class Uri implements Parcelable, Comparable<Uri> {
      * @hide
      */
     public void checkFileUriExposed(String location) {
-        if ("file".equals(getScheme()) && !(getPath().startsWith("/system/")
-                || getPath().startsWith("/data/system/theme/"))) {
+        if ("file".equals(getScheme())
+                && (getPath() != null) && !(getPath().startsWith("/system/") ||
+                        getPath().startsWith("/data/system/theme/"))) {
             StrictMode.onFileUriExposed(this, location);
+        }
+    }
+
+    /**
+     * If this is a {@code content://} Uri without access flags, it will be
+     * reported to {@link StrictMode}.
+     *
+     * @hide
+     */
+    public void checkContentUriWithoutPermission(String location, int flags) {
+        if ("content".equals(getScheme()) && !Intent.isAccessUriMode(flags)) {
+            StrictMode.onContentUriWithoutPermission(this, location);
         }
     }
 

@@ -17,8 +17,10 @@
 package com.android.server.usage;
 
 import android.app.usage.TimeSparseArray;
+import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.os.Build;
+import android.os.SystemProperties;
 import android.util.AtomicFile;
 import android.util.Slog;
 import android.util.TimeUtils;
@@ -50,18 +52,14 @@ class UsageStatsDatabase {
     // same as UsageStatsBackupHelper.KEY_USAGE_STATS
     static final String KEY_USAGE_STATS = "usage_stats";
 
-    static final int QUERY_FLAG_FETCH_PACKAGES = 1 << 0;
-    static final int QUERY_FLAG_FETCH_CONFIGURATIONS = 1 << 1;
-    static final int QUERY_FLAG_FETCH_EVENTS = 1 << 2;
-    static final int QUERY_FLAG_FETCH_EVERYTHING =
-            QUERY_FLAG_FETCH_PACKAGES |
-            QUERY_FLAG_FETCH_CONFIGURATIONS |
-            QUERY_FLAG_FETCH_EVENTS;
 
     private static final String TAG = "UsageStatsDatabase";
     private static final boolean DEBUG = UsageStatsService.DEBUG;
     private static final String BAK_SUFFIX = ".bak";
     private static final String CHECKED_IN_SUFFIX = UsageStatsXml.CHECKED_IN_SUFFIX;
+    private static final String RETENTION_LEN_KEY = "ro.usagestats.chooser.retention";
+    private static final int SELECTION_LOG_RETENTION_LEN =
+            SystemProperties.getInt(RETENTION_LEN_KEY, 14);
 
     private final Object mLock = new Object();
     private final File[] mIntervalDirs;
@@ -156,7 +154,7 @@ class UsageStatsDatabase {
             try {
                 IntervalStats stats = new IntervalStats();
                 for (int i = start; i < fileCount - 1; i++) {
-                    UsageStatsXml.read(files.valueAt(i), stats, QUERY_FLAG_FETCH_EVERYTHING);
+                    UsageStatsXml.read(files.valueAt(i), stats);
                     if (!checkinAction.checkin(stats)) {
                         return false;
                     }
@@ -359,7 +357,7 @@ class UsageStatsDatabase {
             try {
                 final AtomicFile f = mSortedStatFiles[intervalType].valueAt(fileCount - 1);
                 IntervalStats stats = new IntervalStats();
-                UsageStatsXml.read(f, stats, QUERY_FLAG_FETCH_EVERYTHING);
+                UsageStatsXml.read(f, stats);
                 return stats;
             } catch (IOException e) {
                 Slog.e(TAG, "Failed to read usage stats file", e);
@@ -392,7 +390,7 @@ class UsageStatsDatabase {
      * Find all {@link IntervalStats} for the given range and interval type.
      */
     public <T> List<T> queryUsageStats(int intervalType, long beginTime, long endTime,
-            int flags, StatCombiner<T> combiner) {
+            StatCombiner<T> combiner) {
         synchronized (mLock) {
             if (intervalType < 0 || intervalType >= mIntervalDirs.length) {
                 throw new IllegalArgumentException("Bad interval type " + intervalType);
@@ -445,7 +443,7 @@ class UsageStatsDatabase {
                 }
 
                 try {
-                    UsageStatsXml.read(f, stats, flags);
+                    UsageStatsXml.read(f, stats);
                     if (beginTime < stats.endTime) {
                         combiner.combine(stats, false, results);
                     }
@@ -509,6 +507,12 @@ class UsageStatsDatabase {
             pruneFilesOlderThan(mIntervalDirs[UsageStatsManager.INTERVAL_DAILY],
                     mCal.getTimeInMillis());
 
+            mCal.setTimeInMillis(currentTimeMillis);
+            mCal.addDays(-SELECTION_LOG_RETENTION_LEN);
+            for (int i = 0; i < mIntervalDirs.length; ++i) {
+                pruneChooserCountsOlderThan(mIntervalDirs[i], mCal.getTimeInMillis());
+            }
+
             // We must re-index our file list or we will be trying to read
             // deleted files.
             indexFilesLocked();
@@ -533,6 +537,43 @@ class UsageStatsDatabase {
 
                 if (beginTime < expiryTime) {
                     new AtomicFile(f).delete();
+                }
+            }
+        }
+    }
+
+    private static void pruneChooserCountsOlderThan(File dir, long expiryTime) {
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File f : files) {
+                String path = f.getPath();
+                if (path.endsWith(BAK_SUFFIX)) {
+                    f = new File(path.substring(0, path.length() - BAK_SUFFIX.length()));
+                }
+
+                long beginTime;
+                try {
+                    beginTime = UsageStatsXml.parseBeginTime(f);
+                } catch (IOException e) {
+                    beginTime = 0;
+                }
+
+                if (beginTime < expiryTime) {
+                    try {
+                        final AtomicFile af = new AtomicFile(f);
+                        final IntervalStats stats = new IntervalStats();
+                        UsageStatsXml.read(af, stats);
+                        final int pkgCount = stats.packageStats.size();
+                        for (int i = 0; i < pkgCount; i++) {
+                            UsageStats pkgStats = stats.packageStats.valueAt(i);
+                            if (pkgStats.mChooserCounts != null) {
+                                pkgStats.mChooserCounts.clear();
+                            }
+                        }
+                        UsageStatsXml.write(af, stats);
+                    } catch (IOException e) {
+                        Slog.e(TAG, "Failed to delete chooser counts from usage stats file", e);
+                    }
                 }
             }
         }
@@ -689,7 +730,7 @@ class UsageStatsDatabase {
             throws IOException {
         IntervalStats stats = new IntervalStats();
         try {
-            UsageStatsXml.read(statsFile, stats, QUERY_FLAG_FETCH_EVERYTHING);
+            UsageStatsXml.read(statsFile, stats);
         } catch (IOException e) {
             Slog.e(TAG, "Failed to read usage stats file", e);
             out.writeInt(0);
@@ -734,7 +775,7 @@ class UsageStatsDatabase {
         IntervalStats stats = new IntervalStats();
         try {
             stats.beginTime = in.readLong();
-            UsageStatsXml.read(in, stats, QUERY_FLAG_FETCH_EVERYTHING);
+            UsageStatsXml.read(in, stats);
         } catch (IOException ioe) {
             Slog.d(TAG, "DeSerializing IntervalStats Failed", ioe);
             stats = null;

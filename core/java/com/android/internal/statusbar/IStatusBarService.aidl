@@ -17,6 +17,7 @@
 package com.android.internal.statusbar;
 
 import android.content.ComponentName;
+import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Bundle;
 import android.service.notification.StatusBarNotification;
@@ -31,6 +32,7 @@ interface IStatusBarService
 {
     void expandNotificationsPanel();
     void collapsePanels();
+    void togglePanel();
     void disable(int what, IBinder token, String pkg);
     void disableForUser(int what, IBinder token, String pkg, int userId);
     void disable2(int what, IBinder token, String pkg);
@@ -63,8 +65,30 @@ interface IStatusBarService
     void onNotificationExpansionChanged(in String key, in boolean userAction, in boolean expanded);
     void setSystemUiVisibility(int vis, int mask, String cause);
 
+    void onGlobalActionsShown();
+    void onGlobalActionsHidden();
+
+    /**
+     * These methods are needed for global actions control which the UI is shown in sysui.
+     */
+    void shutdown();
+    void reboot(boolean safeMode);
+    void advancedReboot(String mode);
+
     void addTile(in ComponentName tile);
     void remTile(in ComponentName tile);
     void clickTile(in ComponentName tile);
-    void handleSystemNavigationKey(in int key);
+    void handleSystemKey(in int key);
+
+    // Start DU methods
+    void toggleRecentApps();
+    void toggleSplitScreen();
+    void preloadRecentApps();
+    void cancelPreloadRecentApps();
+    void startAssist(in Bundle args);
+    void screenPinningStateChanged(boolean enabled);
+    void leftInLandscapeChanged(boolean isLeft);
+    void toggleFlashlight();
+    void toggleNavigationEditor();
+    void dispatchNavigationEditorResults(in Intent intent);
 }

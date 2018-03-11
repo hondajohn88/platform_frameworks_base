@@ -16,21 +16,30 @@
 
 package com.android.internal.telephony;
 
+import android.app.PendingIntent;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.IBinder;
+import android.os.Messenger;
 import android.os.ResultReceiver;
+import android.net.NetworkStats;
 import android.net.Uri;
 import android.service.carrier.CarrierIdentifier;
 import android.telecom.PhoneAccount;
 import android.telecom.PhoneAccountHandle;
 import android.telephony.CellInfo;
+import android.telephony.ClientRequestStats;
 import android.telephony.IccOpenLogicalChannelResponse;
 import android.telephony.ModemActivityInfo;
 import android.telephony.NeighboringCellInfo;
+import android.telephony.NetworkScanRequest;
 import android.telephony.RadioAccessFamily;
 import android.telephony.ServiceState;
+import android.telephony.SignalStrength;
 import android.telephony.TelephonyHistogram;
 import android.telephony.VisualVoicemailSmsFilterSettings;
+import com.android.ims.internal.IImsServiceController;
+import com.android.ims.internal.IImsServiceFeatureListener;
 import com.android.internal.telephony.CellNetworkScanResult;
 import com.android.internal.telephony.OperatorInfo;
 
@@ -270,6 +279,16 @@ interface ITelephony {
      */
     boolean handlePinMmi(String dialString);
 
+
+    /**
+     * Handles USSD commands.
+     *
+     * @param subId The subscription to use.
+     * @param ussdRequest the USSD command to be executed.
+     * @param wrappedCallback receives a callback result.
+     */
+    void handleUssdRequest(int subId, String ussdRequest, in ResultReceiver wrappedCallback);
+
     /**
      * Handles PIN MMI commands (PIN/PIN2/PUK/PUK2), which are initiated
      * without SEND (so <code>dial</code> is not appropriate) for
@@ -353,9 +372,16 @@ interface ITelephony {
     /**
      * Report whether data connectivity is possible.
      */
-    boolean isDataConnectivityPossible();
+    boolean isDataConnectivityPossible(int subId);
 
     Bundle getCellLocation(String callingPkg);
+
+    /**
+     * Returns the ISO country code equivalent of the current registered
+     * operator's MCC (Mobile Country Code).
+     * @see android.telephony.TelephonyManager#getNetworkCountryIso
+     */
+    String getNetworkCountryIsoForPhone(int phoneId);
 
     /**
      * Returns the neighboring cell information of the device.
@@ -367,7 +393,7 @@ interface ITelephony {
     /**
      * Returns the call state for a slot.
      */
-     int getCallStateForSlot(int slotId);
+     int getCallStateForSlot(int slotIndex);
 
      int getDataActivity();
      int getDataState();
@@ -383,9 +409,9 @@ interface ITelephony {
      * Returns the current active phone type as integer for particular slot.
      * Returns TelephonyManager.PHONE_TYPE_CDMA if RILConstants.CDMA_PHONE
      * and TelephonyManager.PHONE_TYPE_GSM if RILConstants.GSM_PHONE
-     * @param slotId - slot to query.
+     * @param slotIndex - slot to query.
      */
-    int getActivePhoneTypeForSlot(int slotId);
+    int getActivePhoneTypeForSlot(int slotIndex);
 
     /**
      * Returns the CDMA ERI icon index to display
@@ -442,6 +468,30 @@ interface ITelephony {
      */
     boolean setVoiceMailNumber(int subId, String alphaTag, String number);
 
+     /**
+      * Sets the voice activation state for a particular subscriber.
+      */
+    void setVoiceActivationState(int subId, int activationState);
+
+     /**
+      * Sets the data activation state for a particular subscriber.
+      */
+    void setDataActivationState(int subId, int activationState);
+
+     /**
+      * Returns the voice activation state for a particular subscriber.
+      * @param subId user preferred sub
+      * @param callingPackage package queries voice activation state
+      */
+    int getVoiceActivationState(int subId, String callingPackage);
+
+     /**
+      * Returns the data activation state for a particular subscriber.
+      * @param subId user preferred sub
+      * @param callingPackage package queris data activation state
+      */
+    int getDataActivationState(int subId, String callingPackage);
+
     /**
       * Returns the unread count of voicemails
       */
@@ -454,11 +504,15 @@ interface ITelephony {
      */
     int getVoiceMessageCountForSubscriber(int subId);
 
-    oneway void setVisualVoicemailEnabled(String callingPackage,
-            in PhoneAccountHandle accountHandle, boolean enabled);
+    /**
+      * Returns true if current state supports both voice and data
+      * simultaneously. This can change based on location or network condition.
+      */
+    boolean isConcurrentVoiceAndDataAllowed(int subId);
 
-    boolean isVisualVoicemailEnabled(String callingPackage,
-            in PhoneAccountHandle accountHandle);
+    Bundle getVisualVoicemailSettings(String callingPackage, int subId);
+
+    String getVisualVoicemailPackageName(String callingPackage, int subId);
 
     // Not oneway, caller needs to make sure the vaule is set before receiving a SMS
     void enableVisualVoicemailSmsFilter(String callingPackage, int subId,
@@ -470,9 +524,21 @@ interface ITelephony {
     VisualVoicemailSmsFilterSettings getVisualVoicemailSmsFilterSettings(String callingPackage,
             int subId);
 
-    // Get settings set by the package, requires READ_PRIVILEGED_PHONE_STATE permission
-    VisualVoicemailSmsFilterSettings getSystemVisualVoicemailSmsFilterSettings(String packageName,
-            int subId);
+    /**
+     *  Get settings set by the current default dialer, Internal use only.
+     *  Requires READ_PRIVILEGED_PHONE_STATE permission.
+     */
+    VisualVoicemailSmsFilterSettings getActiveVisualVoicemailSmsFilterSettings(int subId);
+
+    /**
+     * Send a visual voicemail SMS. Internal use only.
+     * Requires caller to be the default dialer and have SEND_SMS permission
+     */
+    void sendVisualVoicemailSmsForSubscriber(in String callingPackage, in int subId,
+            in String number, in int port, in String text, in PendingIntent sentIntent);
+
+    // Send the special dialer code. The IPC caller must be the current default dialer.
+    void sendDialerSpecialCode(String callingPackageName, String inputCode);
 
     /**
      * Returns the network type for data transmission
@@ -515,10 +581,10 @@ interface ITelephony {
 
     /**
      * Return true if an ICC card is present for a subId.
-     * @param slotId user preferred slotId.
+     * @param slotIndex user preferred slotIndex.
      * Return true if an ICC card is present
      */
-    boolean hasIccCardUsingSlotId(int slotId);
+    boolean hasIccCardUsingSlotIndex(int slotIndex);
 
     /**
      * Return if the current radio is LTE on CDMA. This
@@ -543,6 +609,11 @@ interface ITelephony {
     int getLteOnCdmaModeForSubscriber(int subId, String callingPackage);
 
     /**
+     * Return if the current radio is LTE on GSM
+     */
+    int getLteOnGsmMode();
+
+    /**
      * Returns the all observed cell information of the device.
      */
     List<CellInfo> getAllCellInfo(String callingPkg);
@@ -551,12 +622,6 @@ interface ITelephony {
      * Sets minimum time in milli-seconds between onCellInfoChanged
      */
     void setCellInfoListRate(int rateInMillis);
-
-
-    /**
-     * Return if the current radio is LTE on GSM
-     */
-    int getLteOnGsmMode();
 
     /**
      * get default sim
@@ -570,20 +635,13 @@ interface ITelephony {
      * Input parameters equivalent to TS 27.007 AT+CCHO command.
      *
      * @param subId The subscription to use.
+     * @param callingPackage the name of the package making the call.
      * @param AID Application id. See ETSI 102.221 and 101.220.
+     * @param p2 P2 parameter (described in ISO 7816-4).
      * @return an IccOpenLogicalChannelResponse object.
      */
-    IccOpenLogicalChannelResponse iccOpenLogicalChannel(int subId, String AID);
-
-    /**
-     * Opens a logical channel to the ICC card for a particular subID
-     *
-     * @param subId user preferred subId.
-     * @param p2 P2 parameter
-     * @param AID Application id. See ETSI 102.221 and 101.220
-     */
-    IccOpenLogicalChannelResponse iccOpenLogicalChannelWithP2(int subId,
-        String AID, byte p2);
+    IccOpenLogicalChannelResponse iccOpenLogicalChannel(
+            int subId, String callingPackage, String AID, int p2);
 
     /**
      * Closes a previously opened logical channel to the ICC card.
@@ -731,6 +789,14 @@ interface ITelephony {
     int getTetherApnRequired();
 
     /**
+     *  Get ImsServiceController binder from ImsResolver that corresponds to the subId and feature
+     *  requested as well as registering the ImsServiceController for callbacks using the
+     *  IImsServiceFeatureListener interface.
+     */
+    IImsServiceController getImsServiceControllerAndListen(int slotIndex, int feature,
+                IImsServiceFeatureListener callback);
+
+    /**
      * Set the network selection mode to automatic.
      *
      * @param subId the id of the subscription to update.
@@ -744,6 +810,26 @@ interface ITelephony {
      * @return CellNetworkScanResult containing status of scan and networks.
      */
     CellNetworkScanResult getCellNetworkScanResults(int subId);
+
+    /**
+     * Perform a radio network scan and return the id of this scan.
+     *
+     * @param subId the id of the subscription.
+     * @param request Defines all the configs for network scan.
+     * @param messenger Callback messages will be sent using this messenger.
+     * @param binder the binder object instantiated in TelephonyManager.
+     * @return An id for this scan.
+     */
+    int requestNetworkScan(int subId, in NetworkScanRequest request, in Messenger messenger,
+            in IBinder binder);
+
+    /**
+     * Stop an existing radio network scan.
+     *
+     * @param subId the id of the subscription.
+     * @param scanId The id of the scan that is going to be stopped.
+     */
+    void stopNetworkScan(int subId, int scanId);
 
     /**
      * Ask the radio to connect to the input network and change selection mode to manual.
@@ -1040,22 +1126,32 @@ interface ITelephony {
     /**
      * Returns the IMEI for the given slot.
      *
-     * @param slotId - device slot.
+     * @param slotIndex - device slot.
      * @param callingPackage The package making the call.
      * <p>Requires Permission:
      *   {@link android.Manifest.permission#READ_PHONE_STATE READ_PHONE_STATE}
      */
-    String getImeiForSlot(int slotId, String callingPackage);
+    String getImeiForSlot(int slotIndex, String callingPackage);
+
+    /**
+     * Returns the MEID for the given slot.
+     *
+     * @param slotIndex - device slot.
+     * @param callingPackage The package making the call.
+     * <p>Requires Permission:
+     *   {@link android.Manifest.permission#READ_PHONE_STATE READ_PHONE_STATE}
+     */
+    String getMeidForSlot(int slotIndex, String callingPackage);
 
     /**
      * Returns the device software version.
      *
-     * @param slotId - device slot.
+     * @param slotIndex - device slot.
      * @param callingPackage The package making the call.
      * <p>Requires Permission:
      *   {@link android.Manifest.permission#READ_PHONE_STATE READ_PHONE_STATE}
      */
-    String getDeviceSoftwareVersionForSlot(int slotId, String callingPackage);
+    String getDeviceSoftwareVersionForSlot(int slotIndex, String callingPackage);
 
     /**
      * Returns the subscription ID associated with the specified PhoneAccount.
@@ -1100,6 +1196,20 @@ interface ITelephony {
     Uri getVoicemailRingtoneUri(in PhoneAccountHandle accountHandle);
 
     /**
+     * Sets the per-account voicemail ringtone.
+     *
+     * <p>Requires that the calling app is the default dialer, or has carrier privileges, or
+     * has permission {@link android.Manifest.permission#MODIFY_PHONE_STATE MODIFY_PHONE_STATE}.
+     *
+     * @param phoneAccountHandle The handle for the {@link PhoneAccount} for which to set the
+     * voicemail ringtone.
+     * @param uri The URI for the ringtone to play when receiving a voicemail from a specific
+     * PhoneAccount.
+     */
+    void setVoicemailRingtoneUri(String callingPackage,
+            in PhoneAccountHandle phoneAccountHandle, in Uri uri);
+
+    /**
      * Returns whether vibration is set for voicemail notification in Phone settings.
      *
      * @param accountHandle The handle for the {@link PhoneAccount} for which to retrieve the
@@ -1109,15 +1219,23 @@ interface ITelephony {
     boolean isVoicemailVibrationEnabled(in PhoneAccountHandle accountHandle);
 
     /**
+     * Sets the per-account preference whether vibration is enabled for voicemail notifications.
+     *
+     * <p>Requires that the calling app is the default dialer, or has carrier privileges, or
+     * has permission {@link android.Manifest.permission#MODIFY_PHONE_STATE MODIFY_PHONE_STATE}.
+     *
+     * @param phoneAccountHandle The handle for the {@link PhoneAccount} for which to set the
+     * voicemail vibration setting.
+     * @param enabled Whether to enable or disable vibration for voicemail notifications from a
+     * specific PhoneAccount.
+     */
+    void setVoicemailVibrationEnabled(String callingPackage,
+            in PhoneAccountHandle phoneAccountHandle, boolean enabled);
+
+    /**
      * Returns a list of packages that have carrier privileges.
      */
     List<String> getPackagesWithCarrierPrivileges();
-
-    /**
-     * Get ATR (Answer To Reset; as per ISO/IEC 7816-4) from SIM card
-     * for a particular subId.
-     */
-    byte[] getAtr(int subId);
 
     /**
      * Return the application ID for the app type.
@@ -1159,22 +1277,22 @@ interface ITelephony {
     List<TelephonyHistogram> getTelephonyHistograms();
 
     /**
-     * Set the allowed carrier list for slotId
+     * Set the allowed carrier list for slotIndex
      * Require system privileges. In the future we may add this to carrier APIs.
      *
      * @return The number of carriers set successfully. Should match length of
      * carriers on success.
      */
-    int setAllowedCarriers(int slotId, in List<CarrierIdentifier> carriers);
+    int setAllowedCarriers(int slotIndex, in List<CarrierIdentifier> carriers);
 
     /**
-     * Get the allowed carrier list for slotId.
+     * Get the allowed carrier list for slotIndex.
      * Require system privileges. In the future we may add this to carrier APIs.
      *
      * @return List of {@link android.service.carrier.CarrierIdentifier}; empty list
      * means all carriers are allowed.
      */
-    List<CarrierIdentifier> getAllowedCarriers(int slotId);
+    List<CarrierIdentifier> getAllowedCarriers(int slotIndex);
 
     /**
      * Action set from carrier signalling broadcast receivers to enable/disable metered apns
@@ -1195,12 +1313,24 @@ interface ITelephony {
     void carrierActionSetRadioEnabled(int subId, boolean enabled);
 
     /**
-     * Get aggregated video call data usage since boot.
-     * Permissions android.Manifest.permission.READ_NETWORK_USAGE_HISTORY is required.
-     * @return total data usage in bytes
+     * Action set from carrier signalling broadcast receivers to start/stop reporting default
+     * network conditions.
+     * Permissions android.Manifest.permission.MODIFY_PHONE_STATE is required
+     * @param subId the subscription ID that this action applies to.
+     * @param report control start/stop reporting default network events.
      * @hide
      */
-    long getVtDataUsage();
+    void carrierActionReportDefaultNetworkStatus(int subId, boolean report);
+
+    /**
+     * Get aggregated video call data usage since boot.
+     * Permissions android.Manifest.permission.READ_NETWORK_USAGE_HISTORY is required.
+     *
+     * @param perUidStats True if requesting data usage per uid, otherwise overall usage.
+     * @return Snapshot of video call data usage
+     * @hide
+     */
+    NetworkStats getVtDataUsage(int subId, boolean perUidStats);
 
     /**
      * Policy control of data connection. Usually used when data limit is passed.
@@ -1211,9 +1341,50 @@ interface ITelephony {
     void setPolicyDataEnabled(boolean enabled, int subId);
 
     /**
-     * Toggle between 2G and 3G (NT_MODE_GSM, NT_MODE_WCDMA_PREF)
-     * @param boolean to turn on and off 2G
+     * Get Client request stats which will contain statistical information
+     * on each request made by client.
+     * @param callingPackage package making the call.
+     * @param subId Subscription index
      * @hide
      */
-     void toggle2G(boolean on);
+    List<ClientRequestStats> getClientRequestStats(String callingPackage, int subid);
+
+    /**
+     * Set SIM card power state.
+     * @param slotIndex SIM slot id
+     * @param state  State of SIM (power down, power up, pass through)
+     * @hide
+     * */
+    void setSimPowerStateForSlot(int slotIndex, int state);
+
+    /**
+     * Returns a list of Forbidden PLMNs from the specified SIM App
+     * Returns null if the query fails.
+     *
+     *
+     * <p>Requires that the calling app has READ_PRIVILEGED_PHONE_STATE
+     *
+     * @param subId subscription ID used for authentication
+     * @param appType the icc application type, like {@link #APPTYPE_USIM}
+     */
+    String[] getForbiddenPlmns(int subId, int appType);
+
+    /**
+     * Check if phone is in emergency callback mode
+     * @return true if phone is in emergency callback mode
+     * @param subId the subscription ID that this action applies to.
+     * @hide
+     */
+    boolean getEmergencyCallbackMode(int subId);
+
+    /**
+     * Get the most recently available signal strength information.
+     *
+     * Get the most recent SignalStrength information reported by the modem. Due
+     * to power saving this information may not always be current.
+     * @param subId Subscription index
+     * @return the most recent cached signal strength info from the modem
+     * @hide
+     */
+    SignalStrength getSignalStrength(int subId);
 }

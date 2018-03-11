@@ -15,237 +15,277 @@
  */
 
 #include "StringPool.h"
+
+#include <string>
+
+#include "androidfw/StringPiece.h"
+
+#include "test/Test.h"
 #include "util/Util.h"
 
-#include <gtest/gtest.h>
-#include <string>
+using ::android::StringPiece;
+using ::android::StringPiece16;
+using ::testing::Eq;
+using ::testing::Ne;
+using ::testing::NotNull;
+using ::testing::Pointee;
 
 namespace aapt {
 
 TEST(StringPoolTest, InsertOneString) {
-    StringPool pool;
+  StringPool pool;
 
-    StringPool::Ref ref = pool.makeRef(u"wut");
-    EXPECT_EQ(*ref, u"wut");
+  StringPool::Ref ref = pool.MakeRef("wut");
+  EXPECT_THAT(*ref, Eq("wut"));
 }
 
 TEST(StringPoolTest, InsertTwoUniqueStrings) {
-    StringPool pool;
+  StringPool pool;
 
-    StringPool::Ref ref = pool.makeRef(u"wut");
-    StringPool::Ref ref2 = pool.makeRef(u"hey");
+  StringPool::Ref ref_a = pool.MakeRef("wut");
+  StringPool::Ref ref_b = pool.MakeRef("hey");
 
-    EXPECT_EQ(*ref, u"wut");
-    EXPECT_EQ(*ref2, u"hey");
+  EXPECT_THAT(*ref_a, Eq("wut"));
+  EXPECT_THAT(*ref_b, Eq("hey"));
 }
 
 TEST(StringPoolTest, DoNotInsertNewDuplicateString) {
-    StringPool pool;
+  StringPool pool;
 
-    StringPool::Ref ref = pool.makeRef(u"wut");
-    StringPool::Ref ref2 = pool.makeRef(u"wut");
+  StringPool::Ref ref_a = pool.MakeRef("wut");
+  StringPool::Ref ref_b = pool.MakeRef("wut");
 
-    EXPECT_EQ(*ref, u"wut");
-    EXPECT_EQ(*ref2, u"wut");
-    EXPECT_EQ(1u, pool.size());
+  EXPECT_THAT(*ref_a, Eq("wut"));
+  EXPECT_THAT(*ref_b, Eq("wut"));
+  EXPECT_THAT(pool.size(), Eq(1u));
 }
 
 TEST(StringPoolTest, MaintainInsertionOrderIndex) {
-    StringPool pool;
+  StringPool pool;
 
-    StringPool::Ref ref = pool.makeRef(u"z");
-    StringPool::Ref ref2 = pool.makeRef(u"a");
-    StringPool::Ref ref3 = pool.makeRef(u"m");
+  StringPool::Ref ref_a = pool.MakeRef("z");
+  StringPool::Ref ref_b = pool.MakeRef("a");
+  StringPool::Ref ref_c = pool.MakeRef("m");
 
-    EXPECT_EQ(0u, ref.getIndex());
-    EXPECT_EQ(1u, ref2.getIndex());
-    EXPECT_EQ(2u, ref3.getIndex());
+  EXPECT_THAT(ref_a.index(), Eq(0u));
+  EXPECT_THAT(ref_b.index(), Eq(1u));
+  EXPECT_THAT(ref_c.index(), Eq(2u));
 }
 
 TEST(StringPoolTest, PruneStringsWithNoReferences) {
-    StringPool pool;
+  StringPool pool;
 
-    StringPool::Ref refA = pool.makeRef(u"foo");
-    {
-        StringPool::Ref ref = pool.makeRef(u"wut");
-        EXPECT_EQ(*ref, u"wut");
-        EXPECT_EQ(2u, pool.size());
-    }
-    StringPool::Ref refB = pool.makeRef(u"bar");
+  StringPool::Ref ref_a = pool.MakeRef("foo");
 
-    EXPECT_EQ(3u, pool.size());
-    pool.prune();
-    EXPECT_EQ(2u, pool.size());
-    StringPool::const_iterator iter = begin(pool);
-    EXPECT_EQ((*iter)->value, u"foo");
-    EXPECT_LT((*iter)->index, 2u);
-    ++iter;
-    EXPECT_EQ((*iter)->value, u"bar");
-    EXPECT_LT((*iter)->index, 2u);
+  {
+    StringPool::Ref ref_b = pool.MakeRef("wut");
+    EXPECT_THAT(*ref_b, Eq("wut"));
+    EXPECT_THAT(pool.size(), Eq(2u));
+    pool.Prune();
+    EXPECT_THAT(pool.size(), Eq(2u));
+  }
+  EXPECT_THAT(pool.size(), Eq(2u));
+
+  {
+    StringPool::Ref ref_c = pool.MakeRef("bar");
+    EXPECT_THAT(pool.size(), Eq(3u));
+
+    pool.Prune();
+    EXPECT_THAT(pool.size(), Eq(2u));
+  }
+  EXPECT_THAT(pool.size(), Eq(2u));
+
+  pool.Prune();
+  EXPECT_THAT(pool.size(), Eq(1u));
 }
 
-TEST(StringPoolTest, SortAndMaintainIndexesInReferences) {
-    StringPool pool;
+TEST(StringPoolTest, SortAndMaintainIndexesInStringReferences) {
+  StringPool pool;
 
-    StringPool::Ref ref = pool.makeRef(u"z");
-    StringPool::StyleRef ref2 = pool.makeRef(StyleString{ {u"a"} });
-    StringPool::Ref ref3 = pool.makeRef(u"m");
+  StringPool::Ref ref_a = pool.MakeRef("z");
+  StringPool::Ref ref_b = pool.MakeRef("a");
+  StringPool::Ref ref_c = pool.MakeRef("m");
 
-    EXPECT_EQ(*ref, u"z");
-    EXPECT_EQ(0u, ref.getIndex());
+  EXPECT_THAT(*ref_a, Eq("z"));
+  EXPECT_THAT(ref_a.index(), Eq(0u));
 
-    EXPECT_EQ(*(ref2->str), u"a");
-    EXPECT_EQ(1u, ref2.getIndex());
+  EXPECT_THAT(*ref_b, Eq("a"));
+  EXPECT_THAT(ref_b.index(), Eq(1u));
 
-    EXPECT_EQ(*ref3, u"m");
-    EXPECT_EQ(2u, ref3.getIndex());
+  EXPECT_THAT(*ref_c, Eq("m"));
+  EXPECT_THAT(ref_c.index(), Eq(2u));
 
-    pool.sort([](const StringPool::Entry& a, const StringPool::Entry& b) -> bool {
-        return a.value < b.value;
-    });
+  pool.Sort();
 
+  EXPECT_THAT(*ref_a, Eq("z"));
+  EXPECT_THAT(ref_a.index(), Eq(2u));
 
-    EXPECT_EQ(*ref, u"z");
-    EXPECT_EQ(2u, ref.getIndex());
+  EXPECT_THAT(*ref_b, Eq("a"));
+  EXPECT_THAT(ref_b.index(), Eq(0u));
 
-    EXPECT_EQ(*(ref2->str), u"a");
-    EXPECT_EQ(0u, ref2.getIndex());
-
-    EXPECT_EQ(*ref3, u"m");
-    EXPECT_EQ(1u, ref3.getIndex());
+  EXPECT_THAT(*ref_c, Eq("m"));
+  EXPECT_THAT(ref_c.index(), Eq(1u));
 }
 
 TEST(StringPoolTest, SortAndStillDedupe) {
-    StringPool pool;
+  StringPool pool;
 
-    StringPool::Ref ref = pool.makeRef(u"z");
-    StringPool::Ref ref2 = pool.makeRef(u"a");
-    StringPool::Ref ref3 = pool.makeRef(u"m");
+  StringPool::Ref ref_a = pool.MakeRef("z");
+  StringPool::Ref ref_b = pool.MakeRef("a");
+  StringPool::Ref ref_c = pool.MakeRef("m");
 
-    pool.sort([](const StringPool::Entry& a, const StringPool::Entry& b) -> bool {
-        return a.value < b.value;
-    });
+  pool.Sort();
 
-    StringPool::Ref ref4 = pool.makeRef(u"z");
-    StringPool::Ref ref5 = pool.makeRef(u"a");
-    StringPool::Ref ref6 = pool.makeRef(u"m");
+  StringPool::Ref ref_d = pool.MakeRef("z");
+  StringPool::Ref ref_e = pool.MakeRef("a");
+  StringPool::Ref ref_f = pool.MakeRef("m");
 
-    EXPECT_EQ(ref4.getIndex(), ref.getIndex());
-    EXPECT_EQ(ref5.getIndex(), ref2.getIndex());
-    EXPECT_EQ(ref6.getIndex(), ref3.getIndex());
+  EXPECT_THAT(ref_d.index(), Eq(ref_a.index()));
+  EXPECT_THAT(ref_e.index(), Eq(ref_b.index()));
+  EXPECT_THAT(ref_f.index(), Eq(ref_c.index()));
 }
 
 TEST(StringPoolTest, AddStyles) {
-    StringPool pool;
+  StringPool pool;
 
-    StyleString str {
-        { u"android" },
-        {
-            Span{ { u"b" }, 2, 6 }
-        }
-    };
+  StringPool::StyleRef ref = pool.MakeRef(StyleString{{"android"}, {Span{{"b"}, 2, 6}}});
+  EXPECT_THAT(ref.index(), Eq(0u));
+  EXPECT_THAT(ref->value, Eq("android"));
+  ASSERT_THAT(ref->spans.size(), Eq(1u));
 
-    StringPool::StyleRef ref = pool.makeRef(str);
-
-    EXPECT_EQ(0u, ref.getIndex());
-    EXPECT_EQ(std::u16string(u"android"), *(ref->str));
-    ASSERT_EQ(1u, ref->spans.size());
-
-    const StringPool::Span& span = ref->spans.front();
-    EXPECT_EQ(*(span.name), u"b");
-    EXPECT_EQ(2u, span.firstChar);
-    EXPECT_EQ(6u, span.lastChar);
+  const StringPool::Span& span = ref->spans.front();
+  EXPECT_THAT(*span.name, Eq("b"));
+  EXPECT_THAT(span.first_char, Eq(2u));
+  EXPECT_THAT(span.last_char, Eq(6u));
 }
 
 TEST(StringPoolTest, DoNotDedupeStyleWithSameStringAsNonStyle) {
-    StringPool pool;
+  StringPool pool;
 
-    StringPool::Ref ref = pool.makeRef(u"android");
+  StringPool::Ref ref = pool.MakeRef("android");
 
-    StyleString str { { u"android" } };
-    StringPool::StyleRef styleRef = pool.makeRef(str);
+  StyleString str{{"android"}};
+  StringPool::StyleRef style_ref = pool.MakeRef(StyleString{{"android"}});
 
-    EXPECT_NE(ref.getIndex(), styleRef.getIndex());
+  EXPECT_THAT(ref.index(), Ne(style_ref.index()));
+}
+
+TEST(StringPoolTest, StylesAndStringsAreSeparateAfterSorting) {
+  StringPool pool;
+
+  StringPool::StyleRef ref_a = pool.MakeRef(StyleString{{"beta"}});
+  StringPool::Ref ref_b = pool.MakeRef("alpha");
+  StringPool::StyleRef ref_c = pool.MakeRef(StyleString{{"alpha"}});
+
+  EXPECT_THAT(ref_b.index(), Ne(ref_c.index()));
+
+  pool.Sort();
+
+  EXPECT_THAT(ref_c.index(), Eq(0u));
+  EXPECT_THAT(ref_a.index(), Eq(1u));
+  EXPECT_THAT(ref_b.index(), Eq(2u));
 }
 
 TEST(StringPoolTest, FlattenEmptyStringPoolUtf8) {
-    using namespace android; // For NO_ERROR on Windows.
+  using namespace android;  // For NO_ERROR on Windows.
 
-    StringPool pool;
-    BigBuffer buffer(1024);
-    StringPool::flattenUtf8(&buffer, pool);
+  StringPool pool;
+  BigBuffer buffer(1024);
+  StringPool::FlattenUtf8(&buffer, pool);
 
-    std::unique_ptr<uint8_t[]> data = util::copy(buffer);
-    ResStringPool test;
-    ASSERT_EQ(test.setTo(data.get(), buffer.size()), NO_ERROR);
+  std::unique_ptr<uint8_t[]> data = util::Copy(buffer);
+  ResStringPool test;
+  ASSERT_THAT(test.setTo(data.get(), buffer.size()), Eq(NO_ERROR));
 }
 
 TEST(StringPoolTest, FlattenOddCharactersUtf16) {
-    using namespace android; // For NO_ERROR on Windows.
+  using namespace android;  // For NO_ERROR on Windows.
 
-    StringPool pool;
-    pool.makeRef(u"\u093f");
-    BigBuffer buffer(1024);
-    StringPool::flattenUtf16(&buffer, pool);
+  StringPool pool;
+  pool.MakeRef("\u093f");
+  BigBuffer buffer(1024);
+  StringPool::FlattenUtf16(&buffer, pool);
 
-    std::unique_ptr<uint8_t[]> data = util::copy(buffer);
+  std::unique_ptr<uint8_t[]> data = util::Copy(buffer);
+  ResStringPool test;
+  ASSERT_EQ(test.setTo(data.get(), buffer.size()), NO_ERROR);
+  size_t len = 0;
+  const char16_t* str = test.stringAt(0, &len);
+  EXPECT_THAT(len, Eq(1u));
+  EXPECT_THAT(str, Pointee(Eq(u'\u093f')));
+  EXPECT_THAT(str[1], Eq(0u));
+}
+
+constexpr const char* sLongString =
+    "バッテリーを長持ちさせるため、バッテリーセーバーは端末のパフォーマンスを抑"
+    "え、バイブレーション、位置情報サービス、大半のバックグラウンドデータを制限"
+    "します。メール、SMSや、同期を使 "
+    "用するその他のアプリは、起動しても更新されないことがあります。バッテリーセ"
+    "ーバーは端末の充電中は自動的にOFFになります。";
+
+TEST(StringPoolTest, Flatten) {
+  using namespace android;  // For NO_ERROR on Windows.
+
+  StringPool pool;
+
+  StringPool::Ref ref_a = pool.MakeRef("hello");
+  StringPool::Ref ref_b = pool.MakeRef("goodbye");
+  StringPool::Ref ref_c = pool.MakeRef(sLongString);
+  StringPool::Ref ref_d = pool.MakeRef("");
+  StringPool::StyleRef ref_e =
+      pool.MakeRef(StyleString{{"style"}, {Span{{"b"}, 0, 1}, Span{{"i"}, 2, 3}}});
+
+  // Styles are always first.
+  EXPECT_THAT(ref_e.index(), Eq(0u));
+
+  EXPECT_THAT(ref_a.index(), Eq(1u));
+  EXPECT_THAT(ref_b.index(), Eq(2u));
+  EXPECT_THAT(ref_c.index(), Eq(3u));
+  EXPECT_THAT(ref_d.index(), Eq(4u));
+
+  BigBuffer buffers[2] = {BigBuffer(1024), BigBuffer(1024)};
+  StringPool::FlattenUtf8(&buffers[0], pool);
+  StringPool::FlattenUtf16(&buffers[1], pool);
+
+  // Test both UTF-8 and UTF-16 buffers.
+  for (const BigBuffer& buffer : buffers) {
+    std::unique_ptr<uint8_t[]> data = util::Copy(buffer);
+
     ResStringPool test;
     ASSERT_EQ(test.setTo(data.get(), buffer.size()), NO_ERROR);
-    size_t len = 0;
-    const char16_t* str = test.stringAt(0, &len);
-    EXPECT_EQ(1u, len);
-    EXPECT_EQ(u'\u093f', *str);
-    EXPECT_EQ(0u, str[1]);
+
+    EXPECT_THAT(util::GetString(test, 1), Eq("hello"));
+    EXPECT_THAT(util::GetString16(test, 1), Eq(u"hello"));
+
+    EXPECT_THAT(util::GetString(test, 2), Eq("goodbye"));
+    EXPECT_THAT(util::GetString16(test, 2), Eq(u"goodbye"));
+
+    EXPECT_THAT(util::GetString(test, 3), Eq(sLongString));
+    EXPECT_THAT(util::GetString16(test, 3), Eq(util::Utf8ToUtf16(sLongString)));
+
+    size_t len;
+    EXPECT_TRUE(test.stringAt(4, &len) != nullptr || test.string8At(4, &len) != nullptr);
+
+    EXPECT_THAT(util::GetString(test, 0), Eq("style"));
+    EXPECT_THAT(util::GetString16(test, 0), Eq(u"style"));
+
+    const ResStringPool_span* span = test.styleAt(0);
+    ASSERT_THAT(span, NotNull());
+    EXPECT_THAT(util::GetString(test, span->name.index), Eq("b"));
+    EXPECT_THAT(util::GetString16(test, span->name.index), Eq(u"b"));
+    EXPECT_THAT(span->firstChar, Eq(0u));
+    EXPECT_THAT(span->lastChar, Eq(1u));
+    span++;
+
+    ASSERT_THAT(span->name.index, Ne(ResStringPool_span::END));
+    EXPECT_THAT(util::GetString(test, span->name.index), Eq("i"));
+    EXPECT_THAT(util::GetString16(test, span->name.index), Eq(u"i"));
+    EXPECT_THAT(span->firstChar, Eq(2u));
+    EXPECT_THAT(span->lastChar, Eq(3u));
+    span++;
+
+    EXPECT_THAT(span->name.index, Eq(ResStringPool_span::END));
+  }
 }
 
-constexpr const char16_t* sLongString = u"バッテリーを長持ちさせるため、バッテリーセーバーは端末のパフォーマンスを抑え、バイブレーション、位置情報サービス、大半のバックグラウンドデータを制限します。メール、SMSや、同期を使 用するその他のアプリは、起動しても更新されないことがあります。バッテリーセーバーは端末の充電中は自動的にOFFになります。";
-
-TEST(StringPoolTest, FlattenUtf8) {
-    using namespace android; // For NO_ERROR on Windows.
-
-    StringPool pool;
-
-    StringPool::Ref ref1 = pool.makeRef(u"hello");
-    StringPool::Ref ref2 = pool.makeRef(u"goodbye");
-    StringPool::Ref ref3 = pool.makeRef(sLongString);
-    StringPool::StyleRef ref4 = pool.makeRef(StyleString{
-            { u"style" },
-            { Span{ { u"b" }, 0, 1 }, Span{ { u"i" }, 2, 3 } }
-    });
-
-    EXPECT_EQ(0u, ref1.getIndex());
-    EXPECT_EQ(1u, ref2.getIndex());
-    EXPECT_EQ(2u, ref3.getIndex());
-    EXPECT_EQ(3u, ref4.getIndex());
-
-    BigBuffer buffer(1024);
-    StringPool::flattenUtf8(&buffer, pool);
-
-    std::unique_ptr<uint8_t[]> data = util::copy(buffer);
-    {
-        ResStringPool test;
-        ASSERT_EQ(test.setTo(data.get(), buffer.size()), NO_ERROR);
-
-        EXPECT_EQ(util::getString(test, 0), u"hello");
-        EXPECT_EQ(util::getString(test, 1), u"goodbye");
-        EXPECT_EQ(util::getString(test, 2), sLongString);
-        EXPECT_EQ(util::getString(test, 3), u"style");
-
-        const ResStringPool_span* span = test.styleAt(3);
-        ASSERT_NE(nullptr, span);
-        EXPECT_EQ(util::getString(test, span->name.index), u"b");
-        EXPECT_EQ(0u, span->firstChar);
-        EXPECT_EQ(1u, span->lastChar);
-        span++;
-
-        ASSERT_NE(ResStringPool_span::END, span->name.index);
-        EXPECT_EQ(util::getString(test, span->name.index), u"i");
-        EXPECT_EQ(2u, span->firstChar);
-        EXPECT_EQ(3u, span->lastChar);
-        span++;
-
-        EXPECT_EQ(ResStringPool_span::END, span->name.index);
-    }
-}
-
-} // namespace aapt
+}  // namespace aapt

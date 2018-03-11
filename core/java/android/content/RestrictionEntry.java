@@ -470,7 +470,7 @@ public class RestrictionEntry implements Parcelable {
             return true;
         }
         if (mCurrentValue == null && other.mCurrentValue == null
-                && mCurrentValues == null && other.mCurrentValues == null
+                && mCurrentValue == null && other.mCurrentValue == null
                 && Arrays.equals(mRestrictions, other.mRestrictions)) {
             return true;
         }

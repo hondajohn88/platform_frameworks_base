@@ -16,19 +16,20 @@
 
 package com.android.server.om;
 
-import static android.content.om.OverlayInfo.STATE_NOT_APPROVED_UNKNOWN;
 import static com.android.server.om.OverlayManagerService.DEBUG;
 import static com.android.server.om.OverlayManagerService.TAG;
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.content.om.OverlayInfo;
+import android.os.UserHandle;
 import android.util.AndroidRuntimeException;
 import android.util.ArrayMap;
 import android.util.Slog;
 import android.util.Xml;
 
 import com.android.internal.util.FastXmlSerializer;
+import com.android.internal.util.IndentingPrintWriter;
 import com.android.internal.util.XmlUtils;
 
 import org.xmlpull.v1.XmlPullParser;
@@ -40,332 +41,315 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
-import java.util.ListIterator;
-import java.util.Map;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Data structure representing the current state of all overlay packages in the
  * system.
  *
- * Modifications to the data are exposed through the ChangeListener interface.
+ * Modifications to the data are signaled by returning true from any state mutating method.
  *
- * @see ChangeListener
  * @see OverlayManagerService
  */
 final class OverlayManagerSettings {
-    private final List<ChangeListener> mListeners = new ArrayList<>();
-
+    /**
+     * All overlay data for all users and target packages is stored in this list.
+     * This keeps memory down, while increasing the cost of running queries or mutating the
+     * data. This is ok, since changing of overlays is very rare and has larger costs associated
+     * with it.
+     *
+     * The order of the items in the list is important, those with a lower index having a lower
+     * priority.
+     */
     private final ArrayList<SettingsItem> mItems = new ArrayList<>();
 
     void init(@NonNull final String packageName, final int userId,
-            @NonNull final String targetPackageName, @NonNull final String baseCodePath) {
+            @NonNull final String targetPackageName, @NonNull final String baseCodePath,
+            boolean isStatic, int priority) {
         remove(packageName, userId);
         final SettingsItem item =
-            new SettingsItem(packageName, userId, targetPackageName, baseCodePath);
-        mItems.add(item);
+                new SettingsItem(packageName, userId, targetPackageName, baseCodePath,
+                        isStatic, priority);
+        if (isStatic) {
+            int i;
+            for (i = mItems.size() - 1; i >= 0; i--) {
+                SettingsItem parentItem = mItems.get(i);
+                if (parentItem.mIsStatic && parentItem.mPriority <= priority) {
+                    break;
+                }
+            }
+            int pos = i + 1;
+            if (pos == mItems.size()) {
+                mItems.add(item);
+            } else {
+                mItems.add(pos, item);
+            }
+        } else {
+            mItems.add(item);
+        }
     }
 
-    void remove(@NonNull final String packageName, final int userId) {
-        final SettingsItem item = select(packageName, userId);
-        if (item == null) {
-            return;
+    /**
+     * Returns true if the settings were modified, false if they remain the same.
+     */
+    boolean remove(@NonNull final String packageName, final int userId) {
+        final int idx = select(packageName, userId);
+        if (idx < 0) {
+            return false;
         }
-        final OverlayInfo oi = item.getOverlayInfo();
-        mItems.remove(item);
-        if (oi != null) {
-            notifyOverlayRemoved(oi, false);
-        }
-    }
 
-    boolean contains(@NonNull final String packageName, final int userId) {
-        return select(packageName, userId) != null;
-    }
-
-    OverlayInfo getOverlayInfo(@NonNull final String packageName, final int userId)
-            throws BadKeyException {
-        final SettingsItem item = select(packageName, userId);
-        if (item == null) {
-            throw new BadKeyException(packageName, userId);
-        }
-        return item.getOverlayInfo();
+        mItems.remove(idx);
+        return true;
     }
 
     String getTargetPackageName(@NonNull final String packageName, final int userId)
             throws BadKeyException {
-        final SettingsItem item = select(packageName, userId);
-        if (item == null) {
+        final int idx = select(packageName, userId);
+        if (idx < 0) {
             throw new BadKeyException(packageName, userId);
         }
-        return item.getTargetPackageName();
+        return mItems.get(idx).getTargetPackageName();
     }
 
-    void setBaseCodePath(@NonNull final String packageName, final int userId,
-            @NonNull final String path) throws BadKeyException {
-        final SettingsItem item = select(packageName, userId);
-        if (item == null) {
+    OverlayInfo getOverlayInfo(@NonNull final String packageName, final int userId)
+            throws BadKeyException {
+        final int idx = select(packageName, userId);
+        if (idx < 0) {
             throw new BadKeyException(packageName, userId);
         }
-        item.setBaseCodePath(path);
-        notifySettingsChanged();
+        return mItems.get(idx).getOverlayInfo();
+    }
+
+    /**
+     * Returns true if the settings were modified, false if they remain the same.
+     */
+    boolean setBaseCodePath(@NonNull final String packageName, final int userId,
+            @NonNull final String path) throws BadKeyException {
+        final int idx = select(packageName, userId);
+        if (idx < 0) {
+            throw new BadKeyException(packageName, userId);
+        }
+        return mItems.get(idx).setBaseCodePath(path);
+    }
+
+    boolean getEnabled(@NonNull final String packageName, final int userId) throws BadKeyException {
+        final int idx = select(packageName, userId);
+        if (idx < 0) {
+            throw new BadKeyException(packageName, userId);
+        }
+        return mItems.get(idx).isEnabled();
+    }
+
+    /**
+     * Returns true if the settings were modified, false if they remain the same.
+     */
+    boolean setEnabled(@NonNull final String packageName, final int userId, final boolean enable)
+            throws BadKeyException {
+        final int idx = select(packageName, userId);
+        if (idx < 0) {
+            throw new BadKeyException(packageName, userId);
+        }
+        return mItems.get(idx).setEnabled(enable);
+    }
+
+    int getState(@NonNull final String packageName, final int userId) throws BadKeyException {
+        final int idx = select(packageName, userId);
+        if (idx < 0) {
+            throw new BadKeyException(packageName, userId);
+        }
+        return mItems.get(idx).getState();
+    }
+
+    /**
+     * Returns true if the settings were modified, false if they remain the same.
+     */
+    boolean setState(@NonNull final String packageName, final int userId, final int state)
+            throws BadKeyException {
+        final int idx = select(packageName, userId);
+        if (idx < 0) {
+            throw new BadKeyException(packageName, userId);
+        }
+        return mItems.get(idx).setState(state);
     }
 
     boolean getUpgrading(@NonNull final String packageName, final int userId)
             throws BadKeyException {
-        final SettingsItem item = select(packageName, userId);
-        if (item == null) {
+        final int idx = select(packageName, userId);
+        if (idx < 0) {
             throw new BadKeyException(packageName, userId);
         }
-        return item.isUpgrading();
+        return mItems.get(idx).isUpgrading();
     }
 
-    void setUpgrading(@NonNull final String packageName, final int userId, final boolean newValue)
+    /**
+     * Returns true if the settings were modified, false if they remain the same.
+     */
+    boolean setUpgrading(@NonNull final String packageName, final int userId, final boolean newValue)
             throws BadKeyException {
-        final SettingsItem item = select(packageName, userId);
-        if (item == null) {
+        final int idx = select(packageName, userId);
+        if (idx < 0) {
             throw new BadKeyException(packageName, userId);
         }
+
+        final SettingsItem item = mItems.get(idx);
         if (newValue == item.isUpgrading()) {
-            return; // nothing to do
+            return false;
         }
 
         if (newValue) {
-            final OverlayInfo oi = item.getOverlayInfo();
-            item.setUpgrading(true);
-            item.setState(STATE_NOT_APPROVED_UNKNOWN);
-            notifyOverlayRemoved(oi, false);
+            boolean result = item.setUpgrading(true);
+            if (result) {
+                item.setState(OverlayInfo.STATE_UNKNOWN); // hmmm
+            }
+            return result;
         } else {
-            item.setUpgrading(false);
-        }
-        notifySettingsChanged();
-    }
-
-    boolean getEnabled(@NonNull final String packageName, final int userId) throws BadKeyException {
-        final SettingsItem item = select(packageName, userId);
-        if (item == null) {
-            throw new BadKeyException(packageName, userId);
-        }
-        return item.isEnabled();
-    }
-
-    void setEnabled(@NonNull final String packageName, final int userId, final boolean enable)
-            throws BadKeyException {
-        final SettingsItem item = select(packageName, userId);
-        if (item == null) {
-            throw new BadKeyException(packageName, userId);
-        }
-        if (enable == item.isEnabled()) {
-            return; // nothing to do
-        }
-
-        item.setEnabled(enable);
-        notifySettingsChanged();
-    }
-
-    int getState(@NonNull final String packageName, final int userId) throws BadKeyException {
-        final SettingsItem item = select(packageName, userId);
-        if (item == null) {
-            throw new BadKeyException(packageName, userId);
-        }
-        return item.getState();
-    }
-
-    void setState(@NonNull final String packageName, final int userId, final int state,
-            final boolean shouldWait) throws BadKeyException {
-        final SettingsItem item = select(packageName, userId);
-        if (item == null) {
-            throw new BadKeyException(packageName, userId);
-        }
-        final OverlayInfo previous = item.getOverlayInfo();
-        item.setState(state);
-        final OverlayInfo current = item.getOverlayInfo();
-        if (previous.state == STATE_NOT_APPROVED_UNKNOWN) {
-            notifyOverlayAdded(current, shouldWait);
-            notifySettingsChanged();
-        } else if (current.state != previous.state) {
-            notifyOverlayChanged(current, previous, shouldWait);
-            notifySettingsChanged();
+            return item.setUpgrading(false);
         }
     }
 
     List<OverlayInfo> getOverlaysForTarget(@NonNull final String targetPackageName,
             final int userId) {
-        final List<SettingsItem> items = selectWhereTarget(targetPackageName, userId);
-        if (items.isEmpty()) {
-            return Collections.emptyList();
-        }
-        final List<OverlayInfo> out = new ArrayList<>(items.size());
-        for (final SettingsItem item : items) {
-            if (item.isUpgrading()) {
-                continue;
-            }
-            out.add(item.getOverlayInfo());
-        }
-        return out;
+        return selectWhereTarget(targetPackageName, userId)
+                .map(SettingsItem::getOverlayInfo)
+                .collect(Collectors.toList());
     }
 
-    Map<String, List<OverlayInfo>> getOverlaysForUser(final int userId) {
-        final List<SettingsItem> items = selectWhereUser(userId);
-        if (items.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        final Map<String, List<OverlayInfo>> out = new ArrayMap<>(items.size());
-        for (final SettingsItem item : items) {
-            if (item.isUpgrading()) {
-                continue;
-            }
-            final String targetPackageName = item.getTargetPackageName();
-            if (!out.containsKey(targetPackageName)) {
-                out.put(targetPackageName, new ArrayList<OverlayInfo>());
-            }
-            final List<OverlayInfo> overlays = out.get(targetPackageName);
-            overlays.add(item.getOverlayInfo());
-        }
-        return out;
+    ArrayMap<String, List<OverlayInfo>> getOverlaysForUser(final int userId) {
+        return selectWhereUser(userId)
+                .map(SettingsItem::getOverlayInfo)
+                .collect(Collectors.groupingBy(info -> info.targetPackageName, ArrayMap::new,
+                        Collectors.toList()));
     }
 
-    List<String> getTargetPackageNamesForUser(final int userId) {
-        final List<SettingsItem> items = selectWhereUser(userId);
-        if (items.isEmpty()) {
-            return Collections.emptyList();
-        }
-        final List<String> out = new ArrayList<>();
-        for (final SettingsItem item : items) {
-            if (item.isUpgrading()) {
-                continue;
-            }
-            final String targetPackageName = item.getTargetPackageName();
-            if (!out.contains(targetPackageName)) {
-                out.add(targetPackageName);
-            }
-        }
-        return out;
+    int[] getUsers() {
+        return mItems.stream().mapToInt(SettingsItem::getUserId).distinct().toArray();
     }
 
-    List<Integer> getUsers() {
-        final ArrayList<Integer> users = new ArrayList<>();
-        for (final SettingsItem item : mItems) {
-            if (!users.contains(item.userId)) {
-                users.add(item.userId);
+    /**
+     * Returns true if the settings were modified, false if they remain the same.
+     */
+    boolean removeUser(final int userId) {
+        boolean removed = false;
+        for (int i = 0; i < mItems.size(); i++) {
+            final SettingsItem item = mItems.get(i);
+            if (item.getUserId() == userId) {
+                if (DEBUG) {
+                    Slog.d(TAG, "Removing overlay " + item.mPackageName + " for user " + userId
+                            + " from settings because user was removed");
+                }
+                mItems.remove(i);
+                removed = true;
+                i--;
             }
         }
-        return users;
+        return removed;
     }
 
-    void removeUser(final int userId) {
-        final Iterator<SettingsItem> iter = mItems.iterator();
-        while (iter.hasNext()) {
-            final SettingsItem item = iter.next();
-            if (item.userId == userId) {
-                iter.remove();
-            }
-        }
-    }
-
+    /**
+     * Returns true if the settings were modified, false if they remain the same.
+     */
     boolean setPriority(@NonNull final String packageName,
             @NonNull final String newParentPackageName, final int userId) {
         if (packageName.equals(newParentPackageName)) {
             return false;
         }
-        final SettingsItem rowToMove = select(packageName, userId);
-        if (rowToMove == null || rowToMove.isUpgrading()) {
-            return false;
-        }
-        final SettingsItem newParentRow = select(newParentPackageName, userId);
-        if (newParentRow == null || newParentRow.isUpgrading()) {
-            return false;
-        }
-        if (!rowToMove.getTargetPackageName().equals(newParentRow.getTargetPackageName())) {
+        final int moveIdx = select(packageName, userId);
+        if (moveIdx < 0) {
             return false;
         }
 
-        mItems.remove(rowToMove);
-        final ListIterator<SettingsItem> iter = mItems.listIterator();
-        while (iter.hasNext()) {
-            final SettingsItem item = iter.next();
-            if (item.userId == userId && item.packageName.equals(newParentPackageName)) {
-                iter.add(rowToMove);
-                notifyOverlayPriorityChanged(rowToMove.getOverlayInfo());
-                notifySettingsChanged();
-                return true;
-            }
+        final int parentIdx = select(newParentPackageName, userId);
+        if (parentIdx < 0) {
+            return false;
         }
 
-        Slog.wtf(TAG, "failed to find the parent item a second time");
-        return false;
+        final SettingsItem itemToMove = mItems.get(moveIdx);
+
+        if (itemToMove.isUpgrading() || mItems.get(parentIdx).isUpgrading()) {
+            return false;
+        }
+
+        // Make sure both packages are targeting the same package.
+        if (!itemToMove.getTargetPackageName().equals(
+                mItems.get(parentIdx).getTargetPackageName())) {
+            return false;
+        }
+
+        mItems.remove(moveIdx);
+        final int newParentIdx = select(newParentPackageName, userId);
+        mItems.add(newParentIdx, itemToMove);
+        return moveIdx != newParentIdx;
     }
 
+    /**
+     * Returns true if the settings were modified, false if they remain the same.
+     */
     boolean setLowestPriority(@NonNull final String packageName, final int userId) {
-        final SettingsItem item = select(packageName, userId);
-        if (item == null || item.isUpgrading()) {
+        final int idx = select(packageName, userId);
+        if (idx <= 0) {
+            // If the item doesn't exist or is already the lowest, don't change anything.
+            return false;
+        }
+
+        final SettingsItem item = mItems.get(idx);
+        if (item.isUpgrading()) {
             return false;
         }
         mItems.remove(item);
         mItems.add(0, item);
-        notifyOverlayPriorityChanged(item.getOverlayInfo());
-        notifySettingsChanged();
         return true;
     }
 
+    /**
+     * Returns true if the settings were modified, false if they remain the same.
+     */
     boolean setHighestPriority(@NonNull final String packageName, final int userId) {
-        final SettingsItem item = select(packageName, userId);
-        if (item == null || item.isUpgrading()) {
+        final int idx = select(packageName, userId);
+
+        // If the item doesn't exist or is already the highest, don't change anything.
+        if (idx < 0 || idx == mItems.size() - 1) {
             return false;
         }
-        mItems.remove(item);
+
+        final SettingsItem item = mItems.get(idx);
+        if (item.isUpgrading()) {
+            return false;
+        }
+        mItems.remove(idx);
         mItems.add(item);
-        notifyOverlayPriorityChanged(item.getOverlayInfo());
-        notifySettingsChanged();
         return true;
     }
 
-    private static final String TAB1 = "    ";
-    private static final String TAB2 = TAB1 + TAB1;
-    private static final String TAB3 = TAB2 + TAB1;
-
-    void dump(@NonNull final PrintWriter pw) {
+    void dump(@NonNull final PrintWriter p) {
+        final IndentingPrintWriter pw = new IndentingPrintWriter(p, "  ");
         pw.println("Settings");
-        dumpItems(pw);
-        dumpListeners(pw);
-    }
-
-    private void dumpItems(@NonNull final PrintWriter pw) {
-        pw.println(TAB1 + "Items");
+        pw.increaseIndent();
 
         if (mItems.isEmpty()) {
-            pw.println(TAB2 + "<none>");
+            pw.println("<none>");
             return;
         }
 
-        for (final SettingsItem item : mItems) {
-            final StringBuilder sb = new StringBuilder();
-            sb.append(TAB2 + item.packageName + ":" + item.userId + " {\n");
-            sb.append(TAB3 + "packageName.......: " + item.packageName + "\n");
-            sb.append(TAB3 + "userId............: " + item.userId + "\n");
-            sb.append(TAB3 + "targetPackageName.: " + item.getTargetPackageName() + "\n");
-            sb.append(TAB3 + "baseCodePath......: " + item.getBaseCodePath() + "\n");
-            sb.append(TAB3 + "state.............: " + OverlayInfo.stateToString(item.getState()) + "\n");
-            sb.append(TAB3 + "isEnabled.........: " + item.isEnabled() + "\n");
-            sb.append(TAB3 + "isUpgrading.......: " + item.isUpgrading() + "\n");
-            sb.append(TAB2 + "}");
-            pw.println(sb.toString());
+        final int N = mItems.size();
+        for (int i = 0; i < N; i++) {
+            final SettingsItem item = mItems.get(i);
+            pw.println(item.mPackageName + ":" + item.getUserId() + " {");
+            pw.increaseIndent();
+
+            pw.print("mPackageName.......: "); pw.println(item.mPackageName);
+            pw.print("mUserId............: "); pw.println(item.getUserId());
+            pw.print("mTargetPackageName.: "); pw.println(item.getTargetPackageName());
+            pw.print("mBaseCodePath......: "); pw.println(item.getBaseCodePath());
+            pw.print("mState.............: "); pw.println(OverlayInfo.stateToString(item.getState()));
+            pw.print("mIsEnabled.........: "); pw.println(item.isEnabled());
+            pw.print("mIsStatic..........: "); pw.println(item.isStatic());
+            pw.print("isUpgrading........: "); pw.println(item.isUpgrading());
+
+            pw.decreaseIndent();
+            pw.println("}");
         }
-    }
-
-    private void dumpListeners(@NonNull final PrintWriter pw) {
-        pw.println(TAB1 + "Change listeners");
-
-        if (mListeners.isEmpty()) {
-            pw.println(TAB2 + "<none>");
-            return;
-        }
-
-        for (ChangeListener ch : mListeners) {
-            pw.println(TAB2 + ch);
-        }
-
     }
 
     void restore(@NonNull final InputStream is) throws IOException, XmlPullParserException {
@@ -382,35 +366,52 @@ final class OverlayManagerSettings {
 
         private static final String ATTR_BASE_CODE_PATH = "baseCodePath";
         private static final String ATTR_IS_ENABLED = "isEnabled";
-        private static final String ATTR_IS_UPGRADING = "isUpgrading";
         private static final String ATTR_PACKAGE_NAME = "packageName";
         private static final String ATTR_STATE = "state";
         private static final String ATTR_TARGET_PACKAGE_NAME = "targetPackageName";
+        private static final String ATTR_IS_STATIC = "isStatic";
+        private static final String ATTR_PRIORITY = "priority";
         private static final String ATTR_USER_ID = "userId";
         private static final String ATTR_VERSION = "version";
+        private static final String ATTR_IS_UPGRADING = "isUpgrading";
 
-        private static final int CURRENT_VERSION = 1;
+        private static final int CURRENT_VERSION = 3;
 
         public static void restore(@NonNull final ArrayList<SettingsItem> table,
                 @NonNull final InputStream is) throws IOException, XmlPullParserException {
 
-            table.clear();
-            final XmlPullParser parser = Xml.newPullParser();
-            parser.setInput(new InputStreamReader(is));
-            XmlUtils.beginDocument(parser, TAG_OVERLAYS);
-            int version = XmlUtils.readIntAttribute(parser, ATTR_VERSION);
-            if (version != CURRENT_VERSION) {
-                throw new XmlPullParserException("unrecognized version " + version);
-            }
-            int depth = parser.getDepth();
-
-            while (XmlUtils.nextElementWithin(parser, depth)) {
-                switch (parser.getName()) {
-                    case TAG_ITEM:
-                        final SettingsItem item = restoreRow(parser, depth + 1);
-                        table.add(item);
-                        break;
+            try (InputStreamReader reader = new InputStreamReader(is)) {
+                table.clear();
+                final XmlPullParser parser = Xml.newPullParser();
+                parser.setInput(reader);
+                XmlUtils.beginDocument(parser, TAG_OVERLAYS);
+                int version = XmlUtils.readIntAttribute(parser, ATTR_VERSION);
+                if (version != CURRENT_VERSION) {
+                    upgrade(version);
                 }
+                int depth = parser.getDepth();
+
+                while (XmlUtils.nextElementWithin(parser, depth)) {
+                    switch (parser.getName()) {
+                        case TAG_ITEM:
+                            final SettingsItem item = restoreRow(parser, depth + 1);
+                            table.add(item);
+                            break;
+                    }
+                }
+            }
+        }
+
+        private static void upgrade(int oldVersion) throws XmlPullParserException {
+            switch (oldVersion) {
+                case 0:
+                case 1:
+                case 2:
+                    // Throw an exception which will cause the overlay file to be ignored
+                    // and overwritten.
+                    throw new XmlPullParserException("old version " + oldVersion + "; ignoring");
+                default:
+                    throw new XmlPullParserException("unrecognized version " + oldVersion);
             }
         }
 
@@ -423,10 +424,12 @@ final class OverlayManagerSettings {
             final String baseCodePath = XmlUtils.readStringAttribute(parser, ATTR_BASE_CODE_PATH);
             final int state = XmlUtils.readIntAttribute(parser, ATTR_STATE);
             final boolean isEnabled = XmlUtils.readBooleanAttribute(parser, ATTR_IS_ENABLED);
+            final boolean isStatic = XmlUtils.readBooleanAttribute(parser, ATTR_IS_STATIC);
+            final int priority = XmlUtils.readIntAttribute(parser, ATTR_PRIORITY);
             final boolean isUpgrading = XmlUtils.readBooleanAttribute(parser, ATTR_IS_UPGRADING);
 
             return new SettingsItem(packageName, userId, targetPackageName, baseCodePath, state,
-                    isEnabled, isUpgrading);
+                    isEnabled, isStatic, priority, isUpgrading);
         }
 
         public static void persist(@NonNull final ArrayList<SettingsItem> table,
@@ -438,7 +441,9 @@ final class OverlayManagerSettings {
             xml.startTag(null, TAG_OVERLAYS);
             XmlUtils.writeIntAttribute(xml, ATTR_VERSION, CURRENT_VERSION);
 
-            for (final SettingsItem item : table) {
+            final int N = table.size();
+            for (int i = 0; i < N; i++) {
+                final SettingsItem item = table.get(i);
                 persistRow(xml, item);
             }
             xml.endTag(null, TAG_OVERLAYS);
@@ -448,210 +453,163 @@ final class OverlayManagerSettings {
         private static void persistRow(@NonNull final FastXmlSerializer xml,
                 @NonNull final SettingsItem item) throws IOException {
             xml.startTag(null, TAG_ITEM);
-            XmlUtils.writeStringAttribute(xml, ATTR_PACKAGE_NAME, item.packageName);
-            XmlUtils.writeIntAttribute(xml, ATTR_USER_ID, item.userId);
-            XmlUtils.writeStringAttribute(xml, ATTR_TARGET_PACKAGE_NAME, item.targetPackageName);
-            XmlUtils.writeStringAttribute(xml, ATTR_BASE_CODE_PATH, item.baseCodePath);
-            XmlUtils.writeIntAttribute(xml, ATTR_STATE, item.state);
-            XmlUtils.writeBooleanAttribute(xml, ATTR_IS_ENABLED, item.isEnabled);
-            XmlUtils.writeBooleanAttribute(xml, ATTR_IS_UPGRADING, item.isUpgrading);
+            XmlUtils.writeStringAttribute(xml, ATTR_PACKAGE_NAME, item.mPackageName);
+            XmlUtils.writeIntAttribute(xml, ATTR_USER_ID, item.mUserId);
+            XmlUtils.writeStringAttribute(xml, ATTR_TARGET_PACKAGE_NAME, item.mTargetPackageName);
+            XmlUtils.writeStringAttribute(xml, ATTR_BASE_CODE_PATH, item.mBaseCodePath);
+            XmlUtils.writeIntAttribute(xml, ATTR_STATE, item.mState);
+            XmlUtils.writeBooleanAttribute(xml, ATTR_IS_ENABLED, item.mIsEnabled);
+            XmlUtils.writeBooleanAttribute(xml, ATTR_IS_STATIC, item.mIsStatic);
+            XmlUtils.writeIntAttribute(xml, ATTR_PRIORITY, item.mPriority);
+            XmlUtils.writeBooleanAttribute(xml, ATTR_IS_UPGRADING, item.mIsUpgrading);
             xml.endTag(null, TAG_ITEM);
         }
     }
 
     private static final class SettingsItem {
-        private final int userId;
-        private final String packageName;
-        private final String targetPackageName;
-        private String baseCodePath;
-        private int state;
-        private boolean isEnabled;
-        private boolean isUpgrading;
-        private OverlayInfo cache;
+        private final int mUserId;
+        private final String mPackageName;
+        private final String mTargetPackageName;
+        private String mBaseCodePath;
+        private int mState;
+        private boolean mIsEnabled;
+        private OverlayInfo mCache;
+        private boolean mIsStatic;
+        private int mPriority;
+        private boolean mIsUpgrading;
 
         SettingsItem(@NonNull final String packageName, final int userId,
                 @NonNull final String targetPackageName, @NonNull final String baseCodePath,
-                final int state, final boolean isEnabled, final boolean isUpgrading) {
-            this.packageName = packageName;
-            this.userId = userId;
-            this.targetPackageName = targetPackageName;
-            this.baseCodePath = baseCodePath;
-            this.state = state;
-            this.isEnabled = isEnabled;
-            this.isUpgrading = isUpgrading;
-            cache = null;
+                final int state, final boolean isEnabled, final boolean isStatic,
+                final int priority, final boolean isUpgrading) {
+            mPackageName = packageName;
+            mUserId = userId;
+            mTargetPackageName = targetPackageName;
+            mBaseCodePath = baseCodePath;
+            mState = state;
+            mIsEnabled = isEnabled;
+            mCache = null;
+            mIsStatic = isStatic;
+            mPriority = priority;
+            mIsUpgrading = isUpgrading;
         }
 
         SettingsItem(@NonNull final String packageName, final int userId,
-                @NonNull final String targetPackageName, @NonNull final String baseCodePath) {
-            this(packageName, userId, targetPackageName, baseCodePath, STATE_NOT_APPROVED_UNKNOWN,
-                    false, false);
+                @NonNull final String targetPackageName, @NonNull final String baseCodePath,
+                final boolean isStatic, final int priority) {
+            this(packageName, userId, targetPackageName, baseCodePath, OverlayInfo.STATE_UNKNOWN,
+                    false, isStatic, priority, false);
         }
 
         private String getTargetPackageName() {
-            return targetPackageName;
+            return mTargetPackageName;
+        }
+
+        private int getUserId() {
+            return mUserId;
         }
 
         private String getBaseCodePath() {
-            return baseCodePath;
+            return mBaseCodePath;
         }
 
-        private void setBaseCodePath(@NonNull final String path) {
-            if (!baseCodePath.equals(path)) {
-                baseCodePath = path;
+        private boolean setBaseCodePath(@NonNull final String path) {
+            if (!mBaseCodePath.equals(path)) {
+                mBaseCodePath = path;
                 invalidateCache();
+                return true;
             }
+            return false;
         }
 
         private int getState() {
-            return state;
+            return mState;
         }
 
-        private void setState(final int state) {
-            if (this.state != state) {
-                this.state = state;
+        private boolean setState(final int state) {
+            if (mState != state) {
+                mState = state;
                 invalidateCache();
+                return true;
             }
+            return false;
         }
 
         private boolean isEnabled() {
-            return isEnabled;
+            return mIsEnabled;
         }
 
-        private void setEnabled(final boolean enable) {
-            if (isEnabled != enable) {
-                isEnabled = enable;
+        private boolean setEnabled(final boolean enable) {
+            if (mIsEnabled != enable) {
+                mIsEnabled = enable;
                 invalidateCache();
+                return true;
             }
+            return false;
         }
 
         private boolean isUpgrading() {
-            return isUpgrading;
+            return mIsUpgrading;
         }
 
-        private void setUpgrading(final boolean upgrading) {
-            if (isUpgrading != upgrading) {
-                isUpgrading = upgrading;
+        private boolean setUpgrading(final boolean upgrading) {
+            if (mIsUpgrading != upgrading) {
+                mIsUpgrading = upgrading;
                 invalidateCache();
+                return true;
             }
+            return false;
         }
 
         private OverlayInfo getOverlayInfo() {
-            if (isUpgrading) {
+            if (mIsUpgrading) {
                 return null;
             }
-            if (cache == null) {
-                cache = new OverlayInfo(packageName, targetPackageName, baseCodePath,
-                        state, userId);
+
+            if (mCache == null) {
+                mCache = new OverlayInfo(mPackageName, mTargetPackageName, mBaseCodePath, mState,
+                        mUserId);
             }
-            return cache;
+            return mCache;
         }
 
         private void invalidateCache() {
-            cache = null;
+            mCache = null;
+        }
+
+        private boolean isStatic() {
+            return mIsStatic;
+        }
+
+        private int getPriority() {
+            return mPriority;
         }
     }
 
-    private SettingsItem select(@NonNull final String packageName, final int userId) {
-        for (final SettingsItem item : mItems) {
-            if (item.userId == userId && item.packageName.equals(packageName)) {
-                return item;
+    private int select(@NonNull final String packageName, final int userId) {
+        final int N = mItems.size();
+        for (int i = 0; i < N; i++) {
+            final SettingsItem item = mItems.get(i);
+            if (item.mUserId == userId && item.mPackageName.equals(packageName)) {
+                return i;
             }
         }
-        return null;
+        return -1;
     }
 
-    private List<SettingsItem> selectWhereUser(final int userId) {
-        final ArrayList<SettingsItem> items = new ArrayList<>();
-        for (final SettingsItem item : mItems) {
-            if (item.userId == userId) {
-                items.add(item);
-            }
-        }
-        return items;
+    private Stream<SettingsItem> selectWhereUser(final int userId) {
+        return mItems.stream().filter(item -> item.mUserId == userId);
     }
 
-    private List<SettingsItem> selectWhereTarget(@NonNull final String targetPackageName,
+    private Stream<SettingsItem> selectWhereTarget(@NonNull final String targetPackageName,
             final int userId) {
-        final ArrayList<SettingsItem> items = new ArrayList<>();
-        for (final SettingsItem item : mItems) {
-            if (item.userId == userId && item.getTargetPackageName().equals(targetPackageName)) {
-                items.add(item);
-            }
-        }
-        return items;
-    }
-
-    private void assertNotNull(@Nullable final Object o) {
-        if (o == null) {
-            throw new AndroidRuntimeException("object must not be null");
-        }
-    }
-
-    void addChangeListener(@NonNull final ChangeListener listener) {
-        mListeners.add(listener);
-    }
-
-    void removeChangeListener(@NonNull final ChangeListener listener) {
-        mListeners.remove(listener);
-    }
-
-    private void notifySettingsChanged() {
-        for (final ChangeListener listener : mListeners) {
-            listener.onSettingsChanged();
-        }
-    }
-
-    private void notifyOverlayAdded(@NonNull final OverlayInfo oi, final boolean shouldWait) {
-        if (DEBUG) {
-            assertNotNull(oi);
-        }
-        for (final ChangeListener listener : mListeners) {
-            listener.onOverlayAdded(oi, shouldWait);
-        }
-    }
-
-    private void notifyOverlayRemoved(@NonNull final OverlayInfo oi, final boolean shouldWait) {
-        if (DEBUG) {
-            assertNotNull(oi);
-        }
-        for (final ChangeListener listener : mListeners) {
-            listener.onOverlayRemoved(oi, shouldWait);
-        }
-    }
-
-    private void notifyOverlayChanged(@NonNull final OverlayInfo oi,
-            @NonNull final OverlayInfo oldOi, final boolean shouldWait) {
-        if (DEBUG) {
-            assertNotNull(oi);
-            assertNotNull(oldOi);
-        }
-        for (final ChangeListener listener : mListeners) {
-            listener.onOverlayChanged(oi, oldOi, shouldWait);
-        }
-    }
-
-    private void notifyOverlayPriorityChanged(@NonNull final OverlayInfo oi) {
-        if (DEBUG) {
-            assertNotNull(oi);
-        }
-        for (final ChangeListener listener : mListeners) {
-            listener.onOverlayPriorityChanged(oi);
-        }
-    }
-
-    interface ChangeListener {
-        void onSettingsChanged();
-        void onOverlayAdded(@NonNull OverlayInfo oi, boolean shouldWait);
-        void onOverlayRemoved(@NonNull OverlayInfo oi, boolean shouldWait);
-        void onOverlayChanged(@NonNull OverlayInfo oi, @NonNull OverlayInfo oldOi,
-            boolean shouldWait);
-        void onOverlayPriorityChanged(@NonNull OverlayInfo oi);
+        return selectWhereUser(userId)
+                .filter(item -> item.getTargetPackageName().equals(targetPackageName));
     }
 
     static final class BadKeyException extends RuntimeException {
-        public BadKeyException(@NonNull final String packageName, final int userId) {
-            super("Bad key packageName=" + packageName + " userId=" + userId);
+        BadKeyException(@NonNull final String packageName, final int userId) {
+            super("Bad key mPackageName=" + packageName + " mUserId=" + userId);
         }
     }
 }

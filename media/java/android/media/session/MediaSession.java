@@ -43,11 +43,13 @@ import android.service.media.MediaBrowserService;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
+import android.view.ViewConfiguration;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.ref.WeakReference;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Allows interaction with media controllers, volume keys, media buttons, and
@@ -77,13 +79,19 @@ public final class MediaSession {
     /**
      * Set this flag on the session to indicate that it can handle media button
      * events.
+     * @deprecated This flag is no longer used. All media sessions are expected to handle media
+     * button events now.
      */
+    @Deprecated
     public static final int FLAG_HANDLES_MEDIA_BUTTONS = 1 << 0;
 
     /**
      * Set this flag on the session to indicate that it handles transport
      * control commands through its {@link Callback}.
+     * @deprecated This flag is no longer used. All media sessions are expected to handle transport
+     * controls now.
      */
+    @Deprecated
     public static final int FLAG_HANDLES_TRANSPORT_CONTROLS = 1 << 1;
 
     /**
@@ -194,8 +202,7 @@ public final class MediaSession {
                 return;
             }
             if (mCallback != null) {
-                // We're updating the callback, clear the session from the old
-                // one.
+                // We're updating the callback, clear the session from the old one.
                 mCallback.mCallback.mSession = null;
             }
             if (handler == null) {
@@ -407,12 +414,14 @@ public final class MediaSession {
 
     /**
      * Update the current metadata. New metadata can be created using
-     * {@link android.media.MediaMetadata.Builder}.
+     * {@link android.media.MediaMetadata.Builder}. This operation may take time proportional to
+     * the size of the bitmap to replace large bitmaps with a scaled down copy.
      *
      * @param metadata The new metadata
+     * @see android.media.MediaMetadata.Builder#putBitmap
      */
     public void setMetadata(@Nullable MediaMetadata metadata) {
-        if (metadata != null ) {
+        if (metadata != null) {
             metadata = (new MediaMetadata.Builder(metadata, mMaxBitmapSize)).build();
         }
         try {
@@ -489,58 +498,6 @@ public final class MediaSession {
             mBinder.setExtras(extras);
         } catch (RemoteException e) {
             Log.wtf("Dead object in setExtras.", e);
-        }
-    }
-
-    /**
-    * @hide
-    */
-    public void playItemResponse(boolean success) {
-        Log.d(TAG, "MediaSession: playItemResponse");
-
-        try {
-            mBinder.playItemResponse(success);
-        } catch (RemoteException e) {
-            Log.wtf(TAG, "Dead object in playItemResponse.", e);
-        }
-    }
-
-    /**
-    * @hide
-    */
-    public void updateNowPlayingEntries(long[] playList) {
-        Log.d(TAG, "MediaSession: updateNowPlayingEntries");
-
-        try {
-            mBinder.updateNowPlayingEntries(playList);
-        } catch (RemoteException e) {
-            Log.wtf(TAG, "Dead object in updateNowPlayingEntries.", e);
-        }
-    }
-
-    /**
-    * @hide
-    */
-    public void updateFolderInfoBrowsedPlayer(String stringUri) {
-        Log.d(TAG, "MediaSession: updateFolderInfoBrowsedPlayer");
-
-        try {
-            mBinder.updateFolderInfoBrowsedPlayer(stringUri);
-        } catch (RemoteException e) {
-            Log.wtf(TAG, "Dead object in updateFolderInfoBrowsedPlayer.", e);
-        }
-    }
-
-    /**
-    * @hide
-    */
-    public void updateNowPlayingContentChange() {
-        Log.d(TAG, "MediaSession: updateNowPlayingContentChange");
-
-        try {
-            mBinder.updateNowPlayingContentChange();
-        } catch (RemoteException e) {
-            Log.wtf(TAG, "Dead object in updateNowPlayingContentChange.", e);
         }
     }
 
@@ -654,34 +611,6 @@ public final class MediaSession {
 
     private void dispatchMediaButton(Intent mediaButtonIntent) {
         postToCallback(CallbackMessageHandler.MSG_MEDIA_BUTTON, mediaButtonIntent);
-    }
-
-    private void dispatchSetBrowsedPlayerCommand() {
-        postToCallback(CallbackMessageHandler.MSG_SET_BROWSED_PLAYER);
-    }
-
-    private void dispatchSetPlayItemCommand(long uid, int scope) {
-        PlayItemToken playItemToken = new PlayItemToken(uid, scope);
-        postToCallback(CallbackMessageHandler.MSG_SET_PLAY_ITEM, playItemToken);
-    }
-
-    private class PlayItemToken {
-        private long mUid;
-        private int mScope;
-        public PlayItemToken(long uid, int scope) {
-            mUid = uid;
-            mScope = scope;
-        }
-        public int getScope() {
-            return mScope;
-        }
-        public long getUid() {
-            return mUid;
-        }
-    }
-
-    private void dispatchGetNowPlayingItemsCommand() {
-        postToCallback(CallbackMessageHandler.MSG_GET_NOW_PLAYING_ITEMS);
     }
 
     private void dispatchAdjustVolume(int direction) {
@@ -807,6 +736,8 @@ public final class MediaSession {
      */
     public abstract static class Callback {
         private MediaSession mSession;
+        private CallbackMessageHandler mHandler;
+        private boolean mMediaPlayPauseKeyPending;
 
         public Callback() {
         }
@@ -838,12 +769,40 @@ public final class MediaSession {
          * @return True if the event was handled, false otherwise.
          */
         public boolean onMediaButtonEvent(@NonNull Intent mediaButtonIntent) {
-            if (mSession != null
+            if (mSession != null && mHandler != null
                     && Intent.ACTION_MEDIA_BUTTON.equals(mediaButtonIntent.getAction())) {
                 KeyEvent ke = mediaButtonIntent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
                 if (ke != null && ke.getAction() == KeyEvent.ACTION_DOWN) {
                     PlaybackState state = mSession.mPlaybackState;
                     long validActions = state == null ? 0 : state.getActions();
+                    switch (ke.getKeyCode()) {
+                        case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+                        case KeyEvent.KEYCODE_HEADSETHOOK:
+                            if (ke.getRepeatCount() > 0) {
+                                // Consider long-press as a single tap.
+                                handleMediaPlayPauseKeySingleTapIfPending();
+                            } else if (mMediaPlayPauseKeyPending) {
+                                // Consider double tap as the next.
+                                mHandler.removeMessages(CallbackMessageHandler
+                                        .MSG_PLAY_PAUSE_KEY_DOUBLE_TAP_TIMEOUT);
+                                mMediaPlayPauseKeyPending = false;
+                                if ((validActions & PlaybackState.ACTION_SKIP_TO_NEXT) != 0) {
+                                    onSkipToNext();
+                                }
+                            } else {
+                                mMediaPlayPauseKeyPending = true;
+                                mHandler.sendEmptyMessageDelayed(CallbackMessageHandler
+                                        .MSG_PLAY_PAUSE_KEY_DOUBLE_TAP_TIMEOUT,
+                                        ViewConfiguration.getDoubleTapTimeout());
+                            }
+                            return true;
+                        default:
+                            // If another key is pressed within double tap timeout, consider the
+                            // pending play/pause as a single tap to handle media keys in order.
+                            handleMediaPlayPauseKeySingleTapIfPending();
+                            break;
+                    }
+
                     switch (ke.getKeyCode()) {
                         case KeyEvent.KEYCODE_MEDIA_PLAY:
                             if ((validActions & PlaybackState.ACTION_PLAY) != 0) {
@@ -887,26 +846,31 @@ public final class MediaSession {
                                 return true;
                             }
                             break;
-                        case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
-                        case KeyEvent.KEYCODE_HEADSETHOOK:
-                            boolean isPlaying = state == null ? false
-                                    : state.getState() == PlaybackState.STATE_PLAYING;
-                            boolean canPlay = (validActions & (PlaybackState.ACTION_PLAY_PAUSE
-                                    | PlaybackState.ACTION_PLAY)) != 0;
-                            boolean canPause = (validActions & (PlaybackState.ACTION_PLAY_PAUSE
-                                    | PlaybackState.ACTION_PAUSE)) != 0;
-                            if (isPlaying && canPause) {
-                                onPause();
-                                return true;
-                            } else if (!isPlaying && canPlay) {
-                                onPlay();
-                                return true;
-                            }
-                            break;
                     }
                 }
             }
             return false;
+        }
+
+        private void handleMediaPlayPauseKeySingleTapIfPending() {
+            if (!mMediaPlayPauseKeyPending) {
+                return;
+            }
+            mMediaPlayPauseKeyPending = false;
+            mHandler.removeMessages(CallbackMessageHandler.MSG_PLAY_PAUSE_KEY_DOUBLE_TAP_TIMEOUT);
+            PlaybackState state = mSession.mPlaybackState;
+            long validActions = state == null ? 0 : state.getActions();
+            boolean isPlaying = state != null
+                    && state.getState() == PlaybackState.STATE_PLAYING;
+            boolean canPlay = (validActions & (PlaybackState.ACTION_PLAY_PAUSE
+                        | PlaybackState.ACTION_PLAY)) != 0;
+            boolean canPause = (validActions & (PlaybackState.ACTION_PLAY_PAUSE
+                        | PlaybackState.ACTION_PAUSE)) != 0;
+            if (isPlaying && canPause) {
+                onPause();
+            } else if (!isPlaying && canPlay) {
+                onPlay();
+            }
         }
 
         /**
@@ -1051,25 +1015,6 @@ public final class MediaSession {
          */
         public void onCustomAction(@NonNull String action, @Nullable Bundle extras) {
         }
-
-        /**
-         * @hide
-         */
-        public void setBrowsedPlayer() {
-        }
-
-        /**
-         * @hide
-         */
-        public void setPlayItem(int scope, long uid) {
-        }
-
-        /**
-         * @hide
-         */
-        public void getNowPlayingEntries() {
-        }
-
     }
 
     /**
@@ -1242,33 +1187,6 @@ public final class MediaSession {
         }
 
         @Override
-        public void setRemoteControlClientBrowsedPlayer() throws RemoteException {
-            Log.d(TAG, "setRemoteControlClientBrowsedPlayer in CallbackStub");
-            MediaSession session = mMediaSession.get();
-            if (session != null) {
-                session.dispatchSetBrowsedPlayerCommand();
-            }
-        }
-
-        @Override
-        public void setRemoteControlClientPlayItem(long uid, int scope) throws RemoteException {
-            Log.d(TAG, "setRemoteControlClientPlayItem in CallbackStub");
-            MediaSession session = mMediaSession.get();
-            if (session != null) {
-                session.dispatchSetPlayItemCommand(uid, scope);
-            }
-        }
-
-        @Override
-        public void getRemoteControlClientNowPlayingEntries() throws RemoteException {
-            Log.d(TAG, "getRemoteControlClientNowPlayingEntries in CallbackStub");
-            MediaSession session = mMediaSession.get();
-            if (session != null) {
-                session.dispatchGetNowPlayingItemsCommand();
-            }
-        }
-
-        @Override
         public void onCustomAction(String action, Bundle args) {
             MediaSession session = mMediaSession.get();
             if (session != null) {
@@ -1300,7 +1218,7 @@ public final class MediaSession {
      */
     public static final class QueueItem implements Parcelable {
         /**
-         * This id is reserved. No items can be explicitly asigned this id.
+         * This id is reserved. No items can be explicitly assigned this id.
          */
         public static final int UNKNOWN_ID = -1;
 
@@ -1374,6 +1292,28 @@ public final class MediaSession {
                     "Description=" + mDescription +
                     ", Id=" + mId + " }";
         }
+
+        @Override
+        public boolean equals(Object o) {
+            if (o == null) {
+                return false;
+            }
+
+            if (!(o instanceof QueueItem)) {
+                return false;
+            }
+
+            final QueueItem item = (QueueItem) o;
+            if (mId != item.mId) {
+                return false;
+            }
+
+            if (!Objects.equals(mDescription, item.mDescription)) {
+                return false;
+            }
+
+            return true;
+        }
     }
 
     private static final class Command {
@@ -1412,15 +1352,14 @@ public final class MediaSession {
         private static final int MSG_CUSTOM_ACTION = 20;
         private static final int MSG_ADJUST_VOLUME = 21;
         private static final int MSG_SET_VOLUME = 22;
-        private static final int MSG_SET_BROWSED_PLAYER = 23;
-        private static final int MSG_SET_PLAY_ITEM = 24;
-        private static final int MSG_GET_NOW_PLAYING_ITEMS = 25;
+        private static final int MSG_PLAY_PAUSE_KEY_DOUBLE_TAP_TIMEOUT = 23;
 
         private MediaSession.Callback mCallback;
 
         public CallbackMessageHandler(Looper looper, MediaSession.Callback callback) {
             super(looper, null, true);
             mCallback = callback;
+            mCallback.mHandler = this;
         }
 
         public void post(int what, Object obj, Bundle bundle) {
@@ -1521,18 +1460,9 @@ public final class MediaSession {
                     if (vp != null) {
                         vp.onSetVolumeTo((int) msg.obj);
                     }
-                case MSG_SET_BROWSED_PLAYER:
-                    Log.d(TAG, "MSG_SET_BROWSED_PLAYER received in CallbackMessageHandler");
-                    mCallback.setBrowsedPlayer();
                     break;
-                case MSG_SET_PLAY_ITEM:
-                    Log.d(TAG, "MSG_SET_PLAY_ITEM received in CallbackMessageHandler");
-                    PlayItemToken playItemToken = (PlayItemToken) msg.obj;
-                    mCallback.setPlayItem(playItemToken.getScope(), playItemToken.getUid());
-                    break;
-                case MSG_GET_NOW_PLAYING_ITEMS:
-                    Log.d(TAG, "MSG_GET_NOW_PLAYING_ITEMS received in CallbackMessageHandler");
-                    mCallback.getNowPlayingEntries();
+                case MSG_PLAY_PAUSE_KEY_DOUBLE_TAP_TIMEOUT:
+                    mCallback.handleMediaPlayPauseKeySingleTapIfPending();
                     break;
             }
         }

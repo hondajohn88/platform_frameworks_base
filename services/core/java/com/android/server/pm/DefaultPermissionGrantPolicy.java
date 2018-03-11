@@ -19,8 +19,10 @@ package com.android.server.pm;
 
 import android.Manifest;
 import android.annotation.NonNull;
+import android.app.ActivityManager;
 import android.app.DownloadManager;
 import android.app.admin.DevicePolicyManager;
+import android.companion.CompanionDeviceManager;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
@@ -30,6 +32,7 @@ import android.content.pm.PackageManagerInternal.SyncAdapterPackagesProvider;
 import android.content.pm.PackageParser;
 import android.content.pm.ProviderInfo;
 import android.content.pm.ResolveInfo;
+import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -59,6 +62,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -76,8 +80,9 @@ final class DefaultPermissionGrantPolicy {
     private static final String TAG = "DefaultPermGrantPolicy"; // must be <= 23 chars
     private static final boolean DEBUG = false;
 
-    private static final int DEFAULT_FLAGS = PackageManager.MATCH_DIRECT_BOOT_AWARE
-            | PackageManager.MATCH_DIRECT_BOOT_UNAWARE;
+    private static final int DEFAULT_FLAGS =
+            PackageManager.MATCH_DIRECT_BOOT_AWARE | PackageManager.MATCH_DIRECT_BOOT_UNAWARE
+                    | PackageManager.MATCH_UNINSTALLED_PACKAGES;
 
     private static final String AUDIO_MIME_TYPE = "audio/mpeg";
 
@@ -151,8 +156,6 @@ final class DefaultPermissionGrantPolicy {
 
     private static final int MSG_READ_DEFAULT_PERMISSION_EXCEPTIONS = 1;
 
-    private static final String ACTION_TWINNING =
-            "com.google.android.clockwork.intent.TWINNING_SETTINGS";
     private static final String ACTION_TRACK = "com.android.fitness.TRACK";
 
     private final PackageManagerService mService;
@@ -208,9 +211,35 @@ final class DefaultPermissionGrantPolicy {
     }
 
     public void grantDefaultPermissions(int userId) {
-        grantPermissionsToSysComponentsAndPrivApps(userId);
-        grantDefaultSystemHandlerPermissions(userId);
-        grantDefaultPermissionExceptions(userId);
+        if (mService.hasSystemFeature(PackageManager.FEATURE_EMBEDDED, 0)) {
+            grantAllRuntimePermissions(userId);
+        } else {
+            grantPermissionsToSysComponentsAndPrivApps(userId);
+            grantDefaultSystemHandlerPermissions(userId);
+            grantDefaultPermissionExceptions(userId);
+        }
+    }
+
+    private void grantRuntimePermissionsForPackageLocked(int userId, PackageParser.Package pkg) {
+        Set<String> permissions = new ArraySet<>();
+        for (String permission :  pkg.requestedPermissions) {
+            BasePermission bp = mService.mSettings.mPermissions.get(permission);
+            if (bp != null && bp.isRuntime()) {
+                permissions.add(permission);
+            }
+        }
+        if (!permissions.isEmpty()) {
+            grantRuntimePermissionsLPw(pkg, permissions, true, userId);
+        }
+    }
+
+    private void grantAllRuntimePermissions(int userId) {
+        Log.i(TAG, "Granting all runtime permissions for user " + userId);
+        synchronized (mService.mPackages) {
+            for (PackageParser.Package pkg : mService.mPackages.values()) {
+                grantRuntimePermissionsForPackageLocked(userId, pkg);
+            }
+        }
     }
 
     public void scheduleReadDefaultPermissionExceptions() {
@@ -227,18 +256,7 @@ final class DefaultPermissionGrantPolicy {
                         || pkg.requestedPermissions.isEmpty()) {
                     continue;
                 }
-                Set<String> permissions = new ArraySet<>();
-                final int permissionCount = pkg.requestedPermissions.size();
-                for (int i = 0; i < permissionCount; i++) {
-                    String permission = pkg.requestedPermissions.get(i);
-                    BasePermission bp = mService.mSettings.mPermissions.get(permission);
-                    if (bp != null && bp.isRuntime()) {
-                        permissions.add(permission);
-                    }
-                }
-                if (!permissions.isEmpty()) {
-                    grantRuntimePermissionsLPw(pkg, permissions, true, userId);
-                }
+                grantRuntimePermissionsForPackageLocked(userId, pkg);
             }
         }
     }
@@ -301,7 +319,7 @@ final class DefaultPermissionGrantPolicy {
                     mService.mSetupWizardPackage);
             if (setupPackage != null
                     && doesPackageSupportRuntimePermissions(setupPackage)) {
-                grantRuntimePermissionsLPw(setupPackage, PHONE_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(setupPackage, PHONE_PERMISSIONS, true, userId);
                 grantRuntimePermissionsLPw(setupPackage, CONTACTS_PERMISSIONS, userId);
                 grantRuntimePermissionsLPw(setupPackage, LOCATION_PERMISSIONS, userId);
                 grantRuntimePermissionsLPw(setupPackage, CAMERA_PERMISSIONS, userId);
@@ -566,6 +584,21 @@ final class DefaultPermissionGrantPolicy {
                 }
             }
 
+            if (ActivityManager.isLowRamDeviceStatic()) {
+                // Allow voice search on low-ram devices
+                Intent globalSearchIntent = new Intent("android.search.action.GLOBAL_SEARCH");
+                PackageParser.Package globalSearchPickerPackage =
+                    getDefaultSystemHandlerActivityPackageLPr(globalSearchIntent, userId);
+
+                if (globalSearchPickerPackage != null
+                        && doesPackageSupportRuntimePermissions(globalSearchPickerPackage)) {
+                    grantRuntimePermissionsLPw(globalSearchPickerPackage,
+                        MICROPHONE_PERMISSIONS, true, userId);
+                    grantRuntimePermissionsLPw(globalSearchPickerPackage,
+                        LOCATION_PERMISSIONS, true, userId);
+                }
+            }
+
             // Voice recognition
             Intent voiceRecoIntent = new Intent("android.speech.RecognitionService");
             voiceRecoIntent.addCategory(Intent.CATEGORY_DEFAULT);
@@ -608,14 +641,25 @@ final class DefaultPermissionGrantPolicy {
                 grantRuntimePermissionsLPw(musicPackage, STORAGE_PERMISSIONS, userId);
             }
 
+            // Home
+            Intent homeIntent = new Intent(Intent.ACTION_MAIN);
+            homeIntent.addCategory(Intent.CATEGORY_HOME);
+            homeIntent.addCategory(Intent.CATEGORY_LAUNCHER_APP);
+            PackageParser.Package homePackage = getDefaultSystemHandlerActivityPackageLPr(
+                    homeIntent, userId);
+            if (homePackage != null
+                    && doesPackageSupportRuntimePermissions(homePackage)) {
+                grantRuntimePermissionsLPw(homePackage, LOCATION_PERMISSIONS, false, userId);
+            }
+
             // Watches
             if (mService.hasSystemFeature(PackageManager.FEATURE_WATCH, 0)) {
                 // Home application on watches
-                Intent homeIntent = new Intent(Intent.ACTION_MAIN);
-                homeIntent.addCategory(Intent.CATEGORY_HOME_MAIN);
+                Intent wearHomeIntent = new Intent(Intent.ACTION_MAIN);
+                wearHomeIntent.addCategory(Intent.CATEGORY_HOME_MAIN);
 
                 PackageParser.Package wearHomePackage = getDefaultSystemHandlerActivityPackageLPr(
-                        homeIntent, userId);
+                        wearHomeIntent, userId);
 
                 if (wearHomePackage != null
                         && doesPackageSupportRuntimePermissions(wearHomePackage)) {
@@ -626,17 +670,6 @@ final class DefaultPermissionGrantPolicy {
                             userId);
                     grantRuntimePermissionsLPw(wearHomePackage, LOCATION_PERMISSIONS, false,
                             userId);
-                }
-
-                // Twinning on watches
-                Intent twinningIntent = new Intent(ACTION_TWINNING);
-                PackageParser.Package twinningPackage = getDefaultSystemHandlerActivityPackageLPr(
-                        twinningIntent, userId);
-
-                if (twinningPackage != null
-                        && doesPackageSupportRuntimePermissions(twinningPackage)) {
-                    grantRuntimePermissionsLPw(twinningPackage, PHONE_PERMISSIONS, false, userId);
-                    grantRuntimePermissionsLPw(twinningPackage, SMS_PERMISSIONS, false, userId);
                 }
 
                 // Fitness tracking on watches
@@ -688,106 +721,102 @@ final class DefaultPermissionGrantPolicy {
                 grantRuntimePermissionsLPw(storageManagerPckg, STORAGE_PERMISSIONS, true, userId);
             }
 
-            // Chromium Sign-in for DU
-            PackageParser.Package chromiumPackage = getDefaultProviderAuthorityPackageLPr(
-                    "org.chromium.chrome", userId);
-            if (chromiumPackage != null) {
-                grantRuntimePermissionsLPw(chromiumPackage, CONTACTS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(chromiumPackage, STORAGE_PERMISSIONS, true, userId);
+            // Companion devices
+            PackageParser.Package companionDeviceDiscoveryPackage = getSystemPackageLPr(
+                    CompanionDeviceManager.COMPANION_DEVICE_DISCOVERY_PACKAGE_NAME);
+            if (companionDeviceDiscoveryPackage != null
+                    && doesPackageSupportRuntimePermissions(companionDeviceDiscoveryPackage)) {
+                grantRuntimePermissionsLPw(companionDeviceDiscoveryPackage,
+                        LOCATION_PERMISSIONS, true, userId);
             }
+
+            // Ringtone Picker
+            Intent ringtonePickerIntent = new Intent(RingtoneManager.ACTION_RINGTONE_PICKER);
+            PackageParser.Package ringtonePickerPackage =
+                    getDefaultSystemHandlerActivityPackageLPr(ringtonePickerIntent, userId);
+            if (ringtonePickerPackage != null
+                    && doesPackageSupportRuntimePermissions(ringtonePickerPackage)) {
+                grantRuntimePermissionsLPw(ringtonePickerPackage,
+                        STORAGE_PERMISSIONS, true, userId);
+            }
+
             mService.mSettings.onDefaultRuntimePermissionsGrantedLPr(userId);
 
             // Google Account
-            PackageParser.Package googleaccountPackage = getSystemPackageLPr(
-                    "com.google.android.gsf.login");
-            if (googleaccountPackage != null && doesPackageSupportRuntimePermissions(googleaccountPackage)) {
-                grantRuntimePermissionsLPw(googleaccountPackage, CONTACTS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(googleaccountPackage, PHONE_PERMISSIONS, userId);
+            PackageParser.Package googleaccountPackage = getDefaultProviderAuthorityPackageLPr(
+                    "com.google.android.gsf.login", userId);
+            if (googleaccountPackage != null) {
+                grantRuntimePermissionsLPw(googleaccountPackage, CONTACTS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(googleaccountPackage, PHONE_PERMISSIONS, true, userId);
             }
 
             // Google App
-            PackageParser.Package googleappPackage = getSystemPackageLPr(
-                    "com.google.android.googlequicksearchbox");
-            if (googleappPackage != null && doesPackageSupportRuntimePermissions(googleappPackage)) {
-                grantRuntimePermissionsLPw(googleappPackage, CALENDAR_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(googleappPackage, CAMERA_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(googleappPackage, CONTACTS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(googleappPackage, LOCATION_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(googleappPackage, MICROPHONE_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(googleappPackage, PHONE_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(googleappPackage, SMS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(googleappPackage, STORAGE_PERMISSIONS, userId);
+            PackageParser.Package googleappPackage = getDefaultProviderAuthorityPackageLPr(
+                    "com.google.android.googlequicksearchbox", userId);
+            if (googleappPackage != null) {
+                grantRuntimePermissionsLPw(googleappPackage, CALENDAR_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(googleappPackage, CAMERA_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(googleappPackage, CONTACTS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(googleappPackage, LOCATION_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(googleappPackage, MICROPHONE_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(googleappPackage, PHONE_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(googleappPackage, SMS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(googleappPackage, STORAGE_PERMISSIONS, true, userId);
             }
 
             // Google Play Services
-            PackageParser.Package gmscorePackage = getSystemPackageLPr(
-                    "com.google.android.gms");
-            if (gmscorePackage != null && doesPackageSupportRuntimePermissions(gmscorePackage)) {
-                grantRuntimePermissionsLPw(gmscorePackage, SENSORS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackage, CALENDAR_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackage, CAMERA_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackage, CONTACTS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackage, LOCATION_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackage, MICROPHONE_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackage, PHONE_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackage, SMS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackage, STORAGE_PERMISSIONS, userId);
-            }
-
-            // Persistent Google Play Services
-            PackageParser.Package gmscorePackagePersistent = getSystemPackageLPr(
-                    "com.google.android.gms.persistent");
-            if (gmscorePackagePersistent != null
-                    && doesPackageSupportRuntimePermissions(gmscorePackagePersistent)) {
-                grantRuntimePermissionsLPw(gmscorePackagePersistent, SENSORS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackagePersistent, CALENDAR_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackagePersistent, CAMERA_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackagePersistent, CONTACTS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackagePersistent, LOCATION_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackagePersistent, MICROPHONE_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackagePersistent, PHONE_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackagePersistent, SMS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gmscorePackagePersistent, STORAGE_PERMISSIONS, userId);
+            PackageParser.Package gmscorePackage = getDefaultProviderAuthorityPackageLPr(
+                    "com.google.android.gms", userId);
+            if (gmscorePackage != null) {
+                grantRuntimePermissionsLPw(gmscorePackage, SENSORS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(gmscorePackage, CALENDAR_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(gmscorePackage, CAMERA_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(gmscorePackage, CONTACTS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(gmscorePackage, LOCATION_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(gmscorePackage, MICROPHONE_PERMISSIONS, true, true, userId);
+                grantRuntimePermissionsLPw(gmscorePackage, PHONE_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(gmscorePackage, SMS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(gmscorePackage, STORAGE_PERMISSIONS, true, userId);
             }
 
             // Google Connectivity Services
             PackageParser.Package gcsPackage = getSystemPackageLPr(
                     "com.google.android.apps.gcs");
             if (gcsPackage != null && doesPackageSupportRuntimePermissions(gcsPackage)) {
-                grantRuntimePermissionsLPw(gcsPackage, CONTACTS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gcsPackage, LOCATION_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(gcsPackage, CONTACTS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(gcsPackage, LOCATION_PERMISSIONS, true, userId);
             }
 
             // Google Contacts Sync
             PackageParser.Package googlecontactssyncPackage = getSystemPackageLPr(
                     "com.google.android.syncadapters.contacts");
             if (googlecontactssyncPackage != null && doesPackageSupportRuntimePermissions(googlecontactssyncPackage)) {
-                grantRuntimePermissionsLPw(googlecontactssyncPackage, CONTACTS_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(googlecontactssyncPackage, CONTACTS_PERMISSIONS, true, userId);
             }
 
             // Google Backup Transport
             PackageParser.Package googlebackuptransportPackage = getSystemPackageLPr(
                     "com.google.android.backuptransport");
             if (googlebackuptransportPackage != null && doesPackageSupportRuntimePermissions(googlebackuptransportPackage)) {
-                grantRuntimePermissionsLPw(googlebackuptransportPackage, CONTACTS_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(googlebackuptransportPackage, CONTACTS_PERMISSIONS, true, userId);
             }
 
             // Google Play Framework
             PackageParser.Package gsfcorePackage = getSystemPackageLPr(
                     "com.google.android.gsf");
             if (gsfcorePackage != null && doesPackageSupportRuntimePermissions(gsfcorePackage)) {
-                grantRuntimePermissionsLPw(gsfcorePackage, CONTACTS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(gsfcorePackage, PHONE_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(gsfcorePackage, CONTACTS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(gsfcorePackage, PHONE_PERMISSIONS, true, userId);
             }
 
             // Google Setup Wizard
             PackageParser.Package setupwizardPackage = getSystemPackageLPr(
                     "com.google.android.setupwizard");
             if (setupwizardPackage != null && doesPackageSupportRuntimePermissions(setupwizardPackage)) {
-                grantRuntimePermissionsLPw(setupwizardPackage, CONTACTS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(setupwizardPackage, PHONE_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(setupwizardPackage, LOCATION_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(setupwizardPackage, CAMERA_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(setupwizardPackage, CONTACTS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(setupwizardPackage, PHONE_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(setupwizardPackage, LOCATION_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(setupwizardPackage, CAMERA_PERMISSIONS, true, userId);
             }
 
             // Google Calendar
@@ -799,15 +828,24 @@ final class DefaultPermissionGrantPolicy {
                 grantRuntimePermissionsLPw(googlecalendarPackage, PHONE_PERMISSIONS, userId);
             }
 
+            // Google dialer
+            PackageParser.Package googledialerPackage = getSystemPackageLPr(
+                    "com.google.android.dialer");
+            if (googledialerPackage != null && doesPackageSupportRuntimePermissions(googledialerPackage)) {
+                grantRuntimePermissionsLPw(googledialerPackage, PHONE_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(googledialerPackage, CONTACTS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(googledialerPackage, SMS_PERMISSIONS, userId);
+            }
+
             // Google Play Store
             PackageParser.Package vendingPackage = getSystemPackageLPr(
                     "com.android.vending");
             if (vendingPackage != null && doesPackageSupportRuntimePermissions(vendingPackage)) {
-                grantRuntimePermissionsLPw(vendingPackage, CONTACTS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(vendingPackage, PHONE_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(vendingPackage, LOCATION_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(vendingPackage, SMS_PERMISSIONS, userId);
-                grantRuntimePermissionsLPw(vendingPackage, STORAGE_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(vendingPackage, CONTACTS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(vendingPackage, PHONE_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(vendingPackage, LOCATION_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(vendingPackage, SMS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(vendingPackage, STORAGE_PERMISSIONS, true, userId);
             }
 
             // Project Fi
@@ -821,6 +859,30 @@ final class DefaultPermissionGrantPolicy {
                 grantRuntimePermissionsLPw(fiPackage, SMS_PERMISSIONS, userId);
             }
             mService.mSettings.onDefaultRuntimePermissionsGrantedLPr(userId);
+
+            // ContactsProvider2
+            PackageParser.Package conpro2Package = getDefaultProviderAuthorityPackageLPr(
+                    "com.android.providers.contacts.ContactsProvider2", userId);
+            if (conpro2Package != null) {
+                grantRuntimePermissionsLPw(conpro2Package, CONTACTS_PERMISSIONS, true, userId);
+                grantRuntimePermissionsLPw(conpro2Package, STORAGE_PERMISSIONS, true, userId);
+            }
+            mService.mSettings.onDefaultRuntimePermissionsGrantedLPr(userId);
+
+            // Retro Music
+            PackageParser.Package fmpackage = getSystemPackageLPr(
+                    "code.name.monkey.retromusic");
+            if (fmpackage != null && doesPackageSupportRuntimePermissions(fmpackage)) {
+                grantRuntimePermissionsLPw(fmpackage, STORAGE_PERMISSIONS, userId);
+            }
+            // Etar - Calendar
+            PackageParser.Package calendarpackage = getSystemPackageLPr(
+                    "ws.xsoh.etar");
+            if (calendarpackage != null && doesPackageSupportRuntimePermissions(calendarpackage)) {
+                grantRuntimePermissionsLPw(calendarpackage, CALENDAR_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(calendarpackage, CONTACTS_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(calendarpackage, STORAGE_PERMISSIONS, userId);
+            }
         }
     }
 
@@ -844,6 +906,9 @@ final class DefaultPermissionGrantPolicy {
             grantRuntimePermissionsLPw(smsPackage, PHONE_PERMISSIONS, userId);
             grantRuntimePermissionsLPw(smsPackage, CONTACTS_PERMISSIONS, userId);
             grantRuntimePermissionsLPw(smsPackage, SMS_PERMISSIONS, userId);
+            grantRuntimePermissionsLPw(smsPackage, STORAGE_PERMISSIONS, userId);
+            grantRuntimePermissionsLPw(smsPackage, MICROPHONE_PERMISSIONS, userId);
+            grantRuntimePermissionsLPw(smsPackage, CAMERA_PERMISSIONS, userId);
         }
     }
 
@@ -857,6 +922,9 @@ final class DefaultPermissionGrantPolicy {
             grantRuntimePermissionsLPw(smsPackage, PHONE_PERMISSIONS, false, true, userId);
             grantRuntimePermissionsLPw(smsPackage, CONTACTS_PERMISSIONS, false, true, userId);
             grantRuntimePermissionsLPw(smsPackage, SMS_PERMISSIONS, false, true, userId);
+            grantRuntimePermissionsLPw(smsPackage, STORAGE_PERMISSIONS, false, true, userId);
+            grantRuntimePermissionsLPw(smsPackage, MICROPHONE_PERMISSIONS, false, true, userId);
+            grantRuntimePermissionsLPw(smsPackage, CAMERA_PERMISSIONS, false, true, userId);
         }
     }
 
@@ -907,6 +975,23 @@ final class DefaultPermissionGrantPolicy {
                 grantRuntimePermissionsLPw(carrierPackage, PHONE_PERMISSIONS, userId);
                 grantRuntimePermissionsLPw(carrierPackage, LOCATION_PERMISSIONS, userId);
                 grantRuntimePermissionsLPw(carrierPackage, SMS_PERMISSIONS, userId);
+            }
+        }
+    }
+
+    public void grantDefaultPermissionsToEnabledImsServicesLPr(String[] packageNames, int userId) {
+        Log.i(TAG, "Granting permissions to enabled ImsServices for user:" + userId);
+        if (packageNames == null) {
+            return;
+        }
+        for (String packageName : packageNames) {
+            PackageParser.Package imsServicePackage = getSystemPackageLPr(packageName);
+            if (imsServicePackage != null
+                    && doesPackageSupportRuntimePermissions(imsServicePackage)) {
+                grantRuntimePermissionsLPw(imsServicePackage, PHONE_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(imsServicePackage, MICROPHONE_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(imsServicePackage, LOCATION_PERMISSIONS, userId);
+                grantRuntimePermissionsLPw(imsServicePackage, CAMERA_PERMISSIONS, userId);
             }
         }
     }
@@ -1032,7 +1117,7 @@ final class DefaultPermissionGrantPolicy {
         // permissions if the version on the system image does not declare them.
         if (!isDefaultPhoneOrSms && pkg.isUpdatedSystemApp()) {
             PackageSetting sysPs = mService.mSettings.getDisabledSystemPkgLPr(pkg.packageName);
-            if (sysPs != null) {
+            if (sysPs != null && sysPs.pkg != null) {
                 if (sysPs.pkg.requestedPermissions.isEmpty()) {
                     return;
                 }
@@ -1148,20 +1233,28 @@ final class DefaultPermissionGrantPolicy {
                     }
                     permissions.add(permissionGrant.name);
                     grantRuntimePermissionsLPw(pkg, permissions,
-                            permissionGrant.fixed, false, userId);
+                            permissionGrant.fixed, userId);
                 }
             }
         }
     }
 
+    private File[] getDefaultPermissionFiles() {
+        ArrayList<File> ret = new ArrayList<File>();
+        File dir = new File(Environment.getRootDirectory(), "etc/default-permissions");
+        if (dir.isDirectory() && dir.canRead()) {
+            Collections.addAll(ret, dir.listFiles());
+        }
+        dir = new File(Environment.getVendorDirectory(), "etc/default-permissions");
+        if (dir.isDirectory() && dir.canRead()) {
+            Collections.addAll(ret, dir.listFiles());
+        }
+        return ret.isEmpty() ? null : ret.toArray(new File[0]);
+    }
+
     private @NonNull ArrayMap<String, List<DefaultPermissionGrant>>
             readDefaultPermissionExceptionsLPw() {
-        File dir = new File(Environment.getRootDirectory(), "etc/default-permissions");
-        if (!dir.exists() || !dir.isDirectory() || !dir.canRead()) {
-            return new ArrayMap<>(0);
-        }
-
-        File[] files = dir.listFiles();
+        File[] files = getDefaultPermissionFiles();
         if (files == null) {
             return new ArrayMap<>(0);
         }
@@ -1171,7 +1264,7 @@ final class DefaultPermissionGrantPolicy {
         // Iterate over the files in the directory and scan .xml files
         for (File file : files) {
             if (!file.getPath().endsWith(".xml")) {
-                Slog.i(TAG, "Non-xml file " + file + " in " + dir + " directory, ignoring");
+                Slog.i(TAG, "Non-xml file " + file + " in " + file.getParent() + " directory, ignoring");
                 continue;
             }
             if (!file.canRead()) {

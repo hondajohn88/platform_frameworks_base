@@ -16,8 +16,6 @@
 
 package com.android.systemui.statusbar.policy;
 
-import android.annotation.DrawableRes;
-import android.annotation.Nullable;
 import android.app.ActivityManager;
 import android.content.Context;
 import android.content.res.Configuration;
@@ -26,6 +24,7 @@ import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.hardware.input.InputManager;
 import android.media.AudioManager;
+import android.metrics.LogMaker;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -43,21 +42,19 @@ import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.ImageView;
 
+import com.android.internal.logging.MetricsLogger;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
+import com.android.systemui.Dependency;
 import com.android.systemui.R;
-import com.android.systemui.statusbar.phone.ButtonDispatcher;
-
-import cyanogenmod.power.PerformanceManager;
+import com.android.systemui.plugins.statusbar.phone.NavBarButtonProvider.ButtonInterface;
 
 import static android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK;
 import static android.view.accessibility.AccessibilityNodeInfo.ACTION_LONG_CLICK;
 
-public class KeyButtonView extends ImageView implements ButtonDispatcher.ButtonInterface {
+public class KeyButtonView extends ImageView implements ButtonInterface {
 
+    private final boolean mPlaySounds;
     private int mContentDescriptionRes;
-
-    public static final int CURSOR_REPEAT_FLAGS = KeyEvent.FLAG_SOFT_KEYBOARD
-            | KeyEvent.FLAG_KEEP_TOUCH_MODE;
-
     private long mDownTime;
     private int mCode;
     private int mTouchSlop;
@@ -66,26 +63,20 @@ public class KeyButtonView extends ImageView implements ButtonDispatcher.ButtonI
     private boolean mGestureAborted;
     private boolean mLongClicked;
     private OnClickListener mOnClickListener;
-
-    private PerformanceManager mPerf;
+    private final KeyButtonRipple mRipple;
+    private final MetricsLogger mMetricsLogger = Dependency.get(MetricsLogger.class);
 
     private final Runnable mCheckLongPress = new Runnable() {
         public void run() {
             if (isPressed()) {
                 // Log.d("KeyButtonView", "longpressed: " + this);
-                if (mCode == KeyEvent.KEYCODE_DPAD_LEFT || mCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                    sendEvent(KeyEvent.ACTION_UP, CURSOR_REPEAT_FLAGS,
-                            System.currentTimeMillis(), false);
-                    sendEvent(KeyEvent.ACTION_DOWN, CURSOR_REPEAT_FLAGS,
-                            System.currentTimeMillis(), false);
-                    postDelayed(mCheckLongPress, ViewConfiguration.getKeyRepeatDelay());
-                } else if (mCode != 0) {
-                    sendEvent(KeyEvent.ACTION_DOWN, KeyEvent.FLAG_LONG_PRESS);
-                    sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_LONG_CLICKED);
-                    mLongClicked = true;
-                } else if (isLongClickable()) {
+                if (isLongClickable()) {
                     // Just an old-fashioned ImageView
                     performLongClick();
+                    mLongClicked = true;
+                } else if (mSupportsLongpress) {
+                    sendEvent(KeyEvent.ACTION_DOWN, KeyEvent.FLAG_LONG_PRESS);
+                    sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_LONG_CLICKED);
                     mLongClicked = true;
                 }
             }
@@ -105,6 +96,7 @@ public class KeyButtonView extends ImageView implements ButtonDispatcher.ButtonI
         mCode = a.getInteger(R.styleable.KeyButtonView_keyCode, 0);
 
         mSupportsLongpress = a.getBoolean(R.styleable.KeyButtonView_keyRepeat, true);
+        mPlaySounds = a.getBoolean(R.styleable.KeyButtonView_playSound, true);
 
         TypedValue value = new TypedValue();
         if (a.getValue(R.styleable.KeyButtonView_android_contentDescription, value)) {
@@ -113,12 +105,17 @@ public class KeyButtonView extends ImageView implements ButtonDispatcher.ButtonI
 
         a.recycle();
 
-
         setClickable(true);
         mTouchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
         mAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-        setBackground(new KeyButtonRipple(context, this));
-        mPerf = PerformanceManager.getInstance(context);
+
+        mRipple = new KeyButtonRipple(context, this);
+        setBackground(mRipple);
+    }
+
+    @Override
+    public boolean isClickable() {
+        return mCode != 0 || super.isClickable();
     }
 
     public void setCode(int code) {
@@ -131,18 +128,18 @@ public class KeyButtonView extends ImageView implements ButtonDispatcher.ButtonI
         mOnClickListener = onClickListener;
     }
 
-    public void loadAsync(String uri) {
-        new AsyncTask<String, Void, Drawable>() {
+    public void loadAsync(Icon icon) {
+        new AsyncTask<Icon, Void, Drawable>() {
             @Override
-            protected Drawable doInBackground(String... params) {
-                return Icon.createWithContentUri(params[0]).loadDrawable(mContext);
+            protected Drawable doInBackground(Icon... params) {
+                return params[0].loadDrawable(mContext);
             }
 
             @Override
             protected void onPostExecute(Drawable drawable) {
                 setImageDrawable(drawable);
             }
-        }.execute(uri);
+        }.execute(icon);
     }
 
     @Override
@@ -201,18 +198,12 @@ public class KeyButtonView extends ImageView implements ButtonDispatcher.ButtonI
             return false;
         }
 
-        // A lot of stuff is about to happen. Lets get ready.
-        mPerf.cpuBoost(750000);
-
         switch (action) {
             case MotionEvent.ACTION_DOWN:
                 mDownTime = SystemClock.uptimeMillis();
                 mLongClicked = false;
                 setPressed(true);
-                if (mCode == KeyEvent.KEYCODE_DPAD_LEFT || mCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                    sendEvent(KeyEvent.ACTION_DOWN, KeyEvent.FLAG_VIRTUAL_HARD_KEY
-                            | KeyEvent.FLAG_KEEP_TOUCH_MODE, mDownTime, false);
-                } else if (mCode != 0) {
+                if (mCode != 0) {
                     sendEvent(KeyEvent.ACTION_DOWN, 0, mDownTime);
                 } else {
                     // Provide the same haptic feedback that the system offers for virtual keys.
@@ -223,8 +214,8 @@ public class KeyButtonView extends ImageView implements ButtonDispatcher.ButtonI
                 postDelayed(mCheckLongPress, ViewConfiguration.getLongPressTimeout());
                 break;
             case MotionEvent.ACTION_MOVE:
-                x = (int) ev.getX();
-                y = (int) ev.getY();
+                x = (int)ev.getX();
+                y = (int)ev.getY();
                 setPressed(x >= -mTouchSlop
                         && x < getWidth() + mTouchSlop
                         && y >= -mTouchSlop
@@ -240,6 +231,11 @@ public class KeyButtonView extends ImageView implements ButtonDispatcher.ButtonI
             case MotionEvent.ACTION_UP:
                 final boolean doIt = isPressed() && !mLongClicked;
                 setPressed(false);
+                // Always send a release ourselves because it doesn't seem to be sent elsewhere
+                // and it feels weird to sometimes get a release haptic and other times not.
+                if ((SystemClock.uptimeMillis() - mDownTime) > 150 && !mLongClicked) {
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY_RELEASE);
+                }
                 if (mCode != 0) {
                     if (doIt) {
                         sendEvent(KeyEvent.ACTION_UP, 0);
@@ -262,26 +258,25 @@ public class KeyButtonView extends ImageView implements ButtonDispatcher.ButtonI
     }
 
     public void playSoundEffect(int soundConstant) {
+        if (!mPlaySounds) return;
         mAudioManager.playSoundEffect(soundConstant, ActivityManager.getCurrentUser());
-    };
+    }
 
     public void sendEvent(int action, int flags) {
         sendEvent(action, flags, SystemClock.uptimeMillis());
     }
 
     void sendEvent(int action, int flags, long when) {
-        sendEvent(action, flags, when, true);
-    }
-
-    void sendEvent(int action, int flags, long when, boolean applyDefaultFlags) {
+        mMetricsLogger.write(new LogMaker(MetricsEvent.ACTION_NAV_BUTTON_EVENT)
+                .setType(MetricsEvent.TYPE_ACTION)
+                .setSubtype(mCode)
+                .addTaggedData(MetricsEvent.FIELD_NAV_ACTION, action)
+                .addTaggedData(MetricsEvent.FIELD_FLAGS, flags));
         final int repeatCount = (flags & KeyEvent.FLAG_LONG_PRESS) != 0 ? 1 : 0;
-        if (applyDefaultFlags) {
-            flags |= KeyEvent.FLAG_FROM_SYSTEM | KeyEvent.FLAG_VIRTUAL_HARD_KEY;
-        }
         final KeyEvent ev = new KeyEvent(mDownTime, when, action, mCode, repeatCount,
                 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
-                flags,
-                InputDevice.SOURCE_KEYBOARD);
+                flags | KeyEvent.FLAG_FROM_SYSTEM | KeyEvent.FLAG_VIRTUAL_HARD_KEY,
+                InputDevice.SOURCE_NAVIGATION_BAR);
         InputManager.getInstance().injectInputEvent(ev,
                 InputManager.INJECT_INPUT_EVENT_MODE_ASYNC);
     }
@@ -293,23 +288,21 @@ public class KeyButtonView extends ImageView implements ButtonDispatcher.ButtonI
     }
 
     @Override
-    public void setImageResource(@DrawableRes int resId) {
-        super.setImageResource(resId);
-    }
+    public void setDarkIntensity(float darkIntensity) {
+        Drawable drawable = getDrawable();
+        if (drawable != null) {
+            ((KeyButtonDrawable) getDrawable()).setDarkIntensity(darkIntensity);
 
-    @Override
-    public void setImageDrawable(@Nullable Drawable drawable) {
-        super.setImageDrawable(drawable);
+            // Since we reuse the same drawable for multiple views, we need to invalidate the view
+            // manually.
+            invalidate();
+        }
+        mRipple.setDarkIntensity(darkIntensity);
     }
 
     @Override
     public void setVertical(boolean vertical) {
         //no op
-    }
-
-    @Override
-    public void setCarMode(boolean carMode) {
-        // no op
     }
 }
 

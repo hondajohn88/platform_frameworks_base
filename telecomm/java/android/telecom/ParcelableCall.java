@@ -39,7 +39,6 @@ public final class ParcelableCall implements Parcelable {
     private final List<String> mCannedSmsResponses;
     private final int mCapabilities;
     private final int mProperties;
-    private final long mCreateTimeMillis;
     private final int mSupportedAudioRoutes;
     private final long mConnectTimeMillis;
     private final Uri mHandle;
@@ -51,6 +50,8 @@ public final class ParcelableCall implements Parcelable {
     private final boolean mIsVideoCallProviderChanged;
     private final IVideoProvider mVideoCallProvider;
     private VideoCallImpl mVideoCall;
+    private final boolean mIsRttCallChanged;
+    private final ParcelableRttCall mRttCall;
     private final String mParentCallId;
     private final List<String> mChildCallIds;
     private final StatusHints mStatusHints;
@@ -58,6 +59,7 @@ public final class ParcelableCall implements Parcelable {
     private final List<String> mConferenceableCallIds;
     private final Bundle mIntentExtras;
     private final Bundle mExtras;
+    private final long mCreationTimeMillis;
 
     public ParcelableCall(
             String id,
@@ -66,7 +68,6 @@ public final class ParcelableCall implements Parcelable {
             List<String> cannedSmsResponses,
             int capabilities,
             int properties,
-            long createTimeMillis,
             int supportedAudioRoutes,
             long connectTimeMillis,
             Uri handle,
@@ -77,20 +78,22 @@ public final class ParcelableCall implements Parcelable {
             PhoneAccountHandle accountHandle,
             boolean isVideoCallProviderChanged,
             IVideoProvider videoCallProvider,
+            boolean isRttCallChanged,
+            ParcelableRttCall rttCall,
             String parentCallId,
             List<String> childCallIds,
             StatusHints statusHints,
             int videoState,
             List<String> conferenceableCallIds,
             Bundle intentExtras,
-            Bundle extras) {
+            Bundle extras,
+            long creationTimeMillis) {
         mId = id;
         mState = state;
         mDisconnectCause = disconnectCause;
         mCannedSmsResponses = cannedSmsResponses;
         mCapabilities = capabilities;
         mProperties = properties;
-        mCreateTimeMillis = createTimeMillis;
         mSupportedAudioRoutes = supportedAudioRoutes;
         mConnectTimeMillis = connectTimeMillis;
         mHandle = handle;
@@ -101,6 +104,8 @@ public final class ParcelableCall implements Parcelable {
         mAccountHandle = accountHandle;
         mIsVideoCallProviderChanged = isVideoCallProviderChanged;
         mVideoCallProvider = videoCallProvider;
+        mIsRttCallChanged = isRttCallChanged;
+        mRttCall = rttCall;
         mParentCallId = parentCallId;
         mChildCallIds = childCallIds;
         mStatusHints = statusHints;
@@ -108,6 +113,7 @@ public final class ParcelableCall implements Parcelable {
         mConferenceableCallIds = Collections.unmodifiableList(conferenceableCallIds);
         mIntentExtras = intentExtras;
         mExtras = extras;
+        mCreationTimeMillis = creationTimeMillis;
     }
 
     /** The unique ID of the call. */
@@ -142,11 +148,6 @@ public final class ParcelableCall implements Parcelable {
 
     /** Bitmask of properties of the call. */
     public int getProperties() { return mProperties; }
-
-    /** The time that the call object was created */
-    public long getCreateTimeMillis() {
-        return mCreateTimeMillis;
-    }
 
     /** Bitmask of supported routes of the call */
     public int getSupportedAudioRoutes() {
@@ -195,19 +196,34 @@ public final class ParcelableCall implements Parcelable {
 
     /**
      * Returns an object for remotely communicating through the video call provider's binder.
-
+     *
+     * @param callingPackageName the package name of the calling InCallService.
+     * @param targetSdkVersion the target SDK version of the calling InCallService.
      * @return The video call.
      */
-    public VideoCallImpl getVideoCallImpl() {
+    public VideoCallImpl getVideoCallImpl(String callingPackageName, int targetSdkVersion) {
         if (mVideoCall == null && mVideoCallProvider != null) {
             try {
-                mVideoCall = new VideoCallImpl(mVideoCallProvider);
+                mVideoCall = new VideoCallImpl(mVideoCallProvider, callingPackageName,
+                        targetSdkVersion);
             } catch (RemoteException ignored) {
                 // Ignore RemoteException.
             }
         }
 
         return mVideoCall;
+    }
+
+    public boolean getIsRttCallChanged() {
+        return mIsRttCallChanged;
+    }
+
+    /**
+     * RTT communication channel information
+     * @return The ParcelableRttCall
+     */
+    public ParcelableRttCall getParcelableRttCall() {
+        return mRttCall;
     }
 
     /**
@@ -276,6 +292,13 @@ public final class ParcelableCall implements Parcelable {
         return mIsVideoCallProviderChanged;
     }
 
+    /**
+     * @return The time the call was created, in milliseconds since the epoch.
+     */
+    public long getCreationTimeMillis() {
+        return mCreationTimeMillis;
+    }
+
     /** Responsible for creating ParcelableCall objects for deserialized Parcels. */
     public static final Parcelable.Creator<ParcelableCall> CREATOR =
             new Parcelable.Creator<ParcelableCall> () {
@@ -289,7 +312,6 @@ public final class ParcelableCall implements Parcelable {
             source.readList(cannedSmsResponses, classLoader);
             int capabilities = source.readInt();
             int properties = source.readInt();
-            long createTimeMillis = source.readLong();
             long connectTimeMillis = source.readLong();
             Uri handle = source.readParcelable(classLoader);
             int handlePresentation = source.readInt();
@@ -310,6 +332,9 @@ public final class ParcelableCall implements Parcelable {
             Bundle intentExtras = source.readBundle(classLoader);
             Bundle extras = source.readBundle(classLoader);
             int supportedAudioRoutes = source.readInt();
+            boolean isRttCallChanged = source.readByte() == 1;
+            ParcelableRttCall rttCall = source.readParcelable(classLoader);
+            long creationTimeMillis = source.readLong();
             return new ParcelableCall(
                     id,
                     state,
@@ -317,7 +342,6 @@ public final class ParcelableCall implements Parcelable {
                     cannedSmsResponses,
                     capabilities,
                     properties,
-                    createTimeMillis,
                     supportedAudioRoutes,
                     connectTimeMillis,
                     handle,
@@ -328,13 +352,16 @@ public final class ParcelableCall implements Parcelable {
                     accountHandle,
                     isVideoCallProviderChanged,
                     videoCallProvider,
+                    isRttCallChanged,
+                    rttCall,
                     parentCallId,
                     childCallIds,
                     statusHints,
                     videoState,
                     conferenceableCallIds,
                     intentExtras,
-                    extras);
+                    extras,
+                    creationTimeMillis);
         }
 
         @Override
@@ -358,7 +385,6 @@ public final class ParcelableCall implements Parcelable {
         destination.writeList(mCannedSmsResponses);
         destination.writeInt(mCapabilities);
         destination.writeInt(mProperties);
-        destination.writeLong(mCreateTimeMillis);
         destination.writeLong(mConnectTimeMillis);
         destination.writeParcelable(mHandle, 0);
         destination.writeInt(mHandlePresentation);
@@ -377,6 +403,9 @@ public final class ParcelableCall implements Parcelable {
         destination.writeBundle(mIntentExtras);
         destination.writeBundle(mExtras);
         destination.writeInt(mSupportedAudioRoutes);
+        destination.writeByte((byte) (mIsRttCallChanged ? 1 : 0));
+        destination.writeParcelable(mRttCall, 0);
+        destination.writeLong(mCreationTimeMillis);
     }
 
     @Override

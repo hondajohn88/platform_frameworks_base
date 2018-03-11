@@ -16,7 +16,10 @@
 
 package android.telephony;
 
+import android.annotation.Nullable;
 import android.content.Context;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -29,6 +32,8 @@ import android.os.Build;
 import android.os.Parcel;
 import android.os.Parcelable;
 import android.util.DisplayMetrics;
+
+import java.util.Arrays;
 
 /**
  * A Parcelable class for Subscription Information.
@@ -110,16 +115,34 @@ public class SubscriptionInfo implements Parcelable {
     private String mCountryIso;
 
     /**
-     * @hide
+     * Whether the subscription is an embedded one.
      */
-    public int mUserNwMode;
+    private boolean mIsEmbedded;
+
+    /**
+     * The access rules for this subscription, if it is embedded and defines any.
+     */
+    @Nullable
+    private UiccAccessRule[] mAccessRules;
 
     /**
      * @hide
      */
     public SubscriptionInfo(int id, String iccId, int simSlotIndex, CharSequence displayName,
             CharSequence carrierName, int nameSource, int iconTint, String number, int roaming,
-            Bitmap icon, int mcc, int mnc, String countryIso, int userNwMode) {
+            Bitmap icon, int mcc, int mnc, String countryIso) {
+        this(id, iccId, simSlotIndex, displayName, carrierName, nameSource, iconTint, number,
+                roaming, icon, mcc, mnc, countryIso, false /* isEmbedded */,
+                null /* accessRules */);
+    }
+
+    /**
+     * @hide
+     */
+    public SubscriptionInfo(int id, String iccId, int simSlotIndex, CharSequence displayName,
+            CharSequence carrierName, int nameSource, int iconTint, String number, int roaming,
+            Bitmap icon, int mcc, int mnc, String countryIso, boolean isEmbedded,
+            @Nullable UiccAccessRule[] accessRules) {
         this.mId = id;
         this.mIccId = iccId;
         this.mSimSlotIndex = simSlotIndex;
@@ -133,7 +156,8 @@ public class SubscriptionInfo implements Parcelable {
         this.mMcc = mcc;
         this.mMnc = mnc;
         this.mCountryIso = countryIso;
-        this.mUserNwMode = userNwMode;
+        this.mIsEmbedded = isEmbedded;
+        this.mAccessRules = accessRules;
     }
 
     /**
@@ -232,11 +256,7 @@ public class SubscriptionInfo implements Parcelable {
         paint.getTextBounds(index, 0, 1, textBound);
         final float xOffset = (width / 2.f) - textBound.centerX();
         final float yOffset = (height / 2.f) - textBound.centerY();
-        // check for Custom sim icon feature
-        if (!context.getResources().getBoolean(
-                com.android.internal.R.bool.operator_custom_sim_icon)) {
-            canvas.drawText(index, xOffset, yOffset, paint);
-        }
+        canvas.drawText(index, xOffset, yOffset, paint);
 
         return workingBitmap;
     }
@@ -295,11 +315,76 @@ public class SubscriptionInfo implements Parcelable {
     }
 
     /**
-     * Returns the user set network mode.
+     * @return whether the subscription is an embedded one.
+     * @hide
+     *
+     * TODO(b/35851809): Make this public.
+     */
+    public boolean isEmbedded() {
+        return this.mIsEmbedded;
+    }
+
+    /**
+     * Checks whether the app with the given context is authorized to manage this subscription
+     * according to its metadata. Only supported for embedded subscriptions (if {@link #isEmbedded}
+     * returns true).
+     *
+     * @param context Context of the application to check.
+     * @return whether the app is authorized to manage this subscription per its metadata.
+     * @throws UnsupportedOperationException if this subscription is not embedded.
+     * @hide
+     *
+     * TODO(b/35851809): Make this public.
+     */
+    public boolean canManageSubscription(Context context) {
+        return canManageSubscription(context, context.getPackageName());
+    }
+
+    /**
+     * Checks whether the given app is authorized to manage this subscription according to its
+     * metadata. Only supported for embedded subscriptions (if {@link #isEmbedded} returns true).
+     *
+     * @param context Any context.
+     * @param packageName Package name of the app to check.
+     * @return whether the app is authorized to manage this subscription per its metadata.
+     * @throws UnsupportedOperationException if this subscription is not embedded.
      * @hide
      */
-    public int getUserNwMode() {
-        return this.mUserNwMode;
+    public boolean canManageSubscription(Context context, String packageName) {
+        if (!isEmbedded()) {
+            throw new UnsupportedOperationException("Not an embedded subscription");
+        }
+        if (mAccessRules == null) {
+            return false;
+        }
+        PackageManager packageManager = context.getPackageManager();
+        PackageInfo packageInfo;
+        try {
+            packageInfo = packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNATURES);
+        } catch (PackageManager.NameNotFoundException e) {
+            throw new IllegalArgumentException("Unknown package: " + packageName, e);
+        }
+        for (UiccAccessRule rule : mAccessRules) {
+            if (rule.getCarrierPrivilegeStatus(packageInfo)
+                    == TelephonyManager.CARRIER_PRIVILEGE_STATUS_HAS_ACCESS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return the {@link UiccAccessRule}s dictating who is authorized to manage this subscription.
+     * @throws UnsupportedOperationException if this subscription is not embedded.
+     * @hide
+     *
+     * TODO(b/35851809): Make this a SystemApi.
+     */
+    public @Nullable UiccAccessRule[] getAccessRules() {
+        if (!isEmbedded()) {
+            throw new UnsupportedOperationException("Not an embedded subscription");
+        }
+        return mAccessRules;
     }
 
     public static final Parcelable.Creator<SubscriptionInfo> CREATOR = new Parcelable.Creator<SubscriptionInfo>() {
@@ -316,12 +401,14 @@ public class SubscriptionInfo implements Parcelable {
             int dataRoaming = source.readInt();
             int mcc = source.readInt();
             int mnc = source.readInt();
-            int userNwMode = source.readInt();
             String countryIso = source.readString();
             Bitmap iconBitmap = Bitmap.CREATOR.createFromParcel(source);
+            boolean isEmbedded = source.readBoolean();
+            UiccAccessRule[] accessRules = source.createTypedArray(UiccAccessRule.CREATOR);
 
             return new SubscriptionInfo(id, iccId, simSlotIndex, displayName, carrierName,
-                    nameSource, iconTint, number, dataRoaming, iconBitmap, mcc, mnc, countryIso, userNwMode);
+                    nameSource, iconTint, number, dataRoaming, iconBitmap, mcc, mnc, countryIso,
+                    isEmbedded, accessRules);
         }
 
         @Override
@@ -343,9 +430,10 @@ public class SubscriptionInfo implements Parcelable {
         dest.writeInt(mDataRoaming);
         dest.writeInt(mMcc);
         dest.writeInt(mMnc);
-        dest.writeInt(mUserNwMode);
         dest.writeString(mCountryIso);
         mIconBitmap.writeToParcel(dest, flags);
+        dest.writeBoolean(mIsEmbedded);
+        dest.writeTypedArray(mAccessRules, flags);
     }
 
     @Override
@@ -375,6 +463,7 @@ public class SubscriptionInfo implements Parcelable {
                 + " displayName=" + mDisplayName + " carrierName=" + mCarrierName
                 + " nameSource=" + mNameSource + " iconTint=" + mIconTint
                 + " dataRoaming=" + mDataRoaming + " iconBitmap=" + mIconBitmap + " mcc " + mMcc
-                + " mnc " + mMnc + " userNwMode=" + mUserNwMode + "}";
+                + " mnc " + mMnc + " isEmbedded " + mIsEmbedded
+                + " accessRules " + Arrays.toString(mAccessRules) + "}";
     }
 }

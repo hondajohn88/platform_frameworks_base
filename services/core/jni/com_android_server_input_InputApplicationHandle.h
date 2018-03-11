@@ -19,14 +19,14 @@
 
 #include <inputflinger/InputApplication.h>
 
-#include "JNIHelp.h"
+#include <nativehelper/JNIHelp.h>
 #include "jni.h"
 
 namespace android {
 
 class NativeInputApplicationHandle : public InputApplicationHandle {
 public:
-    NativeInputApplicationHandle(jweak objWeak);
+    explicit NativeInputApplicationHandle(jweak objWeak);
     virtual ~NativeInputApplicationHandle();
 
     jobject getInputApplicationHandleObjLocalRef(JNIEnv* env);

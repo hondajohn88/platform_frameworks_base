@@ -5,6 +5,10 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := services
+LOCAL_DEX_PREOPT_APP_IMAGE := true
+LOCAL_DEX_PREOPT_GENERATE_PROFILE := true
+LOCAL_DEX_PREOPT_PROFILE_CLASS_LISTING := $(LOCAL_PATH)/art-profile
+LOCAL_REQUIRED_MODULES := projekt.substratum.theme.xml
 
 LOCAL_SRC_FILES := $(call all-java-files-under,java)
 
@@ -22,21 +26,30 @@ services := \
     core \
     accessibility \
     appwidget \
+    autofill \
     backup \
+    companion \
+    coverage\
     devicepolicy \
     midi \
     net \
     print \
     restrictions \
-    retaildemo \
     usage \
     usb \
     voiceinteraction
 
 # The convention is to name each service module 'services.$(module_name)'
-LOCAL_STATIC_JAVA_LIBRARIES := $(addprefix services.,$(services))
+LOCAL_STATIC_JAVA_LIBRARIES := $(addprefix services.,$(services)) \
+    android.hidl.base-V1.0-java-static \
+    android.hardware.biometrics.fingerprint-V2.1-java-static
 
-LOCAL_JAVA_LIBRARIES += org.cyanogenmod.platform.internal
+LOCAL_JAVA_LIBRARIES := \
+    android.hidl.manager-V1.0-java
+
+ifeq ($(EMMA_INSTRUMENT_FRAMEWORK),true)
+LOCAL_EMMA_INSTRUMENT := true
+endif
 
 include $(BUILD_JAVA_LIBRARY)
 

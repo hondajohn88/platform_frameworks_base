@@ -57,22 +57,26 @@ public class Media extends BaseCommand {
         (new Media()).run(args);
     }
 
+    @Override
     public void onShowUsage(PrintStream out) {
         out.println(
                 "usage: media [subcommand] [options]\n" +
                 "       media dispatch KEY\n" +
                 "       media list-sessions\n" +
                 "       media monitor <tag>\n" +
+                "       media volume [options]\n" +
                 "\n" +
                 "media dispatch: dispatch a media key to the system.\n" +
                 "                KEY may be: play, pause, play-pause, mute, headsethook,\n" +
                 "                stop, next, previous, rewind, record, fast-forword.\n" +
                 "media list-sessions: print a list of the current sessions.\n" +
                         "media monitor: monitor updates to the specified session.\n" +
-                "                       Use the tag from list-sessions.\n"
+                "                       Use the tag from list-sessions.\n" +
+                "media volume:  " + VolumeCtrl.USAGE
         );
     }
 
+    @Override
     public void onRun() throws Exception {
         mSessionService = ISessionManager.Stub.asInterface(ServiceManager.checkService(
                 Context.MEDIA_SESSION_SERVICE));
@@ -90,6 +94,8 @@ public class Media extends BaseCommand {
             runListSessions();
         } else if (op.equals("monitor")) {
             runMonitor();
+        } else if (op.equals("volume")) {
+            runVolume();
         } else {
             showError("Error: unknown command '" + op + "'");
             return;
@@ -222,26 +228,6 @@ public class Media extends BaseCommand {
             System.out.println("onVolumeInfoChanged " + info);
         }
 
-        @Override
-        public void onPlayItemResponse(boolean success) throws RemoteException {
-            System.out.println("onPlayItemResponse ");
-        }
-
-        @Override
-        public void onUpdateNowPlayingEntries(long[] playList) throws RemoteException {
-            System.out.println("onUpdateNowPlayingEntries ");
-        }
-
-        @Override
-        public void onUpdateFolderInfoBrowsedPlayer(String stringUri) throws RemoteException {
-            System.out.println("onUpdateFolderInfoBrowsedPlayer ");
-        }
-
-        @Override
-        public void onUpdateNowPlayingContentChange() throws RemoteException {
-            System.out.println("onUpdateNowPlayingContentChange ");
-        }
-
         void printUsageMessage() {
             try {
                 System.out.println("V2Monitoring session " + mController.getTag()
@@ -329,5 +315,11 @@ public class Media extends BaseCommand {
         } catch (Exception e) {
             System.out.println("***Error listing sessions***");
         }
+    }
+
+    //=================================
+    // "volume" command for stream volume control
+    private void runVolume() throws Exception {
+        VolumeCtrl.run(this);
     }
 }

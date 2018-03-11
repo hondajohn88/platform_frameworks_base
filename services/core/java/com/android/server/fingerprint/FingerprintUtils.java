@@ -18,9 +18,6 @@ package com.android.server.fingerprint;
 
 import android.content.Context;
 import android.hardware.fingerprint.Fingerprint;
-import android.os.UserHandle;
-import android.os.Vibrator;
-import android.provider.Settings;
 import android.text.TextUtils;
 import android.util.SparseArray;
 
@@ -32,9 +29,6 @@ import java.util.List;
  * Utility class for dealing with fingerprints and fingerprint settings.
  */
 public class FingerprintUtils {
-
-    private static final long[] FP_ERROR_VIBRATE_PATTERN = new long[] {0, 30, 100, 30};
-    private static final long[] FP_SUCCESS_VIBRATE_PATTERN = new long[] {0, 30};
 
     private static final Object sInstanceLock = new Object();
     private static FingerprintUtils sInstance;
@@ -72,22 +66,6 @@ public class FingerprintUtils {
             return;
         }
         getStateForUser(ctx, userId).renameFingerprint(fingerId, name);
-    }
-
-    public static void vibrateFingerprintError(Context context) {
-        Vibrator vibrator = context.getSystemService(Vibrator.class);
-        if (vibrator != null) {
-            vibrator.vibrate(FP_ERROR_VIBRATE_PATTERN, -1);
-        }
-    }
-
-    public static void vibrateFingerprintSuccess(Context context) {
-        Vibrator vibrator = context.getSystemService(Vibrator.class);
-        boolean FingerprintVib = Settings.System.getIntForUser(context.getContentResolver(),
-            Settings.System.FINGERPRINT_SUCCESS_VIB, 1, UserHandle.USER_CURRENT) == 1;
-        if (vibrator != null && FingerprintVib) {
-            vibrator.vibrate(FP_SUCCESS_VIBRATE_PATTERN, -1);
-        }
     }
 
     private FingerprintsUserState getStateForUser(Context ctx, int userId) {

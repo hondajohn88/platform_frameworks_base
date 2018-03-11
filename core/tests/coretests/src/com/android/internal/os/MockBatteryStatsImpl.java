@@ -16,36 +16,49 @@
 
 package com.android.internal.os;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.util.ArrayList;
-
-import android.os.BatteryStats;
-import android.os.Parcel;
-import android.test.suitebuilder.annotation.SmallTest;
-import android.util.Log;
-
-import junit.framework.Assert;
-import junit.framework.TestCase;
-
-import com.android.internal.os.BatteryStatsImpl;
-
-import org.mockito.Mockito;
-
 /**
  * Mocks a BatteryStatsImpl object.
  */
 public class MockBatteryStatsImpl extends BatteryStatsImpl {
     public BatteryStatsImpl.Clocks clocks;
+    public boolean mForceOnBattery;
+
+    MockBatteryStatsImpl(Clocks clocks) {
+        super(clocks);
+        this.clocks = mClocks;
+        mScreenOnTimer = new BatteryStatsImpl.StopwatchTimer(clocks, null, -1, null,
+                mOnBatteryTimeBase);
+        mScreenDozeTimer = new BatteryStatsImpl.StopwatchTimer(clocks, null, -1, null,
+                mOnBatteryTimeBase);
+        mBluetoothScanTimer = new StopwatchTimer(mClocks, null, -14, null, mOnBatteryTimeBase);
+    }
 
     MockBatteryStatsImpl() {
-        super(new MockClocks());
-        this.clocks = mClocks;
+        this(new MockClocks());
     }
 
     public TimeBase getOnBatteryTimeBase() {
         return mOnBatteryTimeBase;
     }
 
+    public TimeBase getOnBatteryScreenOffTimeBase() {
+        return mOnBatteryScreenOffTimeBase;
+    }
+
+    public int getScreenState() {
+        return mScreenState;
+    }
+
+    public boolean isOnBattery() {
+        return mForceOnBattery ? true : super.isOnBattery();
+    }
+
+    public TimeBase getOnBatteryBackgroundTimeBase(int uid) {
+        return getUidStatsLocked(uid).mOnBatteryBackgroundTimeBase;
+    }
+
+    public TimeBase getOnBatteryScreenOffBackgroundTimeBase(int uid) {
+        return getUidStatsLocked(uid).mOnBatteryScreenOffBackgroundTimeBase;
+    }
 }
 

@@ -47,7 +47,7 @@ import java.io.OutputStream;
 public final class ServerSession extends ObexSession implements Runnable {
 
     private static final String TAG = "Obex ServerSession";
-    private static final boolean V = Log.isLoggable(ObexHelper.LOG_TAG, Log.VERBOSE);
+    private static final boolean V = ObexHelper.VDBG;
 
     private ObexTransport mTransport;
 
@@ -124,7 +124,6 @@ public final class ServerSession extends ObexSession implements Runnable {
                         break;
 
                     case -1:
-                        Log.v(TAG, "Read request returned -1, exiting from loop");
                         done = true;
                         break;
 
@@ -175,7 +174,7 @@ public final class ServerSession extends ObexSession implements Runnable {
                 mInput.read();
             }
             code = mListener.onAbort(request, reply);
-            Log.d(TAG, "onAbort request handler return value- " + code);
+            Log.v(TAG, "onAbort request handler return value- " + code);
             code = validateResponseCode(code);
         }
         sendResponse(code, null);
@@ -195,7 +194,6 @@ public final class ServerSession extends ObexSession implements Runnable {
      * @throws IOException if an error occurred at the transport layer
      */
     private void handlePutRequest(int type) throws IOException {
-        if (V)  Log.v(TAG, "handlePutRequest");
         ServerOperation op = new ServerOperation(this, mInput, type, mMaxPacketLength, mListener);
         try {
             int response = -1;
@@ -207,12 +205,10 @@ public final class ServerSession extends ObexSession implements Runnable {
                 response = validateResponseCode(mListener.onPut(op));
             }
             if (response != ResponseCodes.OBEX_HTTP_OK && !op.isAborted) {
-                if (V) Log.v(TAG, "handlePutRequest pre != HTTP_OK sendReply");
                 op.sendReply(response);
             } else if (!op.isAborted) {
                 // wait for the final bit
                 while (!op.finalBitSet) {
-                    if (V) Log.v(TAG, "handlePutRequest pre looped sendReply");
                     op.sendReply(ResponseCodes.OBEX_HTTP_CONTINUE);
                 }
                 op.sendReply(response);
@@ -223,7 +219,7 @@ public final class ServerSession extends ObexSession implements Runnable {
              *internal error should not be sent because server has already replied with
              *OK response in "sendReply")
              */
-            if(V) Log.w(TAG,"Exception occured - sending OBEX_HTTP_INTERNAL_ERROR reply",e);
+            if(V) Log.d(TAG,"Exception occured - sending OBEX_HTTP_INTERNAL_ERROR reply",e);
             if (!op.isAborted) {
                 sendResponse(ResponseCodes.OBEX_HTTP_INTERNAL_ERROR, null);
             }
@@ -244,7 +240,6 @@ public final class ServerSession extends ObexSession implements Runnable {
      * @throws IOException if an error occurred at the transport layer
      */
     private void handleGetRequest(int type) throws IOException {
-        if (V)  Log.v(TAG, "handleGetRequest");
         ServerOperation op = new ServerOperation(this, mInput, type, mMaxPacketLength, mListener);
         try {
             int response = validateResponseCode(mListener.onGet(op));
@@ -267,7 +262,6 @@ public final class ServerSession extends ObexSession implements Runnable {
     public void sendResponse(int code, byte[] header) throws IOException {
         int totalLength = 3;
         byte[] data = null;
-        if (V) Log.v(TAG,"sendResponse code " + code + " header : " + header);
         OutputStream op = mOutput;
         if (op == null) {
             return;
@@ -275,7 +269,6 @@ public final class ServerSession extends ObexSession implements Runnable {
 
         if (header != null) {
             totalLength += header.length;
-            if (V) Log.v(TAG, "header != null totalLength = " + totalLength);
             data = new byte[totalLength];
             data[0] = (byte)code;
             data[1] = (byte)(totalLength >> 8);
@@ -664,8 +657,7 @@ public final class ServerSession extends ObexSession implements Runnable {
          */
         byte[] sendData = new byte[totalLength];
         int maxRxLength = ObexHelper.getMaxRxPacketSize(mTransport);
-        //PTS expects least of maxPacketLen
-        if(maxRxLength > mMaxPacketLength) {
+        if (maxRxLength > mMaxPacketLength) {
             if(V) Log.v(TAG,"Set maxRxLength to min of maxRxServrLen:" + maxRxLength +
                     " and MaxNegotiated from Client: " + mMaxPacketLength);
             maxRxLength = mMaxPacketLength;

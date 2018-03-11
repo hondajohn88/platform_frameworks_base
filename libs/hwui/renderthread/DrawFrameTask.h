@@ -61,11 +61,14 @@ public:
     virtual ~DrawFrameTask();
 
     void setContext(RenderThread* thread, CanvasContext* context, RenderNode* targetNode);
+    void setContentDrawBounds(int left, int top, int right, int bottom) {
+        mContentDrawBounds.set(left, top, right, bottom);
+    }
 
     void pushLayerUpdate(DeferredLayerUpdater* layer);
     void removeLayerUpdate(DeferredLayerUpdater* layer);
 
-    int drawFrame(TreeObserver* observer);
+    int drawFrame();
 
     int64_t* frameInfo() { return mFrameInfo; }
 
@@ -82,6 +85,7 @@ private:
     RenderThread* mRenderThread;
     CanvasContext* mContext;
     RenderNode* mTargetNode = nullptr;
+    Rect mContentDrawBounds;
 
     /*********************************************
      *  Single frame data
@@ -90,7 +94,6 @@ private:
 
     int mSyncResult;
     int64_t mSyncQueued;
-    TreeObserver* mObserver;
 
     int64_t mFrameInfo[UI_THREAD_FRAME_INFO_SIZE];
 };

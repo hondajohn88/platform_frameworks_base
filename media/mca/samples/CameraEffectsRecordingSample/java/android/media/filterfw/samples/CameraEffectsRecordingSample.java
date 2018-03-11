@@ -45,8 +45,8 @@ public class CameraEffectsRecordingSample extends Activity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
-        mRunButton = (Button) findViewById(R.id.runbutton);
-        mCameraView = (SurfaceView) findViewById(R.id.cameraview);
+        mRunButton = findViewById(R.id.runbutton);
+        mCameraView = findViewById(R.id.cameraview);
         mRunButton.setOnClickListener(mRunButtonClick);
 
         Intent intent = getIntent();
@@ -83,13 +83,6 @@ public class CameraEffectsRecordingSample extends Activity {
         if (mRunner.isRunning()) {
             mRunner.stop();
             mRunButton.setText("Record");
-        }
-    }
-
-    protected void onDestroy() {
-        super.onDestroy();
-        if (mRunner.isRunning()) {
-            mRunner.close();
         }
     }
 

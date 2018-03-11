@@ -31,7 +31,7 @@ import com.android.systemui.statusbar.stack.StackStateAnimator;
  * A transform state of a image view.
 */
 public class ImageTransformState extends TransformState {
-    public static final long ANIMATION_DURATION_LENGTH = 210;
+    public static final long ANIMATION_DURATION_LENGTH = 200;
 
     public static final int ICON_TAG = R.id.image_icon_tag;
     private static Pools.SimplePool<ImageTransformState> sInstancePool
@@ -48,10 +48,13 @@ public class ImageTransformState extends TransformState {
 
     @Override
     protected boolean sameAs(TransformState otherState) {
+        if (super.sameAs(otherState)) {
+            return true;
+        }
         if (otherState instanceof ImageTransformState) {
             return mIcon != null && mIcon.sameAs(((ImageTransformState) otherState).getIcon());
         }
-        return super.sameAs(otherState);
+        return false;
     }
 
     @Override
@@ -113,7 +116,7 @@ public class ImageTransformState extends TransformState {
     }
 
     @Override
-    protected boolean transformScale() {
+    protected boolean transformScale(TransformState otherState) {
         return true;
     }
 

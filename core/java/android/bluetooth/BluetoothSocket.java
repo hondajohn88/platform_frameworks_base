@@ -76,7 +76,7 @@ import java.nio.ByteBuffer;
  * <div class="special reference">
  * <h3>Developer Guides</h3>
  * <p>For more information about using Bluetooth, read the
- * <a href="{@docRoot}guide/topics/wireless/bluetooth.html">Bluetooth</a> developer guide.</p>
+ * <a href="{@docRoot}guide/topics/connectivity/bluetooth.html">Bluetooth</a> developer guide.</p>
  * </div>
  *
  * {@see BluetoothServerSocket}
@@ -243,12 +243,11 @@ public final class BluetoothSocket implements Closeable {
         }
 
         as.mPfd = new ParcelFileDescriptor(fds[0]);
-        as.mSocket = new LocalSocket(fds[0]);
+        as.mSocket = LocalSocket.createConnectedLocalSocket(fds[0]);
         as.mSocketIS = as.mSocket.getInputStream();
         as.mSocketOS = as.mSocket.getOutputStream();
         as.mAddress = RemoteAddr;
         as.mDevice = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(RemoteAddr);
-        as.mPort = mPort;
         return as;
     }
     /**
@@ -368,7 +367,7 @@ public final class BluetoothSocket implements Closeable {
                 if (mSocketState == SocketState.CLOSED) throw new IOException("socket closed");
                 if (mPfd == null) throw new IOException("bt socket connect failed");
                 FileDescriptor fd = mPfd.getFileDescriptor();
-                mSocket = new LocalSocket(fd);
+                mSocket = LocalSocket.createConnectedLocalSocket(fd);
                 mSocketIS = mSocket.getInputStream();
                 mSocketOS = mSocket.getOutputStream();
             }
@@ -417,9 +416,14 @@ public final class BluetoothSocket implements Closeable {
                 if(mSocketState != SocketState.INIT) return EBADFD;
                 if(mPfd == null) return -1;
                 FileDescriptor fd = mPfd.getFileDescriptor();
-                if (DBG) Log.d(TAG, "bindListen(), new LocalSocket ");
-                mSocket = new LocalSocket(fd);
-                if (DBG) Log.d(TAG, "bindListen(), new LocalSocket.getInputStream() ");
+                if (fd == null) {
+                    Log.e(TAG, "bindListen(), null file descriptor");
+                    return -1;
+                }
+
+                if (DBG) Log.d(TAG, "bindListen(), Create LocalSocket");
+                mSocket = LocalSocket.createConnectedLocalSocket(fd);
+                if (DBG) Log.d(TAG, "bindListen(), new LocalSocket.getInputStream()");
                 mSocketIS = mSocket.getInputStream();
                 mSocketOS = mSocket.getOutputStream();
             }
@@ -468,61 +472,6 @@ public final class BluetoothSocket implements Closeable {
             //quick drop the reference of the file handle
         }
         return acceptedSocket;
-    }
-
-    /**
-     * setSocketOpt for the Buetooth Socket.
-     *
-     * @param optionName socket option name
-     * @param optionVal  socket option value
-     * @param optionLen  socket option length
-     * @return -1 on immediate error,
-     *               0 otherwise
-     * @hide
-     */
-    public int setSocketOpt(int optionName, byte [] optionVal, int optionLen) throws IOException {
-        int ret = 0;
-        if (mSocketState == SocketState.CLOSED) throw new IOException("socket closed");
-        IBluetooth bluetoothProxy = BluetoothAdapter.getDefaultAdapter().getBluetoothService(null);
-        if (bluetoothProxy == null) {
-            Log.e(TAG, "setSocketOpt fail, reason: bluetooth is off");
-            return -1;
-        }
-        try {
-            if(VDBG) Log.d(TAG, "setSocketOpt(), mType: " + mType + " mPort: " + mPort);
-            ret = bluetoothProxy.setSocketOpt(mType, mPort, optionName, optionVal, optionLen);
-        } catch (RemoteException e) {
-            Log.e(TAG, Log.getStackTraceString(new Throwable()));
-            return -1;
-        }
-        return ret;
-    }
-
-    /**
-     * getSocketOpt for the Buetooth Socket.
-     *
-     * @param optionName socket option name
-     * @param optionVal  socket option value
-     * @return -1 on immediate error,
-     *               length of returned socket option otherwise
-     * @hide
-     */
-    public int getSocketOpt(int optionName, byte [] optionVal) throws IOException {
-        int ret = 0;
-        if (mSocketState == SocketState.CLOSED) throw new IOException("socket closed");
-        IBluetooth bluetoothProxy = BluetoothAdapter.getDefaultAdapter().getBluetoothService(null);
-        if (bluetoothProxy == null) {
-            Log.e(TAG, "getSocketOpt fail, reason: bluetooth is off");
-            return -1;
-        }
-        try {
-            if(VDBG) Log.d(TAG, "getSocketOpt(), mType: " + mType + " mPort: " + mPort);
-            ret = bluetoothProxy.getSocketOpt(mType, mPort, optionName, optionVal);
-        } catch (RemoteException e) {
-            Log.e(TAG, Log.getStackTraceString(new Throwable()));
-            return -1;
-        }
-        return ret;
     }
 
     /*package*/ int available() throws IOException {
@@ -612,8 +561,9 @@ public final class BluetoothSocket implements Closeable {
 
     @Override
     public void close() throws IOException {
-        if (DBG) Log.d(TAG, "close() in, this: " + this + ", channel: " + mPort + ", state: "
-                + mSocketState);
+        Log.d(TAG, "close() this: " + this + ", channel: " + mPort +
+            ", mSocketIS: " + mSocketIS + ", mSocketOS: " + mSocketOS +
+            "mSocket: " + mSocket + ", mSocketState: " + mSocketState);
         if(mSocketState == SocketState.CLOSED)
             return;
         else
@@ -623,9 +573,6 @@ public final class BluetoothSocket implements Closeable {
                  if(mSocketState == SocketState.CLOSED)
                     return;
                  mSocketState = SocketState.CLOSED;
-                 if (DBG) Log.d(TAG, "close() this: " + this + ", channel: " + mPort +
-                         ", mSocketIS: " + mSocketIS + ", mSocketOS: " + mSocketOS +
-                         "mSocket: " + mSocket);
                  if(mSocket != null) {
                     if (DBG) Log.d(TAG, "Closing mSocket: " + mSocket);
                     mSocket.shutdownInput();

@@ -26,10 +26,34 @@ import android.content.pm.ApplicationInfo;
 import android.content.res.Configuration;
 import android.os.Process;
 import android.os.SystemProperties;
+import android.os.Trace;
 import android.os.UserHandle;
+import android.util.ArraySet;
+import android.util.TimingsTraceLog;
 import android.util.Log;
 
+import com.android.systemui.globalactions.GlobalActionsComponent;
+import com.android.systemui.keyboard.KeyboardUI;
+import com.android.systemui.keyguard.KeyguardViewMediator;
+import com.android.systemui.media.RingtonePlayer;
+import com.android.systemui.navigation.Navigator;
+import com.android.systemui.pip.PipUI;
+import com.android.systemui.plugins.GlobalActions;
+import com.android.systemui.plugins.OverlayPlugin;
+import com.android.systemui.plugins.Plugin;
+import com.android.systemui.plugins.PluginListener;
+import com.android.systemui.plugins.PluginManager;
+import com.android.systemui.power.PowerUI;
+import com.android.systemui.recents.Recents;
+import com.android.systemui.shortcut.ShortcutKeyDispatcher;
 import com.android.systemui.stackdivider.Divider;
+import com.android.systemui.statusbar.CommandQueue;
+import com.android.systemui.statusbar.phone.StatusBar;
+import com.android.systemui.statusbar.phone.StatusBarWindowManager;
+import com.android.systemui.usb.StorageNotification;
+import com.android.systemui.util.NotificationChannels;
+import com.android.systemui.util.leak.GarbageMonitor;
+import com.android.systemui.volume.VolumeUI;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -37,7 +61,7 @@ import java.util.Map;
 /**
  * Application class for SystemUI.
  */
-public class SystemUIApplication extends Application {
+public class SystemUIApplication extends Application implements SysUiServiceProvider {
 
     private static final String TAG = "SystemUIService";
     private static final boolean DEBUG = false;
@@ -46,19 +70,25 @@ public class SystemUIApplication extends Application {
      * The classes of the stuff to start.
      */
     private final Class<?>[] SERVICES = new Class[] {
-            com.android.systemui.tuner.TunerService.class,
-            com.android.systemui.keyguard.KeyguardViewMediator.class,
-            com.android.systemui.recents.Recents.class,
-            com.android.systemui.volume.VolumeUI.class,
+            Dependency.class,
+            NotificationChannels.class,
+            CommandQueue.CommandQueueStart.class,
+            KeyguardViewMediator.class,
+            Recents.class,
+            VolumeUI.class,
             Divider.class,
-            com.android.systemui.statusbar.SystemBars.class,
-            com.android.systemui.usb.StorageNotification.class,
-            com.android.systemui.power.PowerUI.class,
-            com.android.systemui.media.RingtonePlayer.class,
-            com.android.systemui.keyboard.KeyboardUI.class,
-            com.android.systemui.tv.pip.PipUI.class,
-            com.android.systemui.shortcut.ShortcutKeyDispatcher.class,
-            com.android.systemui.VendorServices.class
+            SystemBars.class,
+            StorageNotification.class,
+            PowerUI.class,
+            RingtonePlayer.class,
+            KeyboardUI.class,
+            PipUI.class,
+            ShortcutKeyDispatcher.class,
+            VendorServices.class,
+            GarbageMonitor.Service.class,
+            LatencyTester.class,
+            GlobalActionsComponent.class,
+            RoundedCorners.class,
     };
 
     /**
@@ -66,8 +96,9 @@ public class SystemUIApplication extends Application {
      * above.
      */
     private final Class<?>[] SERVICES_PER_USER = new Class[] {
-            com.android.systemui.recents.Recents.class,
-            com.android.systemui.tv.pip.PipUI.class
+            Dependency.class,
+            NotificationChannels.class,
+            Recents.class
     };
 
     /**
@@ -84,7 +115,7 @@ public class SystemUIApplication extends Application {
         // Set the application theme that is inherited by all services. Note that setting the
         // application theme in the manifest does only work for activities. Keep this in sync with
         // the theme set there.
-        setTheme(R.style.systemui_theme);
+        setTheme(R.style.Theme_SystemUI);
 
         SystemUIFactory.createFromConfig(this);
 
@@ -127,9 +158,9 @@ public class SystemUIApplication extends Application {
      * Makes sure that all the SystemUI services are running. If they are already running, this is a
      * no-op. This is needed to conditinally start all the services, as we only need to have it in
      * the main process.
-     *
      * <p>This method must only be called from the main thread.</p>
      */
+
     public void startServicesIfNeeded() {
         startServicesIfNeeded(SERVICES);
     }
@@ -138,7 +169,6 @@ public class SystemUIApplication extends Application {
      * Ensures that all the Secondary user SystemUI services are running. If they are already
      * running, this is a no-op. This is needed to conditinally start all the services, as we only
      * need to have it in the main process.
-     *
      * <p>This method must only be called from the main thread.</p>
      */
     void startSecondaryUserServicesIfNeeded() {
@@ -161,11 +191,17 @@ public class SystemUIApplication extends Application {
 
         Log.v(TAG, "Starting SystemUI services for user " +
                 Process.myUserHandle().getIdentifier() + ".");
+        TimingsTraceLog log = new TimingsTraceLog("SystemUIBootTiming",
+                Trace.TRACE_TAG_APP);
+        log.traceBegin("StartServices");
         final int N = services.length;
-        for (int i=0; i<N; i++) {
+        for (int i = 0; i < N; i++) {
             Class<?> cl = services[i];
             if (DEBUG) Log.d(TAG, "loading: " + cl);
+            log.traceBegin("StartServices" + cl.getSimpleName());
+            long ti = System.currentTimeMillis();
             try {
+
                 Object newService = SystemUIFactory.getInstance().createInstance(cl);
                 mServices[i] = (SystemUI) ((newService == null) ? cl.newInstance() : newService);
             } catch (IllegalAccessException ex) {
@@ -178,11 +214,51 @@ public class SystemUIApplication extends Application {
             mServices[i].mComponents = mComponents;
             if (DEBUG) Log.d(TAG, "running: " + mServices[i]);
             mServices[i].start();
+            log.traceEnd();
 
+            // Warn if initialization of component takes too long
+            ti = System.currentTimeMillis() - ti;
+            if (ti > 1000) {
+                Log.w(TAG, "Initialization of " + cl.getName() + " took " + ti + " ms");
+            }
             if (mBootCompleted) {
                 mServices[i].onBootCompleted();
             }
         }
+        log.traceEnd();
+        Dependency.get(PluginManager.class).addPluginListener(
+                new PluginListener<OverlayPlugin>() {
+                    private ArraySet<OverlayPlugin> mOverlays;
+
+                    @Override
+                    public void onPluginConnected(OverlayPlugin plugin, Context pluginContext) {
+                        StatusBar statusBar = getComponent(StatusBar.class);
+                        if (statusBar != null) {
+                            Navigator navbar = statusBar.getNavigationBarView();
+                            plugin.setup(statusBar.getStatusBarWindow(),
+                                    navbar != null ? navbar.getBaseView() : null);
+                        }
+                        // Lazy init.
+                        if (mOverlays == null)
+                            mOverlays = new ArraySet<>();
+                        if (plugin.holdStatusBarOpen()) {
+                            mOverlays.add(plugin);
+                            Dependency.get(StatusBarWindowManager.class).setStateListener(
+                                    b -> mOverlays.forEach(o -> o.setCollapseDesired(b)));
+                            Dependency.get(StatusBarWindowManager.class).setForcePluginOpen(
+                                    mOverlays.size() != 0);
+
+                        }
+                    }
+
+                    @Override
+                    public void onPluginDisconnected(OverlayPlugin plugin) {
+                        mOverlays.remove(plugin);
+                        Dependency.get(StatusBarWindowManager.class).setForcePluginOpen(
+                                mOverlays.size() != 0);
+                    }
+                }, OverlayPlugin.class, true /* Allow multiple plugins */);
+
         mServicesStarted = true;
     }
 

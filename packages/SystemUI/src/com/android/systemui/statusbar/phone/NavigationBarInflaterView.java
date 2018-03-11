@@ -17,10 +17,13 @@ package com.android.systemui.statusbar.phone;
 import android.annotation.Nullable;
 import android.content.Context;
 import android.content.res.Configuration;
+import android.graphics.drawable.Icon;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.SparseArray;
 import android.view.Display;
 import android.view.Display.Mode;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -29,27 +32,40 @@ import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.Space;
 
+import com.android.systemui.Dependency;
 import com.android.systemui.R;
+import com.android.systemui.plugins.PluginListener;
+import com.android.systemui.plugins.PluginManager;
+import com.android.systemui.plugins.statusbar.phone.NavBarButtonProvider;
+import com.android.systemui.statusbar.phone.ReverseLinearLayout.ReverseFrameLayout;
 import com.android.systemui.statusbar.policy.KeyButtonView;
 import com.android.systemui.tuner.TunerService;
+import com.android.systemui.tuner.TunerService.Tunable;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
-public class NavigationBarInflaterView extends FrameLayout implements TunerService.Tunable {
+import static android.view.ViewGroup.LayoutParams.MATCH_PARENT;
+
+public class NavigationBarInflaterView extends FrameLayout
+        implements Tunable, PluginListener<NavBarButtonProvider> {
 
     private static final String TAG = "NavBarInflater";
 
     public static final String NAV_BAR_VIEWS = "sysui_nav_bar";
+    public static final String NAV_BAR_LEFT = "sysui_nav_bar_left";
+    public static final String NAV_BAR_RIGHT = "sysui_nav_bar_right";
 
     public static final String MENU_IME = "menu_ime";
-    public static final String MENU_IME_ALWAYS_SHOW = "menu_ime_always_show";
     public static final String BACK = "back";
     public static final String HOME = "home";
     public static final String RECENT = "recent";
-    public static final String SEARCH = "search";
     public static final String NAVSPACE = "space";
     public static final String CLIPBOARD = "clipboard";
     public static final String KEY = "key";
+    public static final String LEFT = "left";
+    public static final String RIGHT = "right";
 
     public static final String GRAVITY_SEPARATOR = ";";
     public static final String BUTTON_SEPARATOR = ",";
@@ -60,10 +76,13 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
     public static final String KEY_CODE_START = "(";
     public static final String KEY_IMAGE_DELIM = ":";
     public static final String KEY_CODE_END = ")";
+    private static final String WEIGHT_SUFFIX = "W";
+    private static final String WEIGHT_CENTERED_SUFFIX = "WC";
+
+    private final List<NavBarButtonProvider> mPlugins = new ArrayList<>();
 
     protected LayoutInflater mLayoutInflater;
     protected LayoutInflater mLandscapeInflater;
-    private int mDensity;
 
     protected FrameLayout mRot0;
     protected FrameLayout mRot90;
@@ -79,7 +98,6 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
 
     public NavigationBarInflaterView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        mDensity = context.getResources().getConfiguration().densityDpi;
         createInflaters();
         Display display = ((WindowManager)
                 context.getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay();
@@ -93,18 +111,6 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
         landscape.setTo(mContext.getResources().getConfiguration());
         landscape.orientation = Configuration.ORIENTATION_LANDSCAPE;
         mLandscapeInflater = LayoutInflater.from(mContext.createConfigurationContext(landscape));
-    }
-
-    @Override
-    protected void onConfigurationChanged(Configuration newConfig) {
-        super.onConfigurationChanged(newConfig);
-        if (mDensity != newConfig.densityDpi) {
-            mDensity = newConfig.densityDpi;
-            createInflaters();
-            inflateChildren();
-            clearViews();
-            inflateLayout(mCurrentLayout);
-        }
     }
 
     @Override
@@ -125,9 +131,6 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
         mRot90.setId(R.id.rot90);
         addView(mRot90);
         updateAlternativeOrder();
-        if (getParent() instanceof NavigationBarView) {
-            ((NavigationBarView) getParent()).updateRotatedViews();
-        }
     }
 
     protected String getDefaultLayout() {
@@ -137,12 +140,16 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        TunerService.get(getContext()).addTunable(this, NAV_BAR_VIEWS);
+        Dependency.get(TunerService.class).addTunable(this, NAV_BAR_VIEWS, NAV_BAR_LEFT,
+                NAV_BAR_RIGHT);
+        Dependency.get(PluginManager.class).addPluginListener(this,
+                NavBarButtonProvider.class, true /* Allow multiple */);
     }
 
     @Override
     protected void onDetachedFromWindow() {
-        TunerService.get(getContext()).removeTunable(this);
+        Dependency.get(TunerService.class).removeTunable(this);
+        Dependency.get(PluginManager.class).removePluginListener(this);
         super.onDetachedFromWindow();
     }
 
@@ -153,6 +160,9 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
                 clearViews();
                 inflateLayout(newValue);
             }
+        } else if (NAV_BAR_LEFT.equals(key) || NAV_BAR_RIGHT.equals(key)) {
+            clearViews();
+            inflateLayout(mCurrentLayout);
         }
     }
 
@@ -213,26 +223,27 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
         String[] center = sets[1].split(BUTTON_SEPARATOR);
         String[] end = sets[2].split(BUTTON_SEPARATOR);
         // Inflate these in start to end order or accessibility traversal will be messed up.
-        inflateButtons(start, (ViewGroup) mRot0.findViewById(R.id.ends_group), isRot0Landscape);
-        inflateButtons(start, (ViewGroup) mRot90.findViewById(R.id.ends_group), !isRot0Landscape);
+        inflateButtons(start, mRot0.findViewById(R.id.ends_group), isRot0Landscape, true);
+        inflateButtons(start, mRot90.findViewById(R.id.ends_group), !isRot0Landscape, true);
 
-        inflateButtons(center, (ViewGroup) mRot0.findViewById(R.id.center_group), isRot0Landscape);
-        inflateButtons(center, (ViewGroup) mRot90.findViewById(R.id.center_group), !isRot0Landscape);
+        inflateButtons(center, mRot0.findViewById(R.id.center_group), isRot0Landscape, false);
+        inflateButtons(center, mRot90.findViewById(R.id.center_group), !isRot0Landscape, false);
 
-        addGravitySpacer((LinearLayout) mRot0.findViewById(R.id.ends_group));
-        addGravitySpacer((LinearLayout) mRot90.findViewById(R.id.ends_group));
+        addGravitySpacer(mRot0.findViewById(R.id.ends_group));
+        addGravitySpacer(mRot90.findViewById(R.id.ends_group));
 
-        inflateButtons(end, (ViewGroup) mRot0.findViewById(R.id.ends_group), isRot0Landscape);
-        inflateButtons(end, (ViewGroup) mRot90.findViewById(R.id.ends_group), !isRot0Landscape);
+        inflateButtons(end, mRot0.findViewById(R.id.ends_group), isRot0Landscape, false);
+        inflateButtons(end, mRot90.findViewById(R.id.ends_group), !isRot0Landscape, false);
     }
 
     private void addGravitySpacer(LinearLayout layout) {
         layout.addView(new Space(mContext), new LinearLayout.LayoutParams(0, 0, 1));
     }
 
-    private void inflateButtons(String[] buttons, ViewGroup parent, boolean landscape) {
+    private void inflateButtons(String[] buttons, ViewGroup parent, boolean landscape,
+            boolean start) {
         for (int i = 0; i < buttons.length; i++) {
-            inflateButton(buttons[i], parent, landscape);
+            inflateButton(buttons[i], parent, landscape, start);
         }
     }
 
@@ -245,11 +256,72 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
     }
 
     @Nullable
-    protected View inflateButton(String buttonSpec, ViewGroup parent, boolean landscape) {
+    protected View inflateButton(String buttonSpec, ViewGroup parent, boolean landscape,
+            boolean start) {
         LayoutInflater inflater = landscape ? mLandscapeInflater : mLayoutInflater;
-        float size = extractSize(buttonSpec);
-        String button = extractButton(buttonSpec);
+        View v = createView(buttonSpec, parent, inflater);
+        if (v == null) return null;
+
+        v = applySize(v, buttonSpec, landscape, start);
+        parent.addView(v);
+        addToDispatchers(v);
+        View lastView = landscape ? mLastLandscape : mLastPortrait;
+        View accessibilityView = v;
+        if (v instanceof ReverseFrameLayout) {
+            accessibilityView = ((ReverseFrameLayout) v).getChildAt(0);
+        }
+        if (lastView != null) {
+            accessibilityView.setAccessibilityTraversalAfter(lastView.getId());
+        }
+        if (landscape) {
+            mLastLandscape = accessibilityView;
+        } else {
+            mLastPortrait = accessibilityView;
+        }
+        return v;
+    }
+
+    private View applySize(View v, String buttonSpec, boolean landscape, boolean start) {
+        String sizeStr = extractSize(buttonSpec);
+        if (sizeStr == null) return v;
+
+        if (sizeStr.contains(WEIGHT_SUFFIX)) {
+            float weight = Float.parseFloat(sizeStr.substring(0, sizeStr.indexOf(WEIGHT_SUFFIX)));
+            FrameLayout frame = new ReverseFrameLayout(mContext);
+            LayoutParams childParams = new LayoutParams(v.getLayoutParams());
+            if (sizeStr.endsWith(WEIGHT_CENTERED_SUFFIX)) {
+                childParams.gravity = Gravity.CENTER;
+            } else {
+                childParams.gravity = landscape ? (start ? Gravity.BOTTOM : Gravity.TOP)
+                        : (start ? Gravity.START : Gravity.END);
+            }
+            frame.addView(v, childParams);
+            frame.setLayoutParams(new LinearLayout.LayoutParams(0, MATCH_PARENT, weight));
+            frame.setClipChildren(false);
+            frame.setClipToPadding(false);
+            return frame;
+        }
+        float size = Float.parseFloat(sizeStr);
+        ViewGroup.LayoutParams params = v.getLayoutParams();
+        params.width = (int) (params.width * size);
+        return v;
+    }
+
+    private View createView(String buttonSpec, ViewGroup parent, LayoutInflater inflater) {
         View v = null;
+        String button = extractButton(buttonSpec);
+        if (LEFT.equals(button)) {
+            String s = Dependency.get(TunerService.class).getValue(NAV_BAR_LEFT, NAVSPACE);
+            button = extractButton(s);
+        } else if (RIGHT.equals(button)) {
+            String s = Dependency.get(TunerService.class).getValue(NAV_BAR_RIGHT, MENU_IME);
+            button = extractButton(s);
+        }
+        // Let plugins go first so they can override a standard view if they want.
+        for (NavBarButtonProvider provider : mPlugins) {
+            v = provider.createView(buttonSpec, parent);
+            if (v != null) return v;
+        }
         if (HOME.equals(button)) {
             v = inflater.inflate(R.layout.home, parent, false);
         } else if (BACK.equals(button)) {
@@ -258,10 +330,6 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
             v = inflater.inflate(R.layout.recent_apps, parent, false);
         } else if (MENU_IME.equals(button)) {
             v = inflater.inflate(R.layout.menu_ime, parent, false);
-        } else if (MENU_IME_ALWAYS_SHOW.equals(button)) {
-            v = inflater.inflate(R.layout.menu_ime_always_show, parent, false);
-        } else if (SEARCH.equals(button)) {
-            v = inflater.inflate(R.layout.search, parent, false);
         } else if (NAVSPACE.equals(button)) {
             v = inflater.inflate(R.layout.nav_key_space, parent, false);
         } else if (CLIPBOARD.equals(button)) {
@@ -272,26 +340,15 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
             v = inflater.inflate(R.layout.custom_key, parent, false);
             ((KeyButtonView) v).setCode(code);
             if (uri != null) {
-                ((KeyButtonView) v).loadAsync(uri);
+                if (uri.contains(":")) {
+                    ((KeyButtonView) v).loadAsync(Icon.createWithContentUri(uri));
+                } else if (uri.contains("/")) {
+                    int index = uri.indexOf('/');
+                    String pkg = uri.substring(0, index);
+                    int id = Integer.parseInt(uri.substring(index + 1));
+                    ((KeyButtonView) v).loadAsync(Icon.createWithResource(pkg, id));
+                }
             }
-        } else {
-            return null;
-        }
-
-        if (size != 0) {
-            ViewGroup.LayoutParams params = v.getLayoutParams();
-            params.width = (int) (params.width * size);
-        }
-        parent.addView(v);
-        addToDispatchers(v);
-        View lastView = landscape ? mLastLandscape : mLastPortrait;
-        if (lastView != null) {
-            v.setAccessibilityTraversalAfter(lastView.getId());
-        }
-        if (landscape) {
-            mLastLandscape = v;
-        } else {
-            mLastPortrait = v;
         }
         return v;
     }
@@ -314,13 +371,12 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
         return Integer.parseInt(subStr);
     }
 
-    public static float extractSize(String buttonSpec) {
+    public static String extractSize(String buttonSpec) {
         if (!buttonSpec.contains(SIZE_MOD_START)) {
-            return 1;
+            return null;
         }
         final int sizeStart = buttonSpec.indexOf(SIZE_MOD_START);
-        String sizeStr = buttonSpec.substring(sizeStart + 1, buttonSpec.indexOf(SIZE_MOD_END));
-        return Float.parseFloat(sizeStr);
+        return buttonSpec.substring(sizeStart + 1, buttonSpec.indexOf(SIZE_MOD_END));
     }
 
     public static String extractButton(String buttonSpec) {
@@ -353,15 +409,27 @@ public class NavigationBarInflaterView extends FrameLayout implements TunerServi
                 mButtonDispatchers.valueAt(i).clear();
             }
         }
-        clearAllChildren((ViewGroup) mRot0.findViewById(R.id.nav_buttons));
-        clearAllChildren((ViewGroup) mRot90.findViewById(R.id.nav_buttons));
+        clearAllChildren(mRot0.findViewById(R.id.nav_buttons));
+        clearAllChildren(mRot90.findViewById(R.id.nav_buttons));
     }
 
     private void clearAllChildren(ViewGroup group) {
         for (int i = 0; i < group.getChildCount(); i++) {
-            if (group.getChildAt(i).getId() != R.id.dpad_group) {
-                ((ViewGroup) group.getChildAt(i)).removeAllViews();
-            }
+            ((ViewGroup) group.getChildAt(i)).removeAllViews();
         }
+    }
+
+    @Override
+    public void onPluginConnected(NavBarButtonProvider plugin, Context context) {
+        mPlugins.add(plugin);
+        clearViews();
+        inflateLayout(mCurrentLayout);
+    }
+
+    @Override
+    public void onPluginDisconnected(NavBarButtonProvider plugin) {
+        mPlugins.remove(plugin);
+        clearViews();
+        inflateLayout(mCurrentLayout);
     }
 }

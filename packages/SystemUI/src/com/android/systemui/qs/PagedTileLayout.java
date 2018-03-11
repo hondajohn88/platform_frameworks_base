@@ -4,6 +4,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.os.UserHandle;
 import android.provider.Settings;
 import android.support.v4.view.PagerAdapter;
 import android.support.v4.view.ViewPager;
@@ -31,7 +32,6 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
     private PageIndicator mPageIndicator;
 
     private int mNumPages;
-    private View mDecorGroup;
     private PageListener mPageListener;
 
     private int mPosition;
@@ -147,12 +147,12 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
     @Override
     protected void onFinishInflate() {
         super.onFinishInflate();
-        mPageIndicator = (PageIndicator) findViewById(R.id.page_indicator);
-        mDecorGroup = findViewById(R.id.page_decor);
-        ((LayoutParams) mDecorGroup.getLayoutParams()).isDecor = true;
-
-        mPages.add((TilePage) LayoutInflater.from(mContext)
+        mPages.add((TilePage) LayoutInflater.from(getContext())
                 .inflate(R.layout.qs_paged_page, this, false));
+    }
+
+    public void setPageIndicator(PageIndicator indicator) {
+        mPageIndicator = indicator;
     }
 
     @Override
@@ -198,7 +198,7 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
                 if (++index == mPages.size()) {
                     if (DEBUG) Log.d(TAG, "Adding page for "
                             + tile.tile.getClass().getSimpleName());
-                    mPages.add((TilePage) LayoutInflater.from(mContext)
+                    mPages.add((TilePage) LayoutInflater.from(getContext())
                             .inflate(R.layout.qs_paged_page, this, false));
                 }
             }
@@ -213,7 +213,7 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
             }
             if (DEBUG) Log.d(TAG, "Size: " + mNumPages);
             mPageIndicator.setNumPages(mNumPages);
-            mDecorGroup.setVisibility(mNumPages > 1 ? View.VISIBLE : View.GONE);
+            mPageIndicator.setVisibility(mNumPages > 1 ? View.VISIBLE : View.GONE);
             setAdapter(mAdapter);
             mAdapter.notifyDataSetChanged();
             setCurrentItem(0, false);
@@ -245,8 +245,7 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
                 maxHeight = height;
             }
         }
-        setMeasuredDimension(getMeasuredWidth(), maxHeight
-                + (mDecorGroup.getVisibility() != View.GONE ? mDecorGroup.getMeasuredHeight() : 0));
+        setMeasuredDimension(getMeasuredWidth(), maxHeight + getPaddingBottom());
     }
 
     private final Runnable mDistribute = new Runnable() {
@@ -262,12 +261,11 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
     }
 
     public static class TilePage extends TileLayout {
-        private int mMaxRows = 3;
+        private int mMaxRows = 5;
 
         public TilePage(Context context, AttributeSet attrs) {
             super(context, attrs);
             updateResources();
-            setContentDescription(mContext.getString(R.string.accessibility_desc_quick_settings));
         }
 
         @Override
@@ -284,15 +282,15 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
         private int getRows() {
             final Resources res = getContext().getResources();
             final ContentResolver resolver = mContext.getContentResolver();
-            final boolean isPortrait = res.getConfiguration().orientation
-                    == Configuration.ORIENTATION_PORTRAIT;
-            final int columnsPortrait = Settings.Secure.getInt(resolver,
-                    Settings.Secure.QS_ROWS_PORTRAIT, 3);
-            final int columnsLandscape = Settings.Secure.getInt(resolver,
-                    Settings.Secure.QS_ROWS_LANDSCAPE, res.getInteger(
-                    com.android.internal.R.integer.config_qs_num_rows_landscape_default));
-            final int columns = Math.max(1, isPortrait ? columnsPortrait : columnsLandscape);
-            return Math.max(1, isPortrait ? columnsPortrait : columnsLandscape);
+
+            if (res.getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT) {
+                return Settings.System.getIntForUser(resolver,
+                        Settings.System.QS_ROWS_PORTRAIT, 3,
+                        UserHandle.USER_CURRENT);
+            }
+            return Settings.System.getIntForUser(resolver,
+                        Settings.System.QS_ROWS_LANDSCAPE, 2,
+                        UserHandle.USER_CURRENT);
         }
 
         public void setMaxRows(int maxRows) {

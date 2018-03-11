@@ -677,7 +677,7 @@ public class AudioRecord implements AudioRouting
              ((audioSource > MediaRecorder.getAudioSourceMax()) &&
               (audioSource != MediaRecorder.AudioSource.RADIO_TUNER) &&
               (audioSource != MediaRecorder.AudioSource.HOTWORD)) )  {
-            throw new IllegalArgumentException("Invalid audio source.");
+            throw new IllegalArgumentException("Invalid audio source " + audioSource);
         }
         mRecordSource = audioSource;
 
@@ -709,8 +709,8 @@ public class AudioRecord implements AudioRouting
             mAudioFormat = audioFormat;
             break;
         default:
-            throw new IllegalArgumentException("Unsupported sample encoding."
-                    + " Should be ENCODING_PCM_8BIT, ENCODING_PCM_16BIT, or ENCODING_PCM_FLOAT.");
+            throw new IllegalArgumentException("Unsupported sample encoding " + audioFormat
+                    + ". Should be ENCODING_PCM_8BIT, ENCODING_PCM_16BIT, or ENCODING_PCM_FLOAT.");
         }
     }
 
@@ -728,7 +728,8 @@ public class AudioRecord implements AudioRouting
         int frameSizeInBytes = mChannelCount
             * (AudioFormat.getBytesPerSample(mAudioFormat));
         if ((audioBufferSize % frameSizeInBytes != 0) || (audioBufferSize < 1)) {
-            throw new IllegalArgumentException("Invalid audio buffer size.");
+            throw new IllegalArgumentException("Invalid audio buffer size " + audioBufferSize
+                    + " (frame size " + frameSizeInBytes + ")");
         }
 
         mNativeBufferSizeInBytes = audioBufferSize;
@@ -981,7 +982,6 @@ public class AudioRecord implements AudioRouting
      */
     public void startRecording()
     throws IllegalStateException {
-        android.util.SeempLog.record(70);
         if (mState != STATE_INITIALIZED) {
             throw new IllegalStateException("startRecording() called on an "
                     + "uninitialized AudioRecord.");
@@ -994,11 +994,6 @@ public class AudioRecord implements AudioRouting
                 mRecordingState = RECORDSTATE_RECORDING;
             }
         }
-
-        if (getRecordingState() == RECORDSTATE_RECORDING &&
-                getAudioSource() == MediaRecorder.AudioSource.HOTWORD) {
-            handleHotwordInput(true);
-        }
     }
 
     /**
@@ -1010,7 +1005,6 @@ public class AudioRecord implements AudioRouting
      */
     public void startRecording(MediaSyncEvent syncEvent)
     throws IllegalStateException {
-        android.util.SeempLog.record(70);
         if (mState != STATE_INITIALIZED) {
             throw new IllegalStateException("startRecording() called on an "
                     + "uninitialized AudioRecord.");
@@ -1041,10 +1035,6 @@ public class AudioRecord implements AudioRouting
             native_stop();
             mRecordingState = RECORDSTATE_STOPPED;
         }
-
-        if (getAudioSource() == MediaRecorder.AudioSource.HOTWORD) {
-            handleHotwordInput(false);
-        }
     }
 
     private final IBinder mICallBack = new Binder();
@@ -1058,23 +1048,6 @@ public class AudioRecord implements AudioRouting
             ias.forceRemoteSubmixFullVolume(starting, mICallBack);
         } catch (RemoteException e) {
             Log.e(TAG, "Error talking to AudioService when handling full submix volume", e);
-        }
-    }
-
-    private void handleHotwordInput(boolean listening) {
-        final IBinder b = ServiceManager.getService(android.content.Context.AUDIO_SERVICE);
-        final IAudioService ias = IAudioService.Stub.asInterface(b);
-        try {
-            // If the caller tries to start recording with the HOTWORD input
-            // before AUDIO_SERVICE has started, IAudioService may not be available.
-            if (ias != null) {
-                ias.handleHotwordInput(listening);
-            } else {
-                Log.e(TAG, "Error talking to AudioService when handling hotword input, "
-                        + "AudioService unavailable");
-            }
-        } catch (RemoteException e) {
-            Log.e(TAG, "Error talking to AudioService when handling hotword input.", e);
         }
     }
 

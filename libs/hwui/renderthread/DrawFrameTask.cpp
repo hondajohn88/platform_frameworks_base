@@ -32,6 +32,7 @@ namespace renderthread {
 DrawFrameTask::DrawFrameTask()
         : mRenderThread(nullptr)
         , mContext(nullptr)
+        , mContentDrawBounds(0, 0, 0, 0)
         , mSyncResult(SyncResult::OK) {
 }
 
@@ -65,12 +66,11 @@ void DrawFrameTask::removeLayerUpdate(DeferredLayerUpdater* layer) {
     }
 }
 
-int DrawFrameTask::drawFrame(TreeObserver* observer) {
+int DrawFrameTask::drawFrame() {
     LOG_ALWAYS_FATAL_IF(!mContext, "Cannot drawFrame with no CanvasContext!");
 
     mSyncResult = SyncResult::OK;
     mSyncQueued = systemTime(CLOCK_MONOTONIC);
-    mObserver = observer;
     postAndWait();
 
     return mSyncResult;
@@ -89,7 +89,6 @@ void DrawFrameTask::run() {
     bool canDrawThisFrame;
     {
         TreeInfo info(TreeInfo::MODE_FULL, *mContext);
-        info.observer = mObserver;
         canUnblockUiThread = syncFrameState(info);
         canDrawThisFrame = info.out.canDrawThisFrame;
     }
@@ -119,12 +118,13 @@ bool DrawFrameTask::syncFrameState(TreeInfo& info) {
     int64_t vsync = mFrameInfo[static_cast<int>(FrameInfoIndex::Vsync)];
     mRenderThread->timeLord().vsyncReceived(vsync);
     bool canDraw = mContext->makeCurrent();
-    Caches::getInstance().textureCache.resetMarkInUse(mContext);
+    mContext->unpinImages();
 
     for (size_t i = 0; i < mLayers.size(); i++) {
         mLayers[i]->apply();
     }
     mLayers.clear();
+    mContext->setContentDrawBounds(mContentDrawBounds);
     mContext->prepareTree(info, mFrameInfo, mSyncQueued, mTargetNode);
 
     // This is after the prepareTree so that any pending operations

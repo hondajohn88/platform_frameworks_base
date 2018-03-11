@@ -34,7 +34,7 @@ import java.util.List;
 /**
  * HeadsetProfile handles Bluetooth HFP and Headset profiles.
  */
-public final class HeadsetProfile implements LocalBluetoothProfile {
+public class HeadsetProfile implements LocalBluetoothProfile {
     private static final String TAG = "HeadsetProfile";
     private static boolean V = true;
 
@@ -115,11 +115,7 @@ public final class HeadsetProfile implements LocalBluetoothProfile {
         List<BluetoothDevice> sinks = mService.getConnectedDevices();
         if (sinks != null) {
             for (BluetoothDevice sink : sinks) {
-                if (sink.equals(device)) {
-                    // Connect to same device, Ignore it
-                    Log.d(TAG,"Not disconnecting device = " + sink);
-                    return true;
-                }
+                Log.d(TAG,"Not disconnecting device = " + sink);
             }
         }
         return mService.connect(device);

@@ -16,55 +16,47 @@
 
 package com.android.systemui.qs.tiles;
 
-import android.content.BroadcastReceiver;
 import android.content.ComponentName;
-import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.net.ConnectivityManager;
-import android.net.wifi.WifiDevice;
-import android.provider.Settings;
-import android.provider.Settings.Global;
-import android.text.SpannableStringBuilder;
-import android.text.style.ForegroundColorSpan;
-import android.util.Log;
-import android.widget.Switch;
 import android.os.UserManager;
 
+import android.provider.Settings.Global;
+import android.service.quicksettings.Tile;
+import android.widget.Switch;
+
 import com.android.internal.logging.MetricsLogger;
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
+import com.android.systemui.Dependency;
 import com.android.systemui.R;
 import com.android.systemui.qs.GlobalSetting;
-import com.android.systemui.qs.QSTile;
+import com.android.systemui.qs.QSHost;
+import com.android.systemui.plugins.ActivityStarter;
+import com.android.systemui.plugins.qs.QSTile.AirplaneBooleanState;
+import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.statusbar.policy.HotspotController;
-
-import java.util.List;
+import com.android.systemui.statusbar.policy.KeyguardMonitor;
 
 /** Quick settings tile: Hotspot **/
-public class HotspotTile extends QSTile<QSTile.AirplaneBooleanState> {
+public class HotspotTile extends QSTileImpl<AirplaneBooleanState> {
     static final Intent TETHER_SETTINGS = new Intent().setComponent(new ComponentName(
              "com.android.settings", "com.android.settings.TetherSettings"));
 
-    private final AnimationIcon mEnable =
-            new AnimationIcon(R.drawable.ic_hotspot_enable_animation,
-                    R.drawable.ic_hotspot_disable);
-    private final AnimationIcon mDisable =
-            new AnimationIcon(R.drawable.ic_hotspot_disable_animation,
-                    R.drawable.ic_hotspot_enable);
-    private final Icon mDisableNoAnimation = ResourceIcon.get(R.drawable.ic_hotspot_enable);
+    private final Icon mEnabledStatic = ResourceIcon.get(R.drawable.ic_hotspot);
     private final Icon mUnavailable = ResourceIcon.get(R.drawable.ic_hotspot_unavailable);
 
     private final HotspotController mController;
     private final Callback mCallback = new Callback();
-    private final ConnectivityManager mConnectivityManager;
     private final GlobalSetting mAirplaneMode;
     private boolean mListening;
-    private int mNumConnectedClients = 0;
 
-    public HotspotTile(Host host) {
+    private final ActivityStarter mActivityStarter;
+    private final KeyguardMonitor mKeyguardMonitor;
+    private final KeyguardCallback mKeyguardCallback = new KeyguardCallback();
+
+    public HotspotTile(QSHost host) {
         super(host);
-        mController = host.getHotspotController();
-        mConnectivityManager = host.getContext().getSystemService(ConnectivityManager.class);
+        mController = Dependency.get(HotspotController.class);
         mAirplaneMode = new GlobalSetting(mContext, mHandler, Global.AIRPLANE_MODE_ON) {
             @Override
             protected void handleValueChanged(int value) {
@@ -72,6 +64,8 @@ public class HotspotTile extends QSTile<QSTile.AirplaneBooleanState> {
             }
         };
 
+        mActivityStarter = Dependency.get(ActivityStarter.class);
+        mKeyguardMonitor = Dependency.get(KeyguardMonitor.class);
     }
 
     @Override
@@ -90,20 +84,19 @@ public class HotspotTile extends QSTile<QSTile.AirplaneBooleanState> {
     }
 
     @Override
-    public void setListening(boolean listening) {
+    public void handleSetListening(boolean listening) {
         if (mListening == listening) return;
+        mListening = listening;
         if (listening) {
             mController.addCallback(mCallback);
-            mContext.registerReceiver(mTetherConnectStateChangedReceiver,
-                    new IntentFilter(ConnectivityManager.TETHER_CONNECT_STATE_CHANGED));
             final IntentFilter filter = new IntentFilter();
             filter.addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED);
             refreshState();
+            mKeyguardMonitor.addCallback(mKeyguardCallback);
         } else {
             mController.removeCallback(mCallback);
-            mContext.unregisterReceiver(mTetherConnectStateChangedReceiver);
+            mKeyguardMonitor.removeCallback(mKeyguardCallback);
         }
-        mListening = listening;
         mAirplaneMode.setListening(listening);
     }
 
@@ -118,7 +111,13 @@ public class HotspotTile extends QSTile<QSTile.AirplaneBooleanState> {
         if (!isEnabled && mAirplaneMode.getValue() != 0) {
             return;
         }
-        MetricsLogger.action(mContext, getMetricsCategory(), !isEnabled);
+        if (mKeyguardMonitor.isSecure() && !mKeyguardMonitor.canSkipBouncer()) {
+            mActivityStarter.postQSRunnableDismissingKeyguard(() -> {
+                MetricsLogger.action(mContext, getMetricsCategory(), !mState.value);
+                mController.setHotspotEnabled(!isEnabled);
+            });
+            return;
+        }
         mController.setHotspotEnabled(!isEnabled);
     }
 
@@ -129,38 +128,28 @@ public class HotspotTile extends QSTile<QSTile.AirplaneBooleanState> {
 
     @Override
     protected void handleUpdateState(AirplaneBooleanState state, Object arg) {
-        boolean visible = mController.isHotspotEnabled();
+        if (state.slash == null) {
+            state.slash = new SlashState();
+        }
         state.label = mContext.getString(R.string.quick_settings_hotspot_label);
+
         checkIfRestrictionEnforcedByAdminOnly(state, UserManager.DISALLOW_CONFIG_TETHERING);
         if (arg instanceof Boolean) {
             state.value = (boolean) arg;
         } else {
             state.value = mController.isHotspotEnabled();
         }
-        state.icon = state.value ? mEnable : mDisable;
-        boolean wasAirplane = state.isAirplaneMode;
+        state.icon = mEnabledStatic;
         state.isAirplaneMode = mAirplaneMode.getValue() != 0;
-        if (state.isAirplaneMode) {
-            final int disabledColor = mHost.getContext().getColor(R.color.qs_tile_tint_unavailable);
-            state.label = new SpannableStringBuilder().append(state.label,
-                    new ForegroundColorSpan(disabledColor),
-                    SpannableStringBuilder.SPAN_INCLUSIVE_INCLUSIVE);
-            state.icon = mUnavailable;
-        } else if (wasAirplane) {
-            state.icon = mDisableNoAnimation;
+        state.isTransient = mController.isHotspotTransient();
+        state.slash.isSlashed = !state.value && !state.isTransient;
+        if (state.isTransient) {
+            state.icon = ResourceIcon.get(R.drawable.ic_hotspot_transient_animation);
         }
-        state.minimalAccessibilityClassName = state.expandedAccessibilityClassName
-                = Switch.class.getName();
+        state.expandedAccessibilityClassName = Switch.class.getName();
         state.contentDescription = state.label;
-        if (visible && state.value) {
-            state.label = mContext.getResources().getQuantityString(
-                    R.plurals.wifi_hotspot_connected_clients_label, mNumConnectedClients,
-                    mNumConnectedClients);
-        } else {
-            state.label = mContext.getString(R.string.quick_settings_hotspot_label);
-        }
-        state.icon = visible && state.value ? mEnable : mDisable;
-
+        state.state = state.isAirplaneMode ? Tile.STATE_UNAVAILABLE
+                : state.value || state.isTransient ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE;
     }
 
     @Override
@@ -177,19 +166,17 @@ public class HotspotTile extends QSTile<QSTile.AirplaneBooleanState> {
         }
     }
 
-    private BroadcastReceiver mTetherConnectStateChangedReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            final List<WifiDevice> clients = mConnectivityManager.getTetherConnectedSta();
-            mNumConnectedClients = clients != null ? clients.size() : 0;
-            refreshState();
-        }
-    };
-
     private final class Callback implements HotspotController.Callback {
         @Override
         public void onHotspotChanged(boolean enabled) {
             refreshState(enabled);
+        }
+    };
+
+    private final class KeyguardCallback implements KeyguardMonitor.Callback {
+        @Override
+        public void onKeyguardShowingChanged() {
+            refreshState();
         }
     };
 }

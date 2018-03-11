@@ -22,11 +22,10 @@ import android.app.ActivityManager;
 import android.content.ComponentName;
 import android.content.pm.FeatureInfo;
 import android.content.pm.PackageManager;
-import android.content.pm.Signature;
 import android.os.Environment;
 import android.os.Process;
 import android.os.storage.StorageManager;
-import android.os.SystemProperties;
+import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.ArraySet;
 import android.util.Slog;
@@ -60,6 +59,7 @@ public class SystemConfig {
     private static final int ALLOW_LIBS = 0x02;
     private static final int ALLOW_PERMISSIONS = 0x04;
     private static final int ALLOW_APP_CONFIGS = 0x08;
+    private static final int ALLOW_PRIVAPP_PERMISSIONS = 0x10;
     private static final int ALLOW_ALL = ~0;
 
     // Group-ids that are given to all packages as read from etc/permissions/*.xml.
@@ -110,6 +110,14 @@ public class SystemConfig {
     // background while in data-usage save mode, as read from the configuration files.
     final ArraySet<String> mAllowInDataUsageSave = new ArraySet<>();
 
+    // These are the packages that are white-listed to be able to run background location
+    // without throttling, as read from the configuration files.
+    final ArraySet<String> mAllowUnthrottledLocation = new ArraySet<>();
+
+    // These are the action strings of broadcasts which are whitelisted to
+    // be delivered anonymously even to apps which target O+.
+    final ArraySet<String> mAllowImplicitBroadcasts = new ArraySet<>();
+
     // These are the package names of apps which should be in the 'always'
     // URL-handling state upon factory reset.
     final ArraySet<String> mLinkedApps = new ArraySet<>();
@@ -131,8 +139,9 @@ public class SystemConfig {
     final ArrayMap<String, List<String>> mDisabledUntilUsedPreinstalledCarrierAssociatedApps =
             new ArrayMap<>();
 
-    final ArrayMap<Signature, ArraySet<String>> mSignatureAllowances =
-            new ArrayMap<Signature, ArraySet<String>>();
+
+    final ArrayMap<String, ArraySet<String>> mPrivAppPermissions = new ArrayMap<>();
+    final ArrayMap<String, ArraySet<String>> mPrivAppDenyPermissions = new ArrayMap<>();
 
     public static SystemConfig getInstance() {
         synchronized (SystemConfig.class) {
@@ -163,6 +172,10 @@ public class SystemConfig {
         return mPermissions;
     }
 
+    public ArraySet<String> getAllowImplicitBroadcasts() {
+        return mAllowImplicitBroadcasts;
+    }
+
     public ArraySet<String> getAllowInPowerSaveExceptIdle() {
         return mAllowInPowerSaveExceptIdle;
     }
@@ -173,6 +186,10 @@ public class SystemConfig {
 
     public ArraySet<String> getAllowInDataUsageSave() {
         return mAllowInDataUsageSave;
+    }
+
+    public ArraySet<String> getAllowUnthrottledLocation() {
+        return mAllowUnthrottledLocation;
     }
 
     public ArraySet<String> getLinkedApps() {
@@ -195,13 +212,16 @@ public class SystemConfig {
         return mBackupTransportWhitelist;
     }
 
-
     public ArrayMap<String, List<String>> getDisabledUntilUsedPreinstalledCarrierAssociatedApps() {
         return mDisabledUntilUsedPreinstalledCarrierAssociatedApps;
     }
 
-    public ArrayMap<Signature, ArraySet<String>> getSignatureAllowances() {
-        return mSignatureAllowances;
+    public ArraySet<String> getPrivAppPermissions(String packageName) {
+        return mPrivAppPermissions.get(packageName);
+    }
+
+    public ArraySet<String> getPrivAppDenyPermissions(String packageName) {
+        return mPrivAppDenyPermissions.get(packageName);
     }
 
     SystemConfig() {
@@ -211,6 +231,13 @@ public class SystemConfig {
         // Read configuration from the old permissions dir
         readPermissions(Environment.buildPath(
                 Environment.getRootDirectory(), "etc", "permissions"), ALLOW_ALL);
+        // Allow Vendor to customize system configs around libs, features, permissions and apps
+        int vendorPermissionFlag = ALLOW_LIBS | ALLOW_FEATURES | ALLOW_PERMISSIONS |
+                ALLOW_APP_CONFIGS;
+        readPermissions(Environment.buildPath(
+                Environment.getVendorDirectory(), "etc", "sysconfig"), vendorPermissionFlag);
+        readPermissions(Environment.buildPath(
+                Environment.getVendorDirectory(), "etc", "permissions"), vendorPermissionFlag);
         // Allow ODM to customize system configs around libs, features and apps
         int odmPermissionFlag = ALLOW_LIBS | ALLOW_FEATURES | ALLOW_APP_CONFIGS;
         readPermissions(Environment.buildPath(
@@ -222,11 +249,6 @@ public class SystemConfig {
                 Environment.getOemDirectory(), "etc", "sysconfig"), ALLOW_FEATURES);
         readPermissions(Environment.buildPath(
                 Environment.getOemDirectory(), "etc", "permissions"), ALLOW_FEATURES);
-        //Remove vulkan specific features
-        if (SystemProperties.getBoolean("persist.graphics.vulkan.disable", false)) {
-            removeFeature(PackageManager.FEATURE_VULKAN_HARDWARE_LEVEL);
-            removeFeature(PackageManager.FEATURE_VULKAN_HARDWARE_VERSION);
-        }
     }
 
     void readPermissions(File libraryDir, int permissionFlag) {
@@ -304,6 +326,7 @@ public class SystemConfig {
             boolean allowFeatures = (permissionFlag & ALLOW_FEATURES) != 0;
             boolean allowPermissions = (permissionFlag & ALLOW_PERMISSIONS) != 0;
             boolean allowAppConfigs = (permissionFlag & ALLOW_APP_CONFIGS) != 0;
+            boolean allowPrivappPermissions = (permissionFlag & ALLOW_PRIVAPP_PERMISSIONS) != 0;
             while (true) {
                 XmlUtils.nextElement(parser);
                 if (parser.getEventType() == XmlPullParser.END_DOCUMENT) {
@@ -323,44 +346,6 @@ public class SystemConfig {
 
                     XmlUtils.skipCurrentTag(parser);
                     continue;
-
-                } else if ("allow-permission".equals(name)) {
-                    String perm = parser.getAttributeValue(null, "name");
-                    if (perm == null) {
-                        Slog.w(TAG,
-                                "<allow-permission> without name at "
-                                        + parser.getPositionDescription());
-                        XmlUtils.skipCurrentTag(parser);
-                        continue;
-                    }
-                    String signature = parser.getAttributeValue(null, "signature");
-                    if (signature == null) {
-                        Slog.w(TAG,
-                                "<allow-permission> without signature at "
-                                        + parser.getPositionDescription());
-                        XmlUtils.skipCurrentTag(parser);
-                        continue;
-                    }
-                    Signature sig = null;
-                    try {
-                        sig = new Signature(signature);
-                    } catch (IllegalArgumentException e) {
-                        // sig will be null so we will log it below
-                    }
-                    if (sig != null) {
-                        ArraySet<String> perms = mSignatureAllowances.get(sig);
-                        if (perms == null) {
-                            perms = new ArraySet<String>();
-                            mSignatureAllowances.put(sig, perms);
-                        }
-                        perms.add(perm);
-                    } else {
-                        Slog.w(TAG,
-                                "<allow-permission> with bad signature at "
-                                        + parser.getPositionDescription());
-                    }
-                    XmlUtils.skipCurrentTag(parser);
-
                 } else if ("permission".equals(name) && allowPermissions) {
                     String perm = parser.getAttributeValue(null, "name");
                     if (perm == null) {
@@ -483,6 +468,28 @@ public class SystemConfig {
                     XmlUtils.skipCurrentTag(parser);
                     continue;
 
+                } else if ("allow-unthrottled-location".equals(name) && allowAll) {
+                    String pkgname = parser.getAttributeValue(null, "package");
+                    if (pkgname == null) {
+                        Slog.w(TAG, "<allow-unthrottled-location> without package in "
+                            + permFile + " at " + parser.getPositionDescription());
+                    } else {
+                        mAllowUnthrottledLocation.add(pkgname);
+                    }
+                    XmlUtils.skipCurrentTag(parser);
+                    continue;
+
+                } else if ("allow-implicit-broadcast".equals(name) && allowAll) {
+                    String action = parser.getAttributeValue(null, "action");
+                    if (action == null) {
+                        Slog.w(TAG, "<allow-implicit-broadcast> without action in " + permFile
+                                + " at " + parser.getPositionDescription());
+                    } else {
+                        mAllowImplicitBroadcasts.add(action);
+                    }
+                    XmlUtils.skipCurrentTag(parser);
+                    continue;
+
                 } else if ("app-link".equals(name) && allowAppConfigs) {
                     String pkgname = parser.getAttributeValue(null, "package");
                     if (pkgname == null) {
@@ -560,6 +567,8 @@ public class SystemConfig {
                         associatedPkgs.add(pkgname);
                     }
                     XmlUtils.skipCurrentTag(parser);
+                } else if ("privapp-permissions".equals(name) && allowPrivappPermissions) {
+                    readPrivAppPermissions(parser);
                 } else {
                     XmlUtils.skipCurrentTag(parser);
                     continue;
@@ -578,6 +587,12 @@ public class SystemConfig {
         if (StorageManager.isFileEncryptedNativeOnly()) {
             addFeature(PackageManager.FEATURE_FILE_BASED_ENCRYPTION, 0);
             addFeature(PackageManager.FEATURE_SECURELY_REMOVES_USERS, 0);
+        }
+
+        if (ActivityManager.isLowRamDeviceStatic()) {
+            addFeature(PackageManager.FEATURE_RAM_LOW, 0);
+        } else {
+            addFeature(PackageManager.FEATURE_RAM_NORMAL, 0);
         }
 
         for (String featureName : mUnavailableFeatures) {
@@ -635,6 +650,49 @@ public class SystemConfig {
                 }
             }
             XmlUtils.skipCurrentTag(parser);
+        }
+    }
+
+    void readPrivAppPermissions(XmlPullParser parser) throws IOException, XmlPullParserException {
+        String packageName = parser.getAttributeValue(null, "package");
+        if (TextUtils.isEmpty(packageName)) {
+            Slog.w(TAG, "package is required for <privapp-permissions> in "
+                    + parser.getPositionDescription());
+            return;
+        }
+
+        ArraySet<String> permissions = mPrivAppPermissions.get(packageName);
+        if (permissions == null) {
+            permissions = new ArraySet<>();
+        }
+        ArraySet<String> denyPermissions = mPrivAppDenyPermissions.get(packageName);
+        int depth = parser.getDepth();
+        while (XmlUtils.nextElementWithin(parser, depth)) {
+            String name = parser.getName();
+            if ("permission".equals(name)) {
+                String permName = parser.getAttributeValue(null, "name");
+                if (TextUtils.isEmpty(permName)) {
+                    Slog.w(TAG, "name is required for <permission> in "
+                            + parser.getPositionDescription());
+                    continue;
+                }
+                permissions.add(permName);
+            } else if ("deny-permission".equals(name)) {
+                String permName = parser.getAttributeValue(null, "name");
+                if (TextUtils.isEmpty(permName)) {
+                    Slog.w(TAG, "name is required for <deny-permission> in "
+                            + parser.getPositionDescription());
+                    continue;
+                }
+                if (denyPermissions == null) {
+                    denyPermissions = new ArraySet<>();
+                }
+                denyPermissions.add(permName);
+            }
+        }
+        mPrivAppPermissions.put(packageName, permissions);
+        if (denyPermissions != null) {
+            mPrivAppDenyPermissions.put(packageName, denyPermissions);
         }
     }
 }

@@ -16,7 +16,7 @@
 
 #include "DamageAccumulator.h"
 
-#include <cutils/log.h>
+#include <log/log.h>
 
 #include "RenderNode.h"
 #include "utils/MathUtils.h"
@@ -152,7 +152,6 @@ static inline void mapRect(const RenderProperties& props, const SkRect& in, SkRe
     }
     temp.offset(props.getLeft(), props.getTop());
     out->join(temp);
-    out->join(in);
 }
 
 static DirtyStack* findParentRenderNode(DirtyStack* frame) {

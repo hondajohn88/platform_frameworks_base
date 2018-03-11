@@ -20,13 +20,17 @@ import android.app.PendingIntent;
 import android.bluetooth.BluetoothDevice;
 import android.content.ComponentName;
 import android.media.AudioAttributes;
+import android.media.AudioFocusInfo;
+import android.media.AudioPlaybackConfiguration;
 import android.media.AudioRecordingConfiguration;
 import android.media.AudioRoutesInfo;
 import android.media.IAudioFocusDispatcher;
 import android.media.IAudioRoutesObserver;
+import android.media.IPlaybackConfigDispatcher;
 import android.media.IRecordingConfigDispatcher;
 import android.media.IRingtonePlayer;
 import android.media.IVolumeController;
+import android.media.PlayerBase;
 import android.media.Rating;
 import android.media.VolumePolicy;
 import android.media.audiopolicy.AudioPolicyConfig;
@@ -38,6 +42,13 @@ import android.view.KeyEvent;
  * {@hide}
  */
 interface IAudioService {
+
+    // WARNING: When methods are inserted or deleted, the transaction IDs in
+    // frameworks/native/include/audiomanager/IAudioManager.h must be updated to match the order
+    // in this file.
+    //
+    // When a method's argument list is changed, BpAudioManager's corresponding serialization code
+    // (if any) in frameworks/native/services/audiomanager/IAudioManager.cpp must be updated.
 
     oneway void adjustSuggestedStreamVolume(int direction, int suggestedStreamType, int flags,
             String callingPackage, String caller);
@@ -59,8 +70,6 @@ interface IAudioService {
     int getStreamMinVolume(int streamType);
 
     int getStreamMaxVolume(int streamType);
-
-    void setStreamMaxVolume(int streamType, int maxVol);
 
     int getLastAudibleStreamVolume(int streamType);
 
@@ -112,9 +121,10 @@ interface IAudioService {
 
     int requestAudioFocus(in AudioAttributes aa, int durationHint, IBinder cb,
             IAudioFocusDispatcher fd, String clientId, String callingPackageName, int flags,
-            IAudioPolicyCallback pcb);
+            IAudioPolicyCallback pcb, int sdk);
 
-    int abandonAudioFocus(IAudioFocusDispatcher fd, String clientId, in AudioAttributes aa);
+    int abandonAudioFocus(IAudioFocusDispatcher fd, String clientId, in AudioAttributes aa,
+            in String callingPackageName);
 
     void unregisterAudioFocusClient(String clientId);
 
@@ -135,6 +145,8 @@ interface IAudioService {
 
     int setBluetoothA2dpDeviceConnectionState(in BluetoothDevice device, int state, int profile);
 
+    void handleBluetoothA2dpDeviceConfigChange(in BluetoothDevice device);
+
     AudioRoutesInfo startWatchingRoutes(in IAudioRoutesObserver observer);
 
     boolean isCameraSoundForced();
@@ -154,7 +166,7 @@ interface IAudioService {
     boolean isHdmiSystemAudioSupported();
 
     String registerAudioPolicy(in AudioPolicyConfig policyConfig,
-            in IAudioPolicyCallback pcb, boolean hasFocusListener);
+            in IAudioPolicyCallback pcb, boolean hasFocusListener, boolean isFocusPolicy);
 
     oneway void unregisterAudioPolicyAsync(in IAudioPolicyCallback pcb);
 
@@ -168,13 +180,38 @@ interface IAudioService {
 
     List<AudioRecordingConfiguration> getActiveRecordingConfigurations();
 
-    void handleHotwordInput(boolean listening);
+    void registerPlaybackCallback(in IPlaybackConfigDispatcher pcdb);
 
-    String getCurrentHotwordInputPackageName();
+    oneway void unregisterPlaybackCallback(in IPlaybackConfigDispatcher pcdb);
 
-    void updateRemoteControllerOnExistingMediaPlayers();
+    List<AudioPlaybackConfiguration> getActivePlaybackConfigurations();
 
-    void addMediaPlayerAndUpdateRemoteController(String packageName);
+    int trackPlayer(in PlayerBase.PlayerIdCard pic);
 
-    void removeMediaPlayerAndUpdateRemoteController(String packageName);
+    oneway void playerAttributes(in int piid, in AudioAttributes attr);
+
+    oneway void playerEvent(in int piid, in int event);
+
+    oneway void releasePlayer(in int piid);
+
+    void disableRingtoneSync(in int userId);
+
+    int getFocusRampTimeMs(in int focusGain, in AudioAttributes attr);
+
+    int dispatchFocusChange(in AudioFocusInfo afi, in int focusChange,
+            in IAudioPolicyCallback pcb);
+
+    oneway void playerHasOpPlayAudio(in int piid, in boolean hasOpPlayAudio);
+
+    // WARNING: read warning at top of file, it is recommended to add new methods at the end
+    /**
+     * Internal DU api to protect Pulse
+     * @hide
+     */
+    void setVisualizerLocked(boolean doLock);
+
+    /**
+     * @hide
+     */
+    boolean isVisualizerLocked(String callingPackage);
 }

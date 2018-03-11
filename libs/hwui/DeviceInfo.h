@@ -16,8 +16,10 @@
 #ifndef DEVICEINFO_H
 #define DEVICEINFO_H
 
-#include "Extensions.h"
+#include <ui/DisplayInfo.h>
+
 #include "utils/Macros.h"
+#include "Extensions.h"
 
 namespace android {
 namespace uirenderer {
@@ -33,19 +35,27 @@ public:
     // only call this after GL has been initialized, or at any point if compiled
     // with HWUI_NULL_GPU
     static void initialize();
-
-    const Extensions& extensions() const { return mExtensions; }
+    static void initialize(int maxTextureSize);
 
     int maxTextureSize() const { return mMaxTextureSize; }
+    const DisplayInfo& displayInfo() const { return mDisplayInfo; }
+    const Extensions& extensions() const { return mExtensions; }
+
+    static uint32_t multiplyByResolution(uint32_t in) {
+        auto di = DeviceInfo::get()->displayInfo();
+        return di.w * di.h * in;
+    }
 
 private:
     DeviceInfo() {}
     ~DeviceInfo() {}
 
     void load();
+    void loadDisplayInfo();
 
-    Extensions mExtensions;
     int mMaxTextureSize;
+    DisplayInfo mDisplayInfo;
+    Extensions mExtensions;
 };
 
 } /* namespace uirenderer */

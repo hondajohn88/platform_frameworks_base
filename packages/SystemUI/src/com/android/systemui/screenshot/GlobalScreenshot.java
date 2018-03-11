@@ -16,15 +16,23 @@
 
 package com.android.systemui.screenshot;
 
+import static com.android.systemui.screenshot.GlobalScreenshot.SHARING_INTENT;
+import static com.android.systemui.statusbar.phone.StatusBar.SYSTEM_DIALOG_REASON_SCREENSHOT;
+
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.animation.ValueAnimator;
 import android.animation.ValueAnimator.AnimatorUpdateListener;
+import android.app.ActivityManager;
+import android.app.ActivityOptions;
+import android.app.admin.DevicePolicyManager;
 import android.app.Notification;
 import android.app.Notification.BigPictureStyle;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.ContentValues;
@@ -47,25 +55,33 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.PowerManager;
 import android.os.Process;
+import android.os.RemoteException;
+import android.os.UserHandle;
 import android.provider.MediaStore;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
+import android.util.Slog;
 import android.view.Display;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceControl;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.animation.Interpolator;
 import android.widget.ImageView;
 import android.widget.Toast;
 
-import com.android.internal.messages.SystemMessageProto.SystemMessage;
+import com.android.internal.messages.nano.SystemMessageProto.SystemMessage;
+import com.android.internal.util.aos.aosUtils;
 import com.android.systemui.R;
 import com.android.systemui.SystemUI;
+import com.android.systemui.util.NotificationChannels;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -101,16 +117,18 @@ class SaveImageInBackgroundData {
  * An AsyncTask that saves an image to the media store in the background.
  */
 class SaveImageInBackgroundTask extends AsyncTask<Void, Void, Void> {
+    private static final String TAG = "SaveImageInBackgroundTask";
 
     private static final String SCREENSHOTS_DIR_NAME = "Screenshots";
     private static final String SCREENSHOT_FILE_NAME_TEMPLATE = "Screenshot_%s.png";
+    private static final String SCREENSHOT_FILE_NAME_TEMPLATE_APPNAME = "Screenshot_%s_%s.png";
     private static final String SCREENSHOT_SHARE_SUBJECT_TEMPLATE = "Screenshot (%s)";
 
     private final SaveImageInBackgroundData mParams;
     private final NotificationManager mNotificationManager;
     private final Notification.Builder mNotificationBuilder, mPublicNotificationBuilder;
     private final File mScreenshotDir;
-    private final String mImageFileName;
+    private String mImageFileName;
     private final String mImageFilePath;
     private final long mImageTime;
     private final BigPictureStyle mNotificationStyle;
@@ -133,6 +151,16 @@ class SaveImageInBackgroundTask extends AsyncTask<Void, Void, Void> {
         mImageTime = System.currentTimeMillis();
         String imageDate = new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date(mImageTime));
         mImageFileName = String.format(SCREENSHOT_FILE_NAME_TEMPLATE, imageDate);
+        final PackageManager pm = context.getPackageManager();
+        ActivityInfo info = aosUtils.getRunningActivityInfo(context);
+        if (info != null) {
+            CharSequence appName = pm.getApplicationLabel(info.applicationInfo);
+            if (appName != null) {
+                // replace all spaces and special chars with an underscore
+                String appNameString = appName.toString().replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
+                mImageFileName = String.format(SCREENSHOT_FILE_NAME_TEMPLATE_APPNAME, appNameString, imageDate);
+            }
+        }
 
         mScreenshotDir = new File(Environment.getExternalStoragePublicDirectory(
                 Environment.DIRECTORY_PICTURES), SCREENSHOTS_DIR_NAME);
@@ -181,18 +209,19 @@ class SaveImageInBackgroundTask extends AsyncTask<Void, Void, Void> {
                 .bigPicture(picture.createAshmemBitmap());
 
         // The public notification will show similar info but with the actual screenshot omitted
-        mPublicNotificationBuilder = new Notification.Builder(context)
-                .setContentTitle(r.getString(R.string.screenshot_saving_title))
-                .setContentText(r.getString(R.string.screenshot_saving_text))
-                .setSmallIcon(R.drawable.stat_notify_image)
-                .setCategory(Notification.CATEGORY_PROGRESS)
-                .setWhen(now)
-                .setShowWhen(true)
-                .setColor(r.getColor(
-                        com.android.internal.R.color.system_notification_accent_color));
+        mPublicNotificationBuilder =
+                new Notification.Builder(context, NotificationChannels.SCREENSHOTS)
+                        .setContentTitle(r.getString(R.string.screenshot_saving_title))
+                        .setContentText(r.getString(R.string.screenshot_saving_text))
+                        .setSmallIcon(R.drawable.stat_notify_image)
+                        .setCategory(Notification.CATEGORY_PROGRESS)
+                        .setWhen(now)
+                        .setShowWhen(true)
+                        .setColor(r.getColor(
+                                com.android.internal.R.color.system_notification_accent_color));
         SystemUI.overrideNotificationAppName(context, mPublicNotificationBuilder);
 
-        mNotificationBuilder = new Notification.Builder(context)
+        mNotificationBuilder = new Notification.Builder(context, NotificationChannels.SCREENSHOTS)
             .setTicker(r.getString(R.string.screenshot_saving_ticker)
                     + (mTickerAddSpace ? " " : ""))
             .setContentTitle(r.getString(R.string.screenshot_saving_title))
@@ -273,14 +302,13 @@ class SaveImageInBackgroundTask extends AsyncTask<Void, Void, Void> {
             sharingIntent.putExtra(Intent.EXTRA_STREAM, uri);
             sharingIntent.putExtra(Intent.EXTRA_SUBJECT, subject);
 
-            // Create a share action for the notification
-            PendingIntent chooseAction = PendingIntent.getBroadcast(context, 0,
-                    new Intent(context, GlobalScreenshot.TargetChosenReceiver.class),
-                    PendingIntent.FLAG_CANCEL_CURRENT | PendingIntent.FLAG_ONE_SHOT);
-            Intent chooserIntent = Intent.createChooser(sharingIntent, null,
-                    chooseAction.getIntentSender())
-                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK);
-            PendingIntent shareAction = PendingIntent.getActivity(context, 0, chooserIntent,
+            // Create a share action for the notification. Note, we proxy the call to ShareReceiver
+            // because RemoteViews currently forces an activity options on the PendingIntent being
+            // launched, and since we don't want to trigger the share sheet in this case, we will
+            // start the chooser activitiy directly in ShareReceiver.
+            PendingIntent shareAction = PendingIntent.getBroadcast(context, 0,
+                    new Intent(context, GlobalScreenshot.ShareReceiver.class)
+                            .putExtra(SHARING_INTENT, sharingIntent),
                     PendingIntent.FLAG_CANCEL_CURRENT);
             Notification.Action.Builder shareActionBuilder = new Notification.Action.Builder(
                     R.drawable.ic_screenshot_share,
@@ -288,7 +316,7 @@ class SaveImageInBackgroundTask extends AsyncTask<Void, Void, Void> {
             mNotificationBuilder.addAction(shareActionBuilder.build());
 
             // Create a delete action for the notification
-            PendingIntent deleteAction = PendingIntent.getBroadcast(context,  0,
+            PendingIntent deleteAction = PendingIntent.getBroadcast(context, 0,
                     new Intent(context, GlobalScreenshot.DeleteScreenshotReceiver.class)
                             .putExtra(GlobalScreenshot.SCREENSHOT_URI_ID, uri != null ? uri.toString() : null),
                     PendingIntent.FLAG_CANCEL_CURRENT | PendingIntent.FLAG_ONE_SHOT);
@@ -303,6 +331,7 @@ class SaveImageInBackgroundTask extends AsyncTask<Void, Void, Void> {
         } catch (Exception e) {
             // IOException/UnsupportedOperationException may be thrown if external storage is not
             // mounted
+            Slog.e(TAG, "unable to save screenshot", e);
             mParams.clearImage();
             mParams.errorMsgResId = R.string.screenshot_failed_to_save_text;
         }
@@ -329,7 +358,8 @@ class SaveImageInBackgroundTask extends AsyncTask<Void, Void, Void> {
             // Create the intent to show the screenshot in gallery
             Intent launchIntent = new Intent(Intent.ACTION_VIEW);
             launchIntent.setDataAndType(mParams.imageUri, "image/png");
-            launchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            launchIntent.setFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
             final long now = System.currentTimeMillis();
 
@@ -378,8 +408,6 @@ class SaveImageInBackgroundTask extends AsyncTask<Void, Void, Void> {
  * An AsyncTask that deletes an image from the media store in the background.
  */
 class DeleteImageInBackgroundTask extends AsyncTask<Uri, Void, Void> {
-    private static final String TAG = "DeleteImageInBackgroundTask";
-
     private Context mContext;
 
     DeleteImageInBackgroundTask(Context context) {
@@ -392,17 +420,14 @@ class DeleteImageInBackgroundTask extends AsyncTask<Uri, Void, Void> {
 
         Uri screenshotUri = params[0];
         ContentResolver resolver = mContext.getContentResolver();
-        try{
-            resolver.delete(screenshotUri, null, null);
-        } catch (UnsupportedOperationException e) {
-            e.printStackTrace();
-        }
+        resolver.delete(screenshotUri, null, null);
         return null;
     }
 }
 
 class GlobalScreenshot {
     static final String SCREENSHOT_URI_ID = "android:screenshot_uri_id";
+    static final String SHARING_INTENT = "android:screenshot_sharing_intent";
 
     private static final int SCREENSHOT_FLASH_TO_PEAK_DURATION = 130;
     private static final int SCREENSHOT_DROP_IN_DURATION = 430;
@@ -446,6 +471,11 @@ class GlobalScreenshot {
 
     private final int mSfHwRotation;
 
+    public static boolean mPartialShotStarted;
+    public static boolean mPartialShot;
+    private float mTouchDownX;
+    private float mTouchDownY;
+
     /**
      * @param context everything needs a context :(
      */
@@ -479,7 +509,6 @@ class GlobalScreenshot {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, 0, 0,
                 WindowManager.LayoutParams.TYPE_SCREENSHOT,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN
-                    | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
                     | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                     | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
                 PixelFormat.TRANSLUCENT);
@@ -513,7 +542,7 @@ class GlobalScreenshot {
         mPreviewHeight = r.getDimensionPixelSize(R.dimen.notification_max_height);
 
         // Load hardware rotation from prop
-        mSfHwRotation = android.os.SystemProperties.getInt("ro.sf.hwrotation",0) / 90;
+        mSfHwRotation = android.os.SystemProperties.getInt("ro.sf.hwrotation", 0) / 90;
 
         // Setup the Screenshot sound
         mScreenshotSound= RingtoneManager.getRingtone(mContext,
@@ -588,7 +617,8 @@ class GlobalScreenshot {
         if (requiresRotation) {
             // Rotate the screenshot to the current orientation
             Bitmap ss = Bitmap.createBitmap(mDisplayMetrics.widthPixels,
-                    mDisplayMetrics.heightPixels, Bitmap.Config.ARGB_8888);
+                    mDisplayMetrics.heightPixels, Bitmap.Config.ARGB_8888,
+                    mScreenBitmap.hasAlpha(), mScreenBitmap.getColorSpace());
             Canvas c = new Canvas(ss);
             c.translate(ss.getWidth() / 2, ss.getHeight() / 2);
             c.rotate(degrees);
@@ -617,6 +647,7 @@ class GlobalScreenshot {
     }
 
     void takeScreenshot(Runnable finisher, boolean statusBarVisible, boolean navBarVisible) {
+        mPartialShot = false;
         mDisplay.getRealMetrics(mDisplayMetrics);
         takeScreenshot(finisher, statusBarVisible, navBarVisible, 0, 0, mDisplayMetrics.widthPixels,
                 mDisplayMetrics.heightPixels);
@@ -628,35 +659,51 @@ class GlobalScreenshot {
     void takeScreenshotPartial(final Runnable finisher, final boolean statusBarVisible,
             final boolean navBarVisible) {
         mWindowManager.addView(mScreenshotLayout, mWindowLayoutParams);
+        mPartialShotStarted = false;
+        mPartialShot = true;
+        ViewConfiguration vc = ViewConfiguration.get(mContext);
+        final int touchSlop = vc.getScaledTouchSlop();
         mScreenshotSelectorView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 ScreenshotSelectorView view = (ScreenshotSelectorView) v;
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
+                        mPartialShotStarted = true;
+                        mTouchDownX = event.getRawX();
+                        mTouchDownY = event.getRawY();
                         view.startSelection((int) event.getX(), (int) event.getY());
                         return true;
                     case MotionEvent.ACTION_MOVE:
                         view.updateSelection((int) event.getX(), (int) event.getY());
                         return true;
                     case MotionEvent.ACTION_UP:
+                        float x = event.getRawX();
+                        float y = event.getRawY();
                         view.setVisibility(View.GONE);
                         mWindowManager.removeView(mScreenshotLayout);
-                        final Rect rect = view.getSelectionRect();
-                        if (rect != null) {
-                            if (rect.width() != 0 && rect.height() != 0) {
+                        if (Math.abs(mTouchDownX - x) > touchSlop ||
+                            Math.abs(mTouchDownY - y) > touchSlop) {
+                            final Rect rect = view.getSelectionRect();
+                            if (rect != null && !rect.isEmpty()) {
                                 // Need mScreenshotLayout to handle it after the view disappears
                                 mScreenshotLayout.post(new Runnable() {
                                     public void run() {
                                         takeScreenshot(finisher, statusBarVisible, navBarVisible,
-                                                rect.left, rect.top, rect.width(), rect.height());
+                                                Math.max(0, rect.left), Math.max(0, rect.top),
+                                                rect.width(), rect.height());
                                     }
                                 });
+                                view.stopSelection();
+                                return true;
                             }
                         }
-
+                        finisher.run();
                         view.stopSelection();
                         return true;
+                    case MotionEvent.ACTION_CANCEL:
+                        stopScreenshot();
+                        finisher.run();
                 }
 
                 return false;
@@ -687,6 +734,13 @@ class GlobalScreenshot {
      */
     private void startAnimation(final Runnable finisher, int w, int h, boolean statusBarVisible,
             boolean navBarVisible) {
+        // If power save is on, show a toast so there is some visual indication that a screenshot
+        // has been taken.
+        PowerManager powerManager = (PowerManager) mContext.getSystemService(Context.POWER_SERVICE);
+        if (powerManager.isPowerSaveMode()) {
+            Toast.makeText(mContext, R.string.screenshot_saved_title, Toast.LENGTH_SHORT).show();
+        }
+
         // Add the view for the animation
         mScreenshotView.setImageBitmap(mScreenBitmap);
         mScreenshotLayout.requestFocus();
@@ -769,7 +823,6 @@ class GlobalScreenshot {
                 mScreenshotView.setTranslationY(0f);
                 mScreenshotView.setScaleX(SCREENSHOT_SCALE + mBgPaddingScale);
                 mScreenshotView.setScaleY(SCREENSHOT_SCALE + mBgPaddingScale);
-                mScreenshotView.setRotation(5.0f);
                 mScreenshotView.setVisibility(View.VISIBLE);
                 mScreenshotFlash.setAlpha(0f);
                 mScreenshotFlash.setVisibility(View.VISIBLE);
@@ -868,11 +921,16 @@ class GlobalScreenshot {
     }
 
     static void notifyScreenshotError(Context context, NotificationManager nManager, int msgResId) {
+        // do nothing - it was a partial screenshot and no selection was made
+        if (mPartialShot && !mPartialShotStarted) {
+            return;
+        }
+
         Resources r = context.getResources();
         String errorMsg = r.getString(msgResId);
 
         // Repurpose the existing notification to notify the user of the error
-        Notification.Builder b = new Notification.Builder(context)
+        Notification.Builder b = new Notification.Builder(context, NotificationChannels.ALERTS)
             .setTicker(r.getString(R.string.screenshot_failed_title))
             .setContentTitle(r.getString(R.string.screenshot_failed_title))
             .setContentText(errorMsg)
@@ -883,12 +941,46 @@ class GlobalScreenshot {
             .setAutoCancel(true)
             .setColor(context.getColor(
                         com.android.internal.R.color.system_notification_accent_color));
+        final DevicePolicyManager dpm = (DevicePolicyManager) context.getSystemService(
+                Context.DEVICE_POLICY_SERVICE);
+        final Intent intent = dpm.createAdminSupportIntent(
+                DevicePolicyManager.POLICY_DISABLE_SCREEN_CAPTURE);
+        if (intent != null) {
+            final PendingIntent pendingIntent = PendingIntent.getActivityAsUser(
+                    context, 0, intent, 0, null, UserHandle.CURRENT);
+            b.setContentIntent(pendingIntent);
+        }
+
         SystemUI.overrideNotificationAppName(context, b);
 
         Notification n = new Notification.BigTextStyle(b)
                 .bigText(errorMsg)
                 .build();
         nManager.notify(SystemMessage.NOTE_GLOBAL_SCREENSHOT, n);
+    }
+
+    /**
+     * Receiver to proxy the share intent.
+     */
+    public static class ShareReceiver extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            try {
+                ActivityManager.getService().closeSystemDialogs(SYSTEM_DIALOG_REASON_SCREENSHOT);
+            } catch (RemoteException e) {
+            }
+
+            Intent sharingIntent = intent.getParcelableExtra(SHARING_INTENT);
+            PendingIntent chooseAction = PendingIntent.getBroadcast(context, 0,
+                    new Intent(context, GlobalScreenshot.TargetChosenReceiver.class),
+                    PendingIntent.FLAG_CANCEL_CURRENT | PendingIntent.FLAG_ONE_SHOT);
+            Intent chooserIntent = Intent.createChooser(sharingIntent, null,
+                    chooseAction.getIntentSender())
+                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK);
+            ActivityOptions opts = ActivityOptions.makeBasic();
+            opts.setDisallowEnterPictureInPictureWhileLaunching(true);
+            context.startActivityAsUser(chooserIntent, opts.toBundle(), UserHandle.CURRENT);
+        }
     }
 
     /**
@@ -919,8 +1011,8 @@ class GlobalScreenshot {
                     (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
             final Uri uri = Uri.parse(intent.getStringExtra(SCREENSHOT_URI_ID));
             nm.cancel(SystemMessage.NOTE_GLOBAL_SCREENSHOT);
-
             Toast.makeText(context, R.string.delete_screenshot_toast, Toast.LENGTH_SHORT).show();
+
             // And delete the image from the media store
             new DeleteImageInBackgroundTask(context).execute(uri);
         }

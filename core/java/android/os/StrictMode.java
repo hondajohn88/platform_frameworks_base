@@ -16,7 +16,8 @@
 package android.os;
 
 import android.animation.ValueAnimator;
-import android.app.ActivityManagerNative;
+import android.annotation.TestApi;
+import android.app.ActivityManager;
 import android.app.ActivityThread;
 import android.app.ApplicationErrorReport;
 import android.app.IActivityManager;
@@ -24,6 +25,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.net.TrafficStats;
 import android.net.Uri;
 import android.util.ArrayMap;
 import android.util.Log;
@@ -39,6 +41,7 @@ import com.android.internal.util.HexDump;
 import dalvik.system.BlockGuard;
 import dalvik.system.CloseGuard;
 import dalvik.system.VMDebug;
+import dalvik.system.VMRuntime;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -122,9 +125,6 @@ public final class StrictMode {
     private static final String TAG = "StrictMode";
     private static final boolean LOG_V = Log.isLoggable(TAG, Log.VERBOSE);
 
-    private static final boolean IS_USER_BUILD = "user".equals(Build.TYPE);
-    private static final boolean IS_ENG_BUILD = "eng".equals(Build.TYPE);
-
     /**
      * Boolean system property to disable strict mode checks outright.
      * Set this to 'true' to force disable; 'false' has no effect on other
@@ -191,9 +191,14 @@ public final class StrictMode {
      */
     public static final int DETECT_RESOURCE_MISMATCH = 0x10;  // for ThreadPolicy
 
+    /**
+     * @hide
+     */
+    public static final int DETECT_UNBUFFERED_IO = 0x20;  // for ThreadPolicy
+
     private static final int ALL_THREAD_DETECT_BITS =
             DETECT_DISK_WRITE | DETECT_DISK_READ | DETECT_NETWORK | DETECT_CUSTOM |
-            DETECT_RESOURCE_MISMATCH;
+            DETECT_RESOURCE_MISMATCH | DETECT_UNBUFFERED_IO;
 
     // Byte 2: Process-policy
 
@@ -235,11 +240,22 @@ public final class StrictMode {
      */
     private static final int DETECT_VM_CLEARTEXT_NETWORK = 0x40 << 8;  // for VmPolicy
 
+    /**
+     * @hide
+     */
+    private static final int DETECT_VM_CONTENT_URI_WITHOUT_PERMISSION = 0x80 << 8;  // for VmPolicy
+
+    /**
+     * @hide
+     */
+    private static final int DETECT_VM_UNTAGGED_SOCKET = 0x80 << 24;  // for VmPolicy
+
     private static final int ALL_VM_DETECT_BITS =
             DETECT_VM_CURSOR_LEAKS | DETECT_VM_CLOSABLE_LEAKS |
             DETECT_VM_ACTIVITY_LEAKS | DETECT_VM_INSTANCE_LEAKS |
             DETECT_VM_REGISTRATION_LEAKS | DETECT_VM_FILE_URI_EXPOSURE |
-            DETECT_VM_CLEARTEXT_NETWORK;
+            DETECT_VM_CLEARTEXT_NETWORK | DETECT_VM_CONTENT_URI_WITHOUT_PERMISSION |
+            DETECT_VM_UNTAGGED_SOCKET;
 
     // Byte 3: Penalty
 
@@ -290,6 +306,8 @@ public final class StrictMode {
      */
     public static final int PENALTY_DEATH_ON_FILE_URI_EXPOSURE = 0x04 << 24;
 
+    // CAUTION: we started stealing the top bits of Byte 4 for VM above
+
     /**
      * Mask of all the penalty bits valid for thread policies.
      */
@@ -321,6 +339,20 @@ public final class StrictMode {
      */
     private static volatile int sVmPolicyMask = 0;
     private static volatile VmPolicy sVmPolicy = VmPolicy.LAX;
+
+    /** {@hide} */
+    @TestApi
+    public interface ViolationListener {
+        public void onViolation(String message);
+    }
+
+    private static volatile ViolationListener sListener;
+
+    /** {@hide} */
+    @TestApi
+    public static void setViolationListener(ViolationListener listener) {
+        sListener = listener;
+    }
 
     /**
      * The number of threads trying to do an async dropbox write.
@@ -404,7 +436,21 @@ public final class StrictMode {
              * disk operations but will likely expand in future releases.
              */
             public Builder detectAll() {
-                return enable(ALL_THREAD_DETECT_BITS);
+                detectDiskReads();
+                detectDiskWrites();
+                detectNetwork();
+
+                final int targetSdk = VMRuntime.getRuntime().getTargetSdkVersion();
+                if (targetSdk >= Build.VERSION_CODES.HONEYCOMB) {
+                    detectCustomSlowCalls();
+                }
+                if (targetSdk >= Build.VERSION_CODES.M) {
+                    detectResourceMismatches();
+                }
+                if (targetSdk >= Build.VERSION_CODES.O) {
+                    detectUnbufferedIo();
+                }
+                return this;
             }
 
             /**
@@ -462,6 +508,20 @@ public final class StrictMode {
              */
             public Builder permitResourceMismatches() {
                 return disable(DETECT_RESOURCE_MISMATCH);
+            }
+
+            /**
+             * Detect unbuffered input/output operations.
+             */
+            public Builder detectUnbufferedIo() {
+                return enable(DETECT_UNBUFFERED_IO);
+            }
+
+            /**
+             * Disable detection of unbuffered input/output operations.
+             */
+            public Builder permitUnbufferedIo() {
+                return disable(DETECT_UNBUFFERED_IO);
             }
 
             /**
@@ -689,17 +749,31 @@ public final class StrictMode {
              * but will likely expand in future releases.
              */
             public Builder detectAll() {
-                int flags = DETECT_VM_ACTIVITY_LEAKS | DETECT_VM_CURSOR_LEAKS
-                        | DETECT_VM_CLOSABLE_LEAKS | DETECT_VM_REGISTRATION_LEAKS
-                        | DETECT_VM_FILE_URI_EXPOSURE;
+                detectLeakedSqlLiteObjects();
 
-                // TODO: always add DETECT_VM_CLEARTEXT_NETWORK once we have facility
-                // for apps to mark sockets that should be ignored
-                if (SystemProperties.getBoolean(CLEARTEXT_PROPERTY, false)) {
-                    flags |= DETECT_VM_CLEARTEXT_NETWORK;
+                final int targetSdk = VMRuntime.getRuntime().getTargetSdkVersion();
+                if (targetSdk >= Build.VERSION_CODES.HONEYCOMB) {
+                    detectActivityLeaks();
+                    detectLeakedClosableObjects();
                 }
-
-                return enable(flags);
+                if (targetSdk >= Build.VERSION_CODES.JELLY_BEAN) {
+                    detectLeakedRegistrationObjects();
+                }
+                if (targetSdk >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+                    detectFileUriExposure();
+                }
+                if (targetSdk >= Build.VERSION_CODES.M) {
+                    // TODO: always add DETECT_VM_CLEARTEXT_NETWORK once we have
+                    // facility for apps to mark sockets that should be ignored
+                    if (SystemProperties.getBoolean(CLEARTEXT_PROPERTY, false)) {
+                        detectCleartextNetwork();
+                    }
+                }
+                if (targetSdk >= Build.VERSION_CODES.O) {
+                    detectContentUriWithoutPermission();
+                    detectUntaggedSockets();
+                }
+                return this;
             }
 
             /**
@@ -717,7 +791,7 @@ public final class StrictMode {
 
             /**
              * Detect when an {@link java.io.Closeable} or other
-             * object with a explict termination method is finalized
+             * object with an explicit termination method is finalized
              * without having been closed.
              *
              * <p>You always want to explicitly close such objects to
@@ -737,7 +811,7 @@ public final class StrictMode {
             }
 
             /**
-             * Detect when this application exposes a {@code file://}
+             * Detect when the calling application exposes a {@code file://}
              * {@link android.net.Uri} to another app.
              * <p>
              * This exposure is discouraged since the receiving app may not have
@@ -777,6 +851,38 @@ public final class StrictMode {
              */
             public Builder detectCleartextNetwork() {
                 return enable(DETECT_VM_CLEARTEXT_NETWORK);
+            }
+
+            /**
+             * Detect when the calling application sends a {@code content://}
+             * {@link android.net.Uri} to another app without setting
+             * {@link Intent#FLAG_GRANT_READ_URI_PERMISSION} or
+             * {@link Intent#FLAG_GRANT_WRITE_URI_PERMISSION}.
+             * <p>
+             * Forgetting to include one or more of these flags when sending an
+             * intent is typically an app bug.
+             *
+             * @see Intent#FLAG_GRANT_READ_URI_PERMISSION
+             * @see Intent#FLAG_GRANT_WRITE_URI_PERMISSION
+             */
+            public Builder detectContentUriWithoutPermission() {
+                return enable(DETECT_VM_CONTENT_URI_WITHOUT_PERMISSION);
+            }
+
+            /**
+             * Detect any sockets in the calling app which have not been tagged
+             * using {@link TrafficStats}. Tagging sockets can help you
+             * investigate network usage inside your app, such as a narrowing
+             * down heavy usage to a specific library or component.
+             * <p>
+             * This currently does not detect sockets created in native code.
+             *
+             * @see TrafficStats#setThreadStatsTag(int)
+             * @see TrafficStats#tagSocket(java.net.Socket)
+             * @see TrafficStats#tagDatagramSocket(java.net.DatagramSocket)
+             */
+            public Builder detectUntaggedSockets() {
+                return enable(DETECT_VM_UNTAGGED_SOCKET);
             }
 
             /**
@@ -827,6 +933,11 @@ public final class StrictMode {
 
             private Builder enable(int bit) {
                 mMask |= bit;
+                return this;
+            }
+
+            Builder disable(int bit) {
+                mMask &= ~bit;
                 return this;
             }
 
@@ -974,6 +1085,15 @@ public final class StrictMode {
     }
 
     /**
+     * @hide
+     */
+    private static class StrictModeUnbufferedIOViolation extends StrictModeViolation {
+        public StrictModeUnbufferedIOViolation(int policyMask) {
+            super(policyMask, DETECT_UNBUFFERED_IO, null);
+        }
+    }
+
+    /**
      * Returns the bitmask of the current thread's policy.
      *
      * @return the bitmask of all the DETECT_* and PENALTY_* bits currently enabled
@@ -1068,7 +1188,7 @@ public final class StrictMode {
 
         // For debug builds, log event loop stalls to dropbox for analysis.
         // Similar logic also appears in ActivityThread.java for system apps.
-        if (!doFlashes && (IS_USER_BUILD || suppress)) {
+        if (!doFlashes && (Build.IS_USER || suppress)) {
             setCloseGuardEnabled(false);
             return false;
         }
@@ -1076,7 +1196,7 @@ public final class StrictMode {
         // Eng builds have flashes on all the time.  The suppression property
         // overrides this, so we force the behavior only after the short-circuit
         // check above.
-        if (IS_ENG_BUILD) {
+        if (Build.IS_ENG) {
             doFlashes = true;
         }
 
@@ -1085,7 +1205,7 @@ public final class StrictMode {
                 StrictMode.DETECT_DISK_READ |
                 StrictMode.DETECT_NETWORK;
 
-        if (!IS_USER_BUILD) {
+        if (!Build.IS_USER) {
             threadPolicyMask |= StrictMode.PENALTY_DROPBOX;
         }
         if (doFlashes) {
@@ -1096,12 +1216,25 @@ public final class StrictMode {
 
         // VM Policy controls CloseGuard, detection of Activity leaks,
         // and instance counting.
-        if (IS_USER_BUILD) {
+        if (Build.IS_USER) {
             setCloseGuardEnabled(false);
         } else {
-            VmPolicy.Builder policyBuilder = new VmPolicy.Builder().detectAll().penaltyDropBox();
-            if (IS_ENG_BUILD) {
+            VmPolicy.Builder policyBuilder = new VmPolicy.Builder().detectAll();
+            if (!Build.IS_ENG) {
+                // Activity leak detection causes too much slowdown for userdebug because of the
+                // GCs.
+                policyBuilder = policyBuilder.disable(DETECT_VM_ACTIVITY_LEAKS);
+            }
+            policyBuilder = policyBuilder.penaltyDropBox();
+            if (Build.IS_ENG) {
                 policyBuilder.penaltyLog();
+            }
+            // All core system components need to tag their sockets to aid
+            // system health investigations
+            if (android.os.Process.myUid() < android.os.Process.FIRST_APPLICATION_UID) {
+                policyBuilder.enable(DETECT_VM_UNTAGGED_SOCKET);
+            } else {
+                policyBuilder.disable(DETECT_VM_UNTAGGED_SOCKET);
             }
             setVmPolicy(policyBuilder.build());
             setCloseGuardEnabled(vmClosableObjectLeaksEnabled());
@@ -1277,6 +1410,20 @@ public final class StrictMode {
             }
             BlockGuard.BlockGuardPolicyException e =
                     new StrictModeResourceMismatchViolation(mPolicyMask, tag);
+            e.fillInStackTrace();
+            startHandlingViolationException(e);
+        }
+
+        // Part of BlockGuard.Policy; just part of StrictMode:
+        public void onUnbufferedIO() {
+            if ((mPolicyMask & DETECT_UNBUFFERED_IO) == 0) {
+                return;
+            }
+            if (tooManyViolationsThisLoop()) {
+                return;
+            }
+            BlockGuard.BlockGuardPolicyException e =
+                    new StrictModeUnbufferedIOViolation(mPolicyMask);
             e.fillInStackTrace();
             startHandlingViolationException(e);
         }
@@ -1459,6 +1606,9 @@ public final class StrictMode {
             long timeSinceLastViolationMillis = lastViolationTime == 0 ?
                     Long.MAX_VALUE : (now - lastViolationTime);
 
+            if ((info.policy & PENALTY_LOG) != 0 && sListener != null) {
+                sListener.onViolation(info.crashInfo.stackTrace);
+            }
             if ((info.policy & PENALTY_LOG) != 0 &&
                 timeSinceLastViolationMillis > MIN_LOG_INTERVAL_MS) {
                 if (info.durationMillis != -1) {
@@ -1509,7 +1659,7 @@ public final class StrictMode {
                     // We restore the current policy below, in the finally block.
                     setThreadPolicyMask(0);
 
-                    ActivityManagerNative.getDefault().handleApplicationStrictModeViolation(
+                    ActivityManager.getService().handleApplicationStrictModeViolation(
                         RuntimeInit.getApplicationObject(),
                         violationMaskSubset,
                         info);
@@ -1560,7 +1710,7 @@ public final class StrictMode {
             public void run() {
                 Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND);
                 try {
-                    IActivityManager am = ActivityManagerNative.getDefault();
+                    IActivityManager am = ActivityManager.getService();
                     if (am == null) {
                         Log.d(TAG, "No activity manager; failed to Dropbox violation.");
                     } else {
@@ -1762,6 +1912,20 @@ public final class StrictMode {
     /**
      * @hide
      */
+    public static boolean vmContentUriWithoutPermissionEnabled() {
+        return (sVmPolicyMask & DETECT_VM_CONTENT_URI_WITHOUT_PERMISSION) != 0;
+    }
+
+    /**
+     * @hide
+     */
+    public static boolean vmUntaggedSocketEnabled() {
+        return (sVmPolicyMask & DETECT_VM_UNTAGGED_SOCKET) != 0;
+    }
+
+    /**
+     * @hide
+     */
     public static void onSqliteObjectLeaked(String message, Throwable originStack) {
         onVmPolicyViolation(message, originStack);
     }
@@ -1802,6 +1966,16 @@ public final class StrictMode {
     /**
      * @hide
      */
+    public static void onContentUriWithoutPermission(Uri uri, String location) {
+        final String message = uri + " exposed beyond app through " + location
+                + " without permission grant flags; did you forget"
+                + " FLAG_GRANT_READ_URI_PERMISSION?";
+        onVmPolicyViolation(null, new Throwable(message));
+    }
+
+    /**
+     * @hide
+     */
     public static void onCleartextNetworkDetected(byte[] firstPacket) {
         byte[] rawAddr = null;
         if (firstPacket != null) {
@@ -1829,6 +2003,14 @@ public final class StrictMode {
         final boolean forceDeath = (sVmPolicyMask & PENALTY_DEATH_ON_CLEARTEXT_NETWORK) != 0;
         onVmPolicyViolation(HexDump.dumpHexString(firstPacket).trim(), new Throwable(msg),
                 forceDeath);
+    }
+
+    /**
+     * @hide
+     */
+    public static void onUntaggedSocket() {
+        onVmPolicyViolation(null, new Throwable("Untagged socket detected; use"
+                + " TrafficStats.setThreadSocketTag() to track all network usage"));
     }
 
     // Map from VM violation fingerprint to uptime millis.
@@ -1870,6 +2052,9 @@ public final class StrictMode {
             }
         }
 
+        if (penaltyLog && sListener != null) {
+            sListener.onViolation(originStack.toString());
+        }
         if (penaltyLog && timeSinceLastViolationMillis > MIN_LOG_INTERVAL_MS) {
             Log.e(TAG, message, originStack);
         }
@@ -1897,7 +2082,7 @@ public final class StrictMode {
                 // We restore the current policy below, in the finally block.
                 setThreadPolicyMask(0);
 
-                ActivityManagerNative.getDefault().handleApplicationStrictModeViolation(
+                ActivityManager.getService().handleApplicationStrictModeViolation(
                     RuntimeInit.getApplicationObject(),
                     violationMaskSubset,
                     info);
@@ -2108,7 +2293,7 @@ public final class StrictMode {
      * @hide
      */
     public static Span enterCriticalSpan(String name) {
-        if (IS_USER_BUILD) {
+        if (Build.IS_USER) {
             return NO_OP_SPAN;
         }
         if (name == null || name.isEmpty()) {
@@ -2175,6 +2360,18 @@ public final class StrictMode {
             return;
         }
         ((AndroidBlockGuardPolicy) policy).onResourceMismatch(tag);
+    }
+
+    /**
+     * @hide
+     */
+    public static void noteUnbufferedIO() {
+        BlockGuard.Policy policy = BlockGuard.getThreadPolicy();
+        if (!(policy instanceof AndroidBlockGuardPolicy)) {
+            // StrictMode not enabled.
+            return;
+        }
+        ((AndroidBlockGuardPolicy) policy).onUnbufferedIO();
     }
 
     /**
@@ -2291,7 +2488,7 @@ public final class StrictMode {
      *
      * @hide
      */
-    public static class ViolationInfo {
+    public static class ViolationInfo implements Parcelable {
         public final String message;
 
         /**
@@ -2453,6 +2650,7 @@ public final class StrictMode {
         /**
          * Save a ViolationInfo instance to a parcel.
          */
+        @Override
         public void writeToParcel(Parcel dest, int flags) {
             dest.writeString(message);
             if (crashInfo != null) {
@@ -2471,7 +2669,7 @@ public final class StrictMode {
             dest.writeString(broadcastIntentAction);
             dest.writeStringArray(tags);
             int total = dest.dataPosition()-start;
-            if (total > 10*1024) {
+            if (Binder.CHECK_PARCEL_SIZE && total > 10*1024) {
                 Slog.d(TAG, "VIO: policy=" + policy + " dur=" + durationMillis
                         + " numLoop=" + violationNumThisLoop
                         + " anim=" + numAnimationsRunning
@@ -2516,6 +2714,23 @@ public final class StrictMode {
             }
         }
 
+        @Override
+        public int describeContents() {
+            return 0;
+        }
+
+        public static final Parcelable.Creator<ViolationInfo> CREATOR =
+                new Parcelable.Creator<ViolationInfo>() {
+                    @Override
+                    public ViolationInfo createFromParcel(Parcel in) {
+                        return new ViolationInfo(in);
+                    }
+
+                    @Override
+                    public ViolationInfo[] newArray(int size) {
+                        return new ViolationInfo[size];
+                    }
+                };
     }
 
     // Dummy throwable, for now, since we don't know when or where the

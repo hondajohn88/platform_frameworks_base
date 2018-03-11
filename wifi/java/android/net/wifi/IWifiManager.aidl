@@ -16,6 +16,12 @@
 
 package android.net.wifi;
 
+
+import android.content.pm.ParceledListSlice;
+
+import android.net.wifi.hotspot2.OsuProvider;
+import android.net.wifi.hotspot2.PasspointConfiguration;
+
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.ScanSettings;
@@ -50,20 +56,21 @@ interface IWifiManager
      */
     oneway void requestActivityInfo(in ResultReceiver result);
 
-    List<WifiConfiguration> getConfiguredNetworks();
+    ParceledListSlice getConfiguredNetworks();
 
-    boolean hasCarrierConfiguredNetworks();
-
-    List<WifiConfiguration> getPrivilegedConfiguredNetworks();
+    ParceledListSlice getPrivilegedConfiguredNetworks();
 
     WifiConfiguration getMatchingWifiConfig(in ScanResult scanResult);
 
+    List<OsuProvider> getMatchingOsuProviders(in ScanResult scanResult);
+
     int addOrUpdateNetwork(in WifiConfiguration config);
 
-    int addPasspointManagementObject(String mo);
+    boolean addOrUpdatePasspointConfiguration(in PasspointConfiguration config);
 
-    int modifyPasspointManagementObject(String fqdn,
-                                        in List<PasspointManagementObjectDefinition> mos);
+    boolean removePasspointConfiguration(in String fqdn);
+
+    List<PasspointConfiguration> getPasspointConfigurations();
 
     void queryPasspointIcon(long bssid, String fileName);
 
@@ -77,9 +84,7 @@ interface IWifiManager
 
     boolean disableNetwork(int netId);
 
-    boolean pingSupplicant();
-
-    void startScan(in ScanSettings requested, in WorkSource ws);
+    void startScan(in ScanSettings requested, in WorkSource ws, in String packageName);
 
     List<ScanResult> getScanResults(String callingPackage);
 
@@ -89,7 +94,7 @@ interface IWifiManager
 
     void reassociate();
 
-    WifiInfo getConnectionInfo();
+    WifiInfo getConnectionInfo(String callingPackage);
 
     boolean setWifiEnabled(String packageName, boolean enable);
 
@@ -98,10 +103,6 @@ interface IWifiManager
     void setCountryCode(String country, boolean persist);
 
     String getCountryCode();
-
-    void setFrequencyBand(int band, boolean persist);
-
-    int getFrequencyBand();
 
     boolean isDualBandSupported();
 
@@ -127,27 +128,33 @@ interface IWifiManager
 
     void setWifiApEnabled(in WifiConfiguration wifiConfig, boolean enable);
 
+    void updateInterfaceIpState(String ifaceName, int mode);
+
+    boolean startSoftAp(in WifiConfiguration wifiConfig);
+
+    boolean stopSoftAp();
+
+    int startLocalOnlyHotspot(in Messenger messenger, in IBinder binder, in String packageName);
+
+    void stopLocalOnlyHotspot();
+
+    void startWatchLocalOnlyHotspot(in Messenger messenger, in IBinder binder);
+
+    void stopWatchLocalOnlyHotspot();
+
     int getWifiApEnabledState();
 
     WifiConfiguration getWifiApConfiguration();
 
-    WifiConfiguration buildWifiConfig(String uriString, String mimeType, in byte[] data);
-
     void setWifiApConfiguration(in WifiConfiguration wifiConfig);
 
-    void addToBlacklist(String bssid);
-
-    void clearBlacklist();
-
     Messenger getWifiServiceMessenger();
-
-    String getConfigFile();
 
     void enableTdls(String remoteIPAddress, boolean enable);
 
     void enableTdlsWithMacAddress(String remoteMacAddress, boolean enable);
 
-    String getWpsNfcConfigurationToken(int netId);
+    String getCurrentNetworkWpsNfcConfigurationToken();
 
     void enableVerboseLogging(int verbose);
 
@@ -172,6 +179,10 @@ interface IWifiManager
 
     Network getCurrentNetwork();
 
-    boolean getWifiStaSapConcurrency();
+    byte[] retrieveBackupData();
+
+    void restoreBackupData(in byte[] data);
+
+    void restoreSupplicantBackupData(in byte[] supplicantData, in byte[] ipConfigData);
 }
 

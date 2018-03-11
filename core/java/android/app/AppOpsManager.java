@@ -1,7 +1,5 @@
 /*
  * Copyright (C) 2012 The Android Open Source Project
- * Copyright (c) 2013-2016, The CyanogenMod Project
- * Copyright (c) 2013-2014, The Linux Foundation. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +17,9 @@
 package android.app;
 
 import android.Manifest;
+import android.annotation.RequiresPermission;
 import android.annotation.SystemApi;
+import android.annotation.SystemService;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.media.AudioAttributes.AttributeUsage;
@@ -30,7 +30,6 @@ import android.os.Parcelable;
 import android.os.Process;
 import android.os.RemoteException;
 import android.os.UserHandle;
-import android.os.SystemProperties;
 import android.os.UserManager;
 import android.util.ArrayMap;
 
@@ -45,10 +44,9 @@ import java.util.List;
  * API for interacting with "application operation" tracking.
  *
  * <p>This API is not generally intended for third party application developers; most
- * features are only available to system applications.  Obtain an instance of it through
- * {@link Context#getSystemService(String) Context.getSystemService} with
- * {@link Context#APP_OPS_SERVICE Context.APP_OPS_SERVICE}.</p>
+ * features are only available to system applications.
  */
+@SystemService(Context.APP_OPS_SERVICE)
 public class AppOpsManager {
     /**
      * <p>App ops allows callers to:</p>
@@ -71,10 +69,6 @@ public class AppOpsManager {
      * MODE_ERRORED (throw a SecurityException back to the caller; the normal operation calls
      * will do this for you).
      */
-
-    /** {@hide} */
-    public static final String ACTION_SU_SESSION_CHANGED =
-            "android.intent.action.SU_SESSION_CHANGED";
 
     final Context mContext;
     final IAppOpsService mService;
@@ -110,17 +104,9 @@ public class AppOpsManager {
      */
     public static final int MODE_DEFAULT = 3;
 
-    /**
-     * @hide Result from {@link #checkOp}, {@link #noteOp}, {@link #startOp}:
-     * AppOps Service should show a dialog box on screen to get user
-     * permission.
-     */
-    public static final int MODE_ASK = 4;
-
     // when adding one of these:
     //  - increment _NUM_OP
-    //  - add rows to sOpToSwitch, sOpToString, sOpNames, sOpToPerms, sOpDefault,
-    //    sOpDefaultStrictMode, sOpToOpString, sOpStrictMode.
+    //  - add rows to sOpToSwitch, sOpToString, sOpNames, sOpToPerms, sOpDefault
     //  - add descriptive strings to Settings/res/values/arrays.xml
     //  - add the op to the appropriate template in AppOpsState.OpsTemplate (settings app)
 
@@ -254,20 +240,22 @@ public class AppOpsManager {
     public static final int OP_GET_ACCOUNTS = 62;
     /** @hide Control whether an application is allowed to run in the background. */
     public static final int OP_RUN_IN_BACKGROUND = 63;
-    /** @hide Wifi state change **/
-    public static final int OP_CHANGE_WIFI_STATE = 64;
     /** @hide */
-    public static final int OP_BLUETOOTH_CHANGE = 65;
+    public static final int OP_AUDIO_ACCESSIBILITY_VOLUME = 64;
+    /** @hide Read the phone number. */
+    public static final int OP_READ_PHONE_NUMBERS = 65;
+    /** @hide Request package installs through package installer */
+    public static final int OP_REQUEST_INSTALL_PACKAGES = 66;
+    /** @hide Enter picture-in-picture. */
+    public static final int OP_PICTURE_IN_PICTURE = 67;
+    /** @hide Instant app start foreground service. */
+    public static final int OP_INSTANT_APP_START_FOREGROUND = 68;
+    /** @hide Answer incoming phone calls */
+    public static final int OP_ANSWER_PHONE_CALLS = 69;
+     /** @hide */
+    public static final int OP_BOOT_COMPLETED = 70;
     /** @hide */
-    public static final int OP_BOOT_COMPLETED = 66;
-    /** @hide */
-    public static final int OP_NFC_CHANGE = 67;
-    /** @hide */
-    public static final int OP_DATA_CONNECT_CHANGE = 68;
-    /** @hide */
-    public static final int OP_SU = 69;
-    /** @hide */
-    public static final int _NUM_OP = 70;
+    public static final int _NUM_OP = 71;
 
     /** Access to coarse location information. */
     public static final String OPSTR_COARSE_LOCATION = "android:coarse_location";
@@ -338,6 +326,9 @@ public class AppOpsManager {
     /** Access APIs for SIP calling over VOIP or WiFi */
     public static final String OPSTR_USE_SIP
             = "android:use_sip";
+    /** Access APIs for diverting outgoing calls */
+    public static final String OPSTR_PROCESS_OUTGOING_CALLS
+            = "android:process_outgoing_calls";
     /** Use the fingerprint API. */
     public static final String OPSTR_USE_FINGERPRINT
             = "android:use_fingerprint";
@@ -365,21 +356,25 @@ public class AppOpsManager {
     /** @hide Get device accounts. */
     public static final String OPSTR_GET_ACCOUNTS
             = "android:get_accounts";
-    /** @hide **/
-    private static final String OPSTR_WIFI_CHANGE =
-            "android:wifi_change";
-    private static final String OPSTR_BLUETOOTH_CHANGE =
-            "android:bluetooth_change";
+    public static final String OPSTR_READ_PHONE_NUMBERS
+            = "android:read_phone_numbers";
+    /** Access to picture-in-picture. */
+    public static final String OPSTR_PICTURE_IN_PICTURE
+            = "android:picture_in_picture";
+    /** @hide */
+    public static final String OPSTR_INSTANT_APP_START_FOREGROUND
+            = "android:instant_app_start_foreground";
+    /** Answer incoming phone calls */
+    public static final String OPSTR_ANSWER_PHONE_CALLS
+            = "android:answer_phone_calls";
+    /** Required for start at boot **/
     private static final String OPSTR_BOOT_COMPLETED =
             "android:boot_completed";
-    private static final String OPSTR_NFC_CHANGE =
-            "android:nfc_change";
-    private static final String OPSTR_DATA_CONNECT_CHANGE =
-            "android:data_connect_change";
-    private static final String OPSTR_SU =
-            "android:su";
 
-    private static final int[] RUNTIME_PERMISSIONS_OPS = {
+    // Warning: If an permission is added here it also has to be added to
+    // com.android.packageinstaller.permission.utils.EventLogger
+    private static final int[] RUNTIME_AND_APPOP_PERMISSIONS_OPS = {
+            // RUNTIME PERMISSIONS
             // Contacts
             OP_READ_CONTACTS,
             OP_WRITE_CONTACTS,
@@ -402,18 +397,26 @@ public class AppOpsManager {
             OP_FINE_LOCATION,
             // Phone
             OP_READ_PHONE_STATE,
+            OP_READ_PHONE_NUMBERS,
             OP_CALL_PHONE,
             OP_READ_CALL_LOG,
             OP_WRITE_CALL_LOG,
             OP_ADD_VOICEMAIL,
             OP_USE_SIP,
             OP_PROCESS_OUTGOING_CALLS,
+            OP_ANSWER_PHONE_CALLS,
             // Microphone
             OP_RECORD_AUDIO,
             // Camera
             OP_CAMERA,
             // Body sensors
-            OP_BODY_SENSORS
+            OP_BODY_SENSORS,
+
+            // APPOP PERMISSIONS
+            OP_ACCESS_NOTIFICATIONS,
+            OP_SYSTEM_ALERT_WINDOW,
+            OP_WRITE_SETTINGS,
+            OP_REQUEST_INSTALL_PACKAGES,
     };
 
     /**
@@ -435,7 +438,7 @@ public class AppOpsManager {
             OP_WRITE_CALL_LOG,
             OP_READ_CALENDAR,
             OP_WRITE_CALENDAR,
-            OP_WIFI_SCAN,
+            OP_COARSE_LOCATION,
             OP_POST_NOTIFICATION,
             OP_COARSE_LOCATION,
             OP_CALL_PHONE,
@@ -489,12 +492,13 @@ public class AppOpsManager {
             OP_TURN_SCREEN_ON,
             OP_GET_ACCOUNTS,
             OP_RUN_IN_BACKGROUND,
-            OP_CHANGE_WIFI_STATE,
-            OP_BLUETOOTH_CHANGE,
-            OP_BOOT_COMPLETED,
-            OP_NFC_CHANGE,
-            OP_DATA_CONNECT_CHANGE,
-            OP_SU
+            OP_AUDIO_ACCESSIBILITY_VOLUME,
+            OP_READ_PHONE_NUMBERS,
+            OP_REQUEST_INSTALL_PACKAGES,
+            OP_PICTURE_IN_PICTURE,
+            OP_INSTANT_APP_START_FOREGROUND,
+            OP_ANSWER_PHONE_CALLS,
+            OP_BOOT_COMPLETED
     };
 
     /**
@@ -556,7 +560,7 @@ public class AppOpsManager {
             OPSTR_READ_PHONE_STATE,
             OPSTR_ADD_VOICEMAIL,
             OPSTR_USE_SIP,
-            null,
+            OPSTR_PROCESS_OUTGOING_CALLS,
             OPSTR_USE_FINGERPRINT,
             OPSTR_BODY_SENSORS,
             OPSTR_READ_CELL_BROADCASTS,
@@ -566,12 +570,13 @@ public class AppOpsManager {
             null,
             OPSTR_GET_ACCOUNTS,
             null,
-            OPSTR_WIFI_CHANGE,
-            OPSTR_BLUETOOTH_CHANGE,
+            null, // OP_AUDIO_ACCESSIBILITY_VOLUME
+            OPSTR_READ_PHONE_NUMBERS,
+            null, // OP_REQUEST_INSTALL_PACKAGES
+            OPSTR_PICTURE_IN_PICTURE,
+            OPSTR_INSTANT_APP_START_FOREGROUND,
+            OPSTR_ANSWER_PHONE_CALLS,
             OPSTR_BOOT_COMPLETED,
-            OPSTR_NFC_CHANGE,
-            OPSTR_DATA_CONNECT_CHANGE,
-            OPSTR_SU,
     };
 
     /**
@@ -643,12 +648,13 @@ public class AppOpsManager {
             "TURN_ON_SCREEN",
             "GET_ACCOUNTS",
             "RUN_IN_BACKGROUND",
-            "WIFI_CHANGE",
-            "BLUETOOTH_CHANGE",
+            "AUDIO_ACCESSIBILITY_VOLUME",
+            "READ_PHONE_NUMBERS",
+            "REQUEST_INSTALL_PACKAGES",
+            "PICTURE_IN_PICTURE",
+            "INSTANT_APP_START_FOREGROUND",
+            "ANSWER_PHONE_CALLS",
             "BOOT_COMPLETED",
-            "NFC_CHANGE",
-            "DATA_CONNECT_CHANGE",
-            "SU",
     };
 
     /**
@@ -666,7 +672,7 @@ public class AppOpsManager {
             android.Manifest.permission.WRITE_CALL_LOG,
             android.Manifest.permission.READ_CALENDAR,
             android.Manifest.permission.WRITE_CALENDAR,
-            null, // no permission for wifi scan available
+            android.Manifest.permission.ACCESS_WIFI_STATE,
             null, // no permission required for notifications
             null, // neighboring cells shares the coarse location perm
             android.Manifest.permission.CALL_PHONE,
@@ -720,12 +726,13 @@ public class AppOpsManager {
             null, // no permission for turning the screen on
             Manifest.permission.GET_ACCOUNTS,
             null, // no permission for running in background
-            Manifest.permission.CHANGE_WIFI_STATE,
-            null,
+            null, // no permission for changing accessibility volume
+            Manifest.permission.READ_PHONE_NUMBERS,
+            Manifest.permission.REQUEST_INSTALL_PACKAGES,
+            null, // no permission for entering picture-in-picture on hide
+            Manifest.permission.INSTANT_APP_FOREGROUND_SERVICE,
+            Manifest.permission.ANSWER_PHONE_CALLS,
             Manifest.permission.RECEIVE_BOOT_COMPLETED,
-            Manifest.permission.NFC,
-            Manifest.permission.MODIFY_PHONE_STATE,
-            null,
     };
 
     /**
@@ -798,12 +805,13 @@ public class AppOpsManager {
             null, // TURN_ON_SCREEN
             null, // GET_ACCOUNTS
             null, // RUN_IN_BACKGROUND
-            null, //WIFI_CHANGE
-            null, //BLUETOOTH_CHANGE
+            UserManager.DISALLOW_ADJUST_VOLUME, //AUDIO_ACCESSIBILITY_VOLUME
+            null, // READ_PHONE_NUMBERS
+            null, // REQUEST_INSTALL_PACKAGES
+            null, // ENTER_PICTURE_IN_PICTURE_ON_HIDE
+            null, // INSTANT_APP_START_FOREGROUND
+            null, // ANSWER_PHONE_CALLS
             null, //BOOT_COMPLETED
-            null, //NFC_CHANGE
-            null, //DATA_CONNECT_CHANGE
-            UserManager.DISALLOW_SU, //SU TODO: this should really be investigated.
     };
 
     /**
@@ -875,12 +883,13 @@ public class AppOpsManager {
             false, // TURN_ON_SCREEN
             false, // GET_ACCOUNTS
             false, // RUN_IN_BACKGROUND
-            true, // WIFI_CHANGE
-            true, // BLUETOOTH_CHANGE
-            true, // BOOT_COMPLETED
-            true, // NFC_CHANGE
-            true, //DATA_CONNECT_CHANGE
-            false, //SU
+            false, // AUDIO_ACCESSIBILITY_VOLUME
+            false, // READ_PHONE_NUMBERS
+            false, // REQUEST_INSTALL_PACKAGES
+            false, // ENTER_PICTURE_IN_PICTURE_ON_HIDE
+            false, // INSTANT_APP_START_FOREGROUND
+            false, // ANSWER_PHONE_CALLS
+            false, // BOOT_COMPLETED
     };
 
     /**
@@ -951,165 +960,13 @@ public class AppOpsManager {
             AppOpsManager.MODE_ALLOWED,  // OP_TURN_ON_SCREEN
             AppOpsManager.MODE_ALLOWED,
             AppOpsManager.MODE_ALLOWED,  // OP_RUN_IN_BACKGROUND
-            AppOpsManager.MODE_ALLOWED, // OP_CHANGE_WIFI_STATE
-            AppOpsManager.MODE_ALLOWED,     // OP_BLUETOOTH_CHANGE
-            AppOpsManager.MODE_ALLOWED, // OP_BOOT_COMPLETED
-            AppOpsManager.MODE_ALLOWED, // OP_NFC_CHANGE
+            AppOpsManager.MODE_ALLOWED,  // OP_AUDIO_ACCESSIBILITY_VOLUME
             AppOpsManager.MODE_ALLOWED,
-            AppOpsManager.MODE_ASK, // OP_SU
-    };
-
-    /**
-     * This specifies the default mode for each strict operation.
-     */
-
-    private static int[] sOpDefaultStrictMode = new int[] {
-            AppOpsManager.MODE_ASK,     // OP_COARSE_LOCATION
-            AppOpsManager.MODE_ASK,     // OP_FINE_LOCATION
-            AppOpsManager.MODE_ASK,     // OP_GPS
-            AppOpsManager.MODE_ALLOWED, // OP_VIBRATE
-            AppOpsManager.MODE_ASK,     // OP_READ_CONTACTS
-            AppOpsManager.MODE_ASK,     // OP_WRITE_CONTACTS
-            AppOpsManager.MODE_ASK,     // OP_READ_CALL_LOG
-            AppOpsManager.MODE_ASK,     // OP_WRITE_CALL_LOG
-            AppOpsManager.MODE_ALLOWED, // OP_READ_CALENDAR
-            AppOpsManager.MODE_ALLOWED, // OP_WRITE_CALENDAR
-            AppOpsManager.MODE_ASK,     // OP_WIFI_SCAN
-            AppOpsManager.MODE_ALLOWED, // OP_POST_NOTIFICATION
-            AppOpsManager.MODE_ALLOWED, // OP_NEIGHBORING_CELLS
-            AppOpsManager.MODE_ASK,     // OP_CALL_PHONE
-            AppOpsManager.MODE_ASK,     // OP_READ_SMS
-            AppOpsManager.MODE_ASK,     // OP_WRITE_SMS
-            AppOpsManager.MODE_ASK,     // OP_RECEIVE_SMS
-            AppOpsManager.MODE_ALLOWED, // OP_RECEIVE_EMERGECY_SMS
-            AppOpsManager.MODE_ASK,     // OP_RECEIVE_MMS
-            AppOpsManager.MODE_ALLOWED, // OP_RECEIVE_WAP_PUSH
-            AppOpsManager.MODE_ASK,     // OP_SEND_SMS
-            AppOpsManager.MODE_ALLOWED, // OP_READ_ICC_SMS
-            AppOpsManager.MODE_ALLOWED, // OP_WRITE_ICC_SMS
-            AppOpsManager.MODE_ALLOWED, // OP_WRITE_SETTINGS
-            AppOpsManager.MODE_ALLOWED, // OP_SYSTEM_ALERT_WINDOW
-            AppOpsManager.MODE_ALLOWED, // OP_ACCESS_NOTIFICATIONS
-            AppOpsManager.MODE_ASK,     // OP_CAMERA
-            AppOpsManager.MODE_ASK,     // OP_RECORD_AUDIO
-            AppOpsManager.MODE_ALLOWED, // OP_PLAY_AUDIO
-            AppOpsManager.MODE_ALLOWED, // OP_READ_CLIPBOARD
-            AppOpsManager.MODE_ALLOWED, // OP_WRITE_CLIPBOARD
-            AppOpsManager.MODE_ALLOWED, // OP_TAKE_MEDIA_BUTTONS
-            AppOpsManager.MODE_ALLOWED, // OP_TAKE_AUDIO_FOCUS
-            AppOpsManager.MODE_ALLOWED, // OP_AUDIO_MASTER_VOLUME
-            AppOpsManager.MODE_ALLOWED, // OP_AUDIO_VOICE_VOLUME
-            AppOpsManager.MODE_ALLOWED, // OP_AUDIO_RING_VOLUME
-            AppOpsManager.MODE_ALLOWED, // OP_AUDIO_MEDIA_VOLUME
-            AppOpsManager.MODE_ALLOWED, // OP_AUDIO_ALARM_VOLUME
-            AppOpsManager.MODE_ALLOWED, // OP_AUDIO_NOTIFICATION_VOLUME
-            AppOpsManager.MODE_ALLOWED, // OP_AUDIO_BLUETOOTH_VOLUME
-            AppOpsManager.MODE_ALLOWED, // OP_WAKE_LOCK
-            AppOpsManager.MODE_ALLOWED, // OP_MONITOR_LOCATION
-            AppOpsManager.MODE_ASK,     // OP_MONITOR_HIGH_POWER_LOCATION
-            AppOpsManager.MODE_DEFAULT, // OP_GET_USAGE_STATS
-            AppOpsManager.MODE_ALLOWED, // OP_MUTE_MICROPHONE
-            AppOpsManager.MODE_ALLOWED, // OP_TOAST_WINDOW
-            AppOpsManager.MODE_IGNORED, // OP_PROJECT_MEDIA
-            AppOpsManager.MODE_IGNORED, // OP_ACTIVATE_VPN
-            AppOpsManager.MODE_ALLOWED, // OP WALLPAPER
-            AppOpsManager.MODE_ALLOWED, // OP_ASSIST_STRUCTURE
-            AppOpsManager.MODE_ALLOWED, // OP_ASSIST_SCREENSHOT
-            AppOpsManager.MODE_ALLOWED, // OP_READ_PHONE_STATE
-            AppOpsManager.MODE_ALLOWED, // OP_ADD_VOICEMAIL
-            AppOpsManager.MODE_ALLOWED, // OP_USE_SIP
-            AppOpsManager.MODE_ALLOWED, // OP_PROCESS_OUTGOING_CALLS
-            AppOpsManager.MODE_ALLOWED, // OP_USE_FINGERPRINT
-            AppOpsManager.MODE_ALLOWED, // OP_BODY_SENSORS
-            AppOpsManager.MODE_ALLOWED, // OP_READ_CELL_BROADCASTS
-            AppOpsManager.MODE_ERRORED, // OP_MOCK_LOCATION
-            AppOpsManager.MODE_ALLOWED, // OP_READ_EXTERNAL_STORAGE
-            AppOpsManager.MODE_ALLOWED, // OP_WRITE_EXTERNAL_STORAGE
-            AppOpsManager.MODE_ALLOWED, // OP_TURN_ON_SCREEN
-            AppOpsManager.MODE_ALLOWED, // OP_GET_ACCOUNTS
-            AppOpsManager.MODE_ALLOWED, // MODE_RUN_IN_BACKGROUND
-            AppOpsManager.MODE_ASK,     // OP_CHANGE_WIFI_STATE
-            AppOpsManager.MODE_ASK,     // OP_BLUETOOTH_CHANGE
+            AppOpsManager.MODE_DEFAULT,  // OP_REQUEST_INSTALL_PACKAGES
+            AppOpsManager.MODE_ALLOWED,  // OP_PICTURE_IN_PICTURE
+            AppOpsManager.MODE_DEFAULT,  // OP_INSTANT_APP_START_FOREGROUND
+            AppOpsManager.MODE_ALLOWED, // ANSWER_PHONE_CALLS
             AppOpsManager.MODE_ALLOWED, // OP_BOOT_COMPLETED
-            AppOpsManager.MODE_ASK,     // OP_NFC_CHANGE
-            AppOpsManager.MODE_ASK,     // OP_DATA_CONNECT_CHANGE
-            AppOpsManager.MODE_ASK,     // OP_SU
-    };
-
-    /**
-     * This specifies if operation is in strict mode.
-     */
-    private final static boolean[] sOpStrictMode = new boolean[] {
-        true,     // OP_COARSE_LOCATION
-        true,     // OP_FINE_LOCATION
-        true,     // OP_GPS
-        false,    // OP_VIBRATE
-        true,     // OP_READ_CONTACTS
-        true,     // OP_WRITE_CONTACTS
-        true,     // OP_READ_CALL_LOG
-        true,     // OP_WRITE_CALL_LOG
-        false,    // OP_READ_CALENDAR
-        false,    // OP_WRITE_CALENDAR
-        true,     // OP_WIFI_SCAN
-        false,    // OP_POST_NOTIFICATION
-        false,    // OP_NEIGHBORING_CELLS
-        true,     // OP_CALL_PHONE
-        true,     // OP_READ_SMS
-        true,     // OP_WRITE_SMS
-        false,    // OP_RECEIVE_SMS
-        false,    // OP_RECEIVE_EMERGECY_SMS
-        true,     // OP_RECEIVE_MMS
-        false,    // OP_RECEIVE_WAP_PUSH
-        true,     // OP_SEND_SMS
-        false,    // OP_READ_ICC_SMS
-        false,    // OP_WRITE_ICC_SMS
-        false,    // OP_WRITE_SETTINGS
-        false,    // OP_SYSTEM_ALERT_WINDOW
-        false,    // OP_ACCESS_NOTIFICATIONS
-        true,     // OP_CAMERA
-        true,     // OP_RECORD_AUDIO
-        false,    // OP_PLAY_AUDIO
-        false,    // OP_READ_CLIPBOARD
-        false,    // OP_WRITE_CLIPBOARD
-        false,    // OP_TAKE_MEDIA_BUTTONS
-        false,    // OP_TAKE_AUDIO_FOCUS
-        false,    // OP_AUDIO_MASTER_VOLUME
-        false,    // OP_AUDIO_VOICE_VOLUME
-        false,    // OP_AUDIO_RING_VOLUME
-        false,    // OP_AUDIO_MEDIA_VOLUME
-        false,    // OP_AUDIO_ALARM_VOLUME
-        false,    // OP_AUDIO_NOTIFICATION_VOLUME
-        false,    // OP_AUDIO_BLUETOOTH_VOLUME
-        false,    // OP_WAKE_LOCK
-        false,    // OP_MONITOR_LOCATION
-        true,     // OP_MONITOR_HIGH_POWER_LOCATION
-        false,    // OP_GET_USAGE_STATS
-        false,    // OP_MUTE_MICROPHONE
-        false,    // OP_TOAST_WINDOW
-        false,    // OP_PROJECT_MEDIA
-        false,    // OP_ACTIVATE_VPN
-        true,     // OP WALLPAPER
-        false,    //ASSIST_STRUCTURE
-        false,    //ASSIST_SCREENSHOT
-        false,    //READ_PHONE_STATE
-        false,    //ADD_VOICEMAIL
-        false,    // USE_SIP
-        false,    // PROCESS_OUTGOING_CALLS
-        false,    // USE_FINGERPRINT
-        false,    // BODY_SENSORS
-        false,    // READ_CELL_BROADCASTS
-        false,    // MOCK_LOCATION
-        true,     // READ_EXTERNAL_STORAGE
-        true,     // WRITE_EXTERNAL_STORAGE
-        false,    // TURN_ON_SCREEN
-        false,    // GET_ACCOUNTS
-        false,    // RUN_IN_BACKGROUND
-        true,     // OP_CHANGE_WIFI_STATE
-        true,     // OP_BLUETOOTH_CHANGE
-        false,    // OP_BOOT_COMPLETED
-        true,     // OP_NFC_CHANGE
-        true,     // OP_DATA_CONNECT_CHANGE
-        true,     // OP_SU
     };
 
     /**
@@ -1184,12 +1041,13 @@ public class AppOpsManager {
             false,
             false,
             false,
-            false,     // OP_CHANGE_WIFI_STATE
-            false,     // OP_BLUETOOTH_CHANGE
-            false,     // OP_BOOT_COMPLETED
-            false,     // OP_NFC_CHANGE
-            false,     // OP_DATA_CONNECT_CHANGE
-            false,     // OP_SU
+            false, // OP_AUDIO_ACCESSIBILITY_VOLUME
+            false,
+            false, // OP_REQUEST_INSTALL_PACKAGES
+            false, // OP_PICTURE_IN_PICTURE
+            false,
+            false, // ANSWER_PHONE_CALLS
+            false, // OP_BOOT_COMPLETED
     };
 
     /**
@@ -1200,18 +1058,7 @@ public class AppOpsManager {
     /**
      * Mapping from a permission to the corresponding app op.
      */
-    private static HashMap<String, Integer> sRuntimePermToOp = new HashMap<>();
-
-    private static HashMap<String, Integer> sNameToOp = new HashMap<String, Integer>();
-
-    /** @hide */
-    public static final int[] PRIVACY_GUARD_OP_STATES = new int[] {
-            OP_COARSE_LOCATION,
-            OP_READ_CALL_LOG,
-            OP_READ_CONTACTS,
-            OP_READ_CALENDAR,
-            OP_READ_SMS,
-    };
+    private static HashMap<String, Integer> sPermToOp = new HashMap<>();
 
     static {
         if (sOpToSwitch.length != _NUM_OP) {
@@ -1234,10 +1081,6 @@ public class AppOpsManager {
             throw new IllegalStateException("sOpDefaultMode length " + sOpDefaultMode.length
                     + " should be " + _NUM_OP);
         }
-        if (sOpDefaultStrictMode.length != _NUM_OP) {
-            throw new IllegalStateException("sOpDefaultStrictMode length " + sOpDefaultStrictMode.length
-                    + " should be " + _NUM_OP);
-        }
         if (sOpDisableReset.length != _NUM_OP) {
             throw new IllegalStateException("sOpDisableReset length " + sOpDisableReset.length
                     + " should be " + _NUM_OP);
@@ -1250,22 +1093,15 @@ public class AppOpsManager {
             throw new IllegalStateException("sOpAllowSYstemRestrictionsBypass length "
                     + sOpRestrictions.length + " should be " + _NUM_OP);
         }
-        if (sOpStrictMode.length != _NUM_OP) {
-            throw new IllegalStateException("sOpStrictMode length "
-                    + sOpStrictMode.length + " should be " + _NUM_OP);
-        }
         for (int i=0; i<_NUM_OP; i++) {
             if (sOpToString[i] != null) {
                 sOpStrToOp.put(sOpToString[i], i);
             }
         }
-        for (int op : RUNTIME_PERMISSIONS_OPS) {
+        for (int op : RUNTIME_AND_APPOP_PERMISSIONS_OPS) {
             if (sOpPerms[op] != null) {
-                sRuntimePermToOp.put(sOpPerms[op], op);
+                sPermToOp.put(sOpPerms[op], op);
             }
-        }
-        for (int i=0; i<_NUM_OP; i++) {
-            sNameToOp.put(sOpNames[i], i);
         }
     }
 
@@ -1299,15 +1135,6 @@ public class AppOpsManager {
     }
 
     /**
-     * Map a non-localized name for the operation back to the Op number
-     * @hide
-     */
-    public static int nameToOp(String name) {
-        Integer val = sNameToOp.get(name);
-        return val != null ? val : OP_NONE;
-    }
-
-    /**
      * Retrieve the permission associated with an operation, or null if there is not one.
      * @hide
      */
@@ -1325,12 +1152,12 @@ public class AppOpsManager {
 
     /**
      * Retrieve the app op code for a permission, or null if there is not one.
-     * This API is intended to be used for mapping runtime permissions to the
-     * corresponding app op.
+     * This API is intended to be used for mapping runtime or appop permissions
+     * to the corresponding app op.
      * @hide
      */
     public static int permissionToOpCode(String permission) {
-        Integer boxedOpCode = sRuntimePermToOp.get(permission);
+        Integer boxedOpCode = sPermToOp.get(permission);
         return boxedOpCode != null ? boxedOpCode : OP_NONE;
     }
 
@@ -1347,9 +1174,7 @@ public class AppOpsManager {
      * Retrieve the default mode for the operation.
      * @hide
      */
-    public static int opToDefaultMode(int op, boolean isStrict) {
-        if (isStrict)
-            return sOpDefaultStrictMode[op];
+    public static int opToDefaultMode(int op) {
         return sOpDefaultMode[op];
     }
 
@@ -1436,11 +1261,9 @@ public class AppOpsManager {
         private final int mDuration;
         private final int mProxyUid;
         private final String mProxyPackageName;
-        private final int mAllowedCount;
-        private final int mIgnoredCount;
 
         public OpEntry(int op, int mode, long time, long rejectTime, int duration,
-                       int proxyUid, String proxyPackage, int allowedCount, int ignoredCount) {
+                int proxyUid, String proxyPackage) {
             mOp = op;
             mMode = mode;
             mTime = time;
@@ -1448,8 +1271,6 @@ public class AppOpsManager {
             mDuration = duration;
             mProxyUid = proxyUid;
             mProxyPackageName = proxyPackage;
-            mAllowedCount = allowedCount;
-            mIgnoredCount = ignoredCount;
         }
 
         public int getOp() {
@@ -1484,14 +1305,6 @@ public class AppOpsManager {
             return mProxyPackageName;
         }
 
-        public int getAllowedCount() {
-            return mAllowedCount;
-        }
-
-        public int getIgnoredCount() {
-            return mIgnoredCount;
-        }
-
         @Override
         public int describeContents() {
             return 0;
@@ -1506,8 +1319,6 @@ public class AppOpsManager {
             dest.writeInt(mDuration);
             dest.writeInt(mProxyUid);
             dest.writeString(mProxyPackageName);
-            dest.writeInt(mAllowedCount);
-            dest.writeInt(mIgnoredCount);
         }
 
         OpEntry(Parcel source) {
@@ -1518,8 +1329,6 @@ public class AppOpsManager {
             mDuration = source.readInt();
             mProxyUid = source.readInt();
             mProxyPackageName = source.readString();
-            mAllowedCount = source.readInt();
-            mIgnoredCount = source.readInt();
         }
 
         public static final Creator<OpEntry> CREATOR = new Creator<OpEntry>() {
@@ -1614,6 +1423,7 @@ public class AppOpsManager {
      * @hide
      */
     @SystemApi
+    @RequiresPermission(android.Manifest.permission.UPDATE_APP_OPS_STATS)
     public void setUidMode(String appOp, int uid, int mode) {
         try {
             mService.setUidMode(AppOpsManager.strOpToOp(appOp), uid, mode);
@@ -1693,7 +1503,7 @@ public class AppOpsManager {
      * @return The app op associated with the permission or null.
      */
     public static String permissionToOp(String permission) {
-        final Integer opCode = sRuntimePermToOp.get(permission);
+        final Integer opCode = sPermToOp.get(permission);
         if (opCode == null) {
             return null;
         }
@@ -2152,73 +1962,11 @@ public class AppOpsManager {
     }
 
     /** @hide */
-    public static boolean isStrictEnable() {
-        return SystemProperties.getBoolean("persist.sys.strict_op_enable", false);
-    }
-
-    /**
-     * Check if op in strict mode
-     * @hide
-     */
-    public static boolean isStrictOp(int code) {
-        return sOpStrictMode[code];
-    }
-
-
-    /** @hide */
-    public static int stringToMode(String permission) {
-        if ("allowed".equalsIgnoreCase(permission)) {
-            return AppOpsManager.MODE_ALLOWED;
-        } else if ("ignored".equalsIgnoreCase(permission)) {
-            return AppOpsManager.MODE_IGNORED;
-        } else if ("ask".equalsIgnoreCase(permission)) {
-            return AppOpsManager.MODE_ASK;
-        }
-        return AppOpsManager.MODE_ERRORED;
-    }
-
-    /** @hide */
-    public static int stringOpToOp (String op) {
-        Integer val = sOpStrToOp.get(op);
-        if (val == null) {
-            val = OP_NONE;
-        }
-        return val;
-    }
-
-    /** @hide */
-    public boolean isControlAllowed(int op, String packageName) {
-        boolean isShow = true;
+    public boolean isOperationActive(int code, int uid, String packageName) {
         try {
-            isShow = mService.isControlAllowed(op, packageName);
+            return mService.isOperationActive(code, uid, packageName);
         } catch (RemoteException e) {
-        }
-        return isShow;
-    }
-
-    /** @hide */
-    public boolean getPrivacyGuardSettingForPackage(int uid, String packageName) {
-        try {
-            return mService.getPrivacyGuardSettingForPackage(uid, packageName);
-        } catch (RemoteException e) {
-        }
-        return false;
-    }
-
-    /** @hide */
-    public void setPrivacyGuardSettingForPackage(int uid, String packageName,
-            boolean state) {
-        try {
-            mService.setPrivacyGuardSettingForPackage(uid, packageName, state);
-        } catch (RemoteException e) {
-        }
-    }
-
-    /** @hide */
-    public void resetCounters() {
-        try {
-            mService.resetCounters();
-        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
         }
     }
 }

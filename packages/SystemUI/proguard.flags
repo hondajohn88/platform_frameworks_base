@@ -10,14 +10,10 @@
   public void setGlowScale(float);
 }
 
--keep class com.android.systemui.statusbar.policy.BackButtonDrawable {
-  public float getRotation();
-  public void setRotation(float);
-}
-
 -keep class com.android.systemui.statusbar.car.CarStatusBar
--keep class com.android.systemui.statusbar.phone.PhoneStatusBar
+-keep class com.android.systemui.statusbar.phone.StatusBar
 -keep class com.android.systemui.statusbar.tv.TvStatusBar
+-keep class com.android.systemui.car.CarSystemUIFactory
 -keep class com.android.systemui.SystemUIFactory
 
 -keepclassmembers class ** {
@@ -41,3 +37,6 @@
 
 -keep class ** extends android.support.v14.preference.PreferenceFragment
 -keep class com.android.systemui.tuner.*
+-keep class com.android.systemui.plugins.** {
+    public protected *;
+}

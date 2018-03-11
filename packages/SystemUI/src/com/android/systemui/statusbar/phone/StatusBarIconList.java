@@ -22,8 +22,8 @@ import java.io.PrintWriter;
 import java.util.ArrayList;
 
 public class StatusBarIconList {
-    private ArrayList<String> mSlots = new ArrayList<>();
-    private ArrayList<StatusBarIcon> mIcons = new ArrayList<>();
+    protected ArrayList<String> mSlots = new ArrayList<>();
+    protected ArrayList<StatusBarIcon> mIcons = new ArrayList<>();
 
     public StatusBarIconList(String[] slots) {
         final int N = slots.length;
@@ -40,10 +40,10 @@ public class StatusBarIconList {
                 return i;
             }
         }
-        // Auto insert new items at the end.
-        mSlots.add(slot);
-        mIcons.add(null);
-        return N;
+        // Auto insert new items at the beginning.
+        mSlots.add(0, slot);
+        mIcons.add(0, null);
+        return 0;
     }
 
     public int size() {

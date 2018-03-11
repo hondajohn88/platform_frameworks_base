@@ -192,7 +192,7 @@ public class AlertController {
         }
     }
 
-    public AlertController(Context context, DialogInterface di, Window window) {
+    protected AlertController(Context context, DialogInterface di, Window window) {
         mContext = context;
         mDialogInterface = di;
         mWindow = window;
@@ -245,6 +245,11 @@ public class AlertController {
         }
 
         return false;
+    }
+
+    public void installContent(AlertParams params) {
+        params.apply(this);
+        installContent();
     }
 
     public void installContent() {
@@ -1112,24 +1117,7 @@ public class AlertController {
 
                 if (mCursor != null) {
                     adapter = new SimpleCursorAdapter(mContext, layout, mCursor,
-                            new String[] { mLabelColumn }, new int[] { R.id.text1 }) {
-                        @Override
-                        public View getView(int position, View convertView, ViewGroup parent) {
-                            View view = super.getView(position, convertView, parent);
-                            if (view instanceof CheckedTextView) {
-                                final CheckedTextView checkedTextView = (CheckedTextView) view;
-                                if (mCheckedItem != -1) {
-                                    if (mCheckedItem != position) {
-                                        checkedTextView.setChecked(false);
-                                    }
-                                }
-
-                                return checkedTextView;
-                            } else {
-                                return view;
-                            }
-                        }
-                    };
+                            new String[] { mLabelColumn }, new int[] { R.id.text1 });
                 } else if (mAdapter != null) {
                     adapter = mAdapter;
                 } else {

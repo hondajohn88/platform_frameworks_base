@@ -24,7 +24,8 @@ import android.content.om.OverlayInfo;
 import android.content.pm.PackageInfo;
 import android.os.UserHandle;
 import android.util.Slog;
-import com.android.internal.os.InstallerConnection.InstallerException;
+
+import com.android.server.pm.Installer.InstallerException;
 import com.android.server.pm.Installer;
 
 import java.io.DataInputStream;
@@ -51,8 +52,8 @@ class IdmapManager {
             @NonNull final PackageInfo overlayPackage, int userId) {
         // unused userId: see comment in OverlayManagerServiceImpl.removeIdmapIfPossible
         if (DEBUG) {
-            Slog.d(TAG, "create idmap for " + targetPackage.packageName + " and " +
-                    overlayPackage.packageName);
+            Slog.d(TAG, "create idmap for " + targetPackage.packageName + " and "
+                    + overlayPackage.packageName);
         }
         final int sharedGid = UserHandle.getSharedAppGid(targetPackage.applicationInfo.uid);
         final String targetPath = targetPackage.applicationInfo.getBaseCodePath();
@@ -60,8 +61,8 @@ class IdmapManager {
         try {
             mInstaller.idmap(targetPath, overlayPath, sharedGid);
         } catch (InstallerException e) {
-            Slog.w(TAG, "failed to generate idmap for " + targetPath + " and " +
-                    overlayPath + ": " + e.getMessage());
+            Slog.w(TAG, "failed to generate idmap for " + targetPath + " and "
+                    + overlayPath + ": " + e.getMessage());
             return false;
         }
         return true;

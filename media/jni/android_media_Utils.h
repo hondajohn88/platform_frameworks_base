@@ -21,10 +21,9 @@
 #include "src/piex.h"
 
 #include <android_runtime/AndroidRuntime.h>
-#include <camera3.h>
 #include <gui/CpuConsumer.h>
 #include <jni.h>
-#include <JNIHelp.h>
+#include <nativehelper/JNIHelp.h>
 #include <utils/KeyedVector.h>
 #include <utils/String8.h>
 #include <SkStream.h>
@@ -37,7 +36,7 @@ private:
     size_t mPosition;
 
 public:
-    AssetStream(SkStream* stream);
+    explicit AssetStream(SkStream* stream);
     ~AssetStream();
 
     // Reads 'length' amount of bytes from 'offset' to 'data'. The 'data' buffer
@@ -60,7 +59,7 @@ private:
     const size_t kMinSizeToRead = 8192;
 
 public:
-    BufferedStream(SkStream* stream);
+    explicit BufferedStream(SkStream* stream);
     ~BufferedStream();
 
     // Reads 'length' amount of bytes from 'offset' to 'data'. The 'data' buffer
@@ -79,8 +78,8 @@ private:
     size_t mPosition;
 
 public:
-    FileStream(const int fd);
-    FileStream(const String8 filename);
+    explicit FileStream(const int fd);
+    explicit FileStream(const String8 filename);
     ~FileStream();
 
     // Reads 'length' amount of bytes from 'offset' to 'data'. The 'data' buffer

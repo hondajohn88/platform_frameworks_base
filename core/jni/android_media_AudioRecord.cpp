@@ -20,13 +20,13 @@
 
 #include <inttypes.h>
 #include <jni.h>
-#include <JNIHelp.h>
+#include <nativehelper/JNIHelp.h>
 #include "core_jni_helpers.h"
 
 #include <utils/Log.h>
 #include <media/AudioRecord.h>
 
-#include <ScopedUtfChars.h>
+#include <nativehelper/ScopedUtfChars.h>
 
 #include "android_media_AudioFormat.h"
 #include "android_media_AudioErrors.h"
@@ -71,11 +71,11 @@ static SortedVector <audiorecord_callback_cookie *> sAudioRecordCallBackCookies;
 
 // ----------------------------------------------------------------------------
 
-#define AUDIORECORD_ERROR_SETUP_ZEROFRAMECOUNT      -16
-#define AUDIORECORD_ERROR_SETUP_INVALIDCHANNELMASK -17
-#define AUDIORECORD_ERROR_SETUP_INVALIDFORMAT       -18
-#define AUDIORECORD_ERROR_SETUP_INVALIDSOURCE       -19
-#define AUDIORECORD_ERROR_SETUP_NATIVEINITFAILED    -20
+#define AUDIORECORD_ERROR_SETUP_ZEROFRAMECOUNT      (-16)
+#define AUDIORECORD_ERROR_SETUP_INVALIDCHANNELMASK  (-17)
+#define AUDIORECORD_ERROR_SETUP_INVALIDFORMAT       (-18)
+#define AUDIORECORD_ERROR_SETUP_INVALIDSOURCE       (-19)
+#define AUDIORECORD_ERROR_SETUP_NATIVEINITFAILED    (-20)
 
 // ----------------------------------------------------------------------------
 static void recorderCallback(int event, void* user, void *info) {

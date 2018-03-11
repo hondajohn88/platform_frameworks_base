@@ -18,8 +18,9 @@ package com.android.server.am;
 
 import com.android.internal.app.ProcessMap;
 import com.android.internal.logging.MetricsLogger;
-import com.android.internal.logging.MetricsProto;
+import com.android.internal.logging.nano.MetricsProto;
 import com.android.internal.os.ProcessCpuTracker;
+import com.android.server.RescueParty;
 import com.android.server.Watchdog;
 
 import android.app.ActivityManager;
@@ -47,8 +48,7 @@ import android.util.Log;
 import android.util.Slog;
 import android.util.SparseArray;
 import android.util.TimeUtils;
-import java.util.Date;
-import java.text.SimpleDateFormat;
+
 import java.io.File;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
@@ -73,7 +73,7 @@ class AppErrors {
 
     private final ActivityManagerService mService;
     private final Context mContext;
-    SimpleDateFormat mTraceDateFormat = new SimpleDateFormat("dd_MMM_HH_mm_ss.SSS");
+
     private ArraySet<String> mAppsNotReportingCrashes;
 
     /**
@@ -98,6 +98,7 @@ class AppErrors {
 
 
     AppErrors(Context context, ActivityManagerService service) {
+        context.assertRuntimeOverlayThemable();
         mService = service;
         mContext = context;
     }
@@ -259,7 +260,16 @@ class AppErrors {
         }
     }
 
-    void scheduleAppCrashLocked(int uid, int initialPid, String packageName,
+    /**
+     * Induce a crash in the given app.
+     *
+     * @param uid if nonnegative, the required matching uid of the target to crash
+     * @param initialPid fast-path match for the target to crash
+     * @param packageName fallback match if the stated pid is not found or doesn't match uid
+     * @param userId If nonnegative, required to identify a match by package name
+     * @param message
+     */
+    void scheduleAppCrashLocked(int uid, int initialPid, String packageName, int userId,
             String message) {
         ProcessRecord proc = null;
 
@@ -270,14 +280,15 @@ class AppErrors {
         synchronized (mService.mPidsSelfLocked) {
             for (int i=0; i<mService.mPidsSelfLocked.size(); i++) {
                 ProcessRecord p = mService.mPidsSelfLocked.valueAt(i);
-                if (p.uid != uid) {
+                if (uid >= 0 && p.uid != uid) {
                     continue;
                 }
                 if (p.pid == initialPid) {
                     proc = p;
                     break;
                 }
-                if (p.pkgList.containsKey(packageName)) {
+                if (p.pkgList.containsKey(packageName)
+                        && (userId < 0 || p.userId == userId)) {
                     proc = p;
                 }
             }
@@ -286,7 +297,8 @@ class AppErrors {
         if (proc == null) {
             Slog.w(TAG, "crashApplication: nothing for uid=" + uid
                     + " initialPid=" + initialPid
-                    + " packageName=" + packageName);
+                    + " packageName=" + packageName
+                    + " userId=" + userId);
             return;
         }
 
@@ -324,6 +336,12 @@ class AppErrors {
             longMsg = shortMsg;
         }
 
+        // If a persistent app is stuck in a crash loop, the device isn't very
+        // usable, so we want to consider sending out a rescue party.
+        if (r != null && r.persistent) {
+            RescueParty.notePersistentAppCrash(mContext, r.uid);
+        }
+
         AppErrorResult result = new AppErrorResult();
         TaskRecord task;
         synchronized (mService) {
@@ -340,7 +358,7 @@ class AppErrors {
              * If this process was running instrumentation, finish now - it will be handled in
              * {@link ActivityManagerService#handleAppDiedLocked}.
              */
-            if (r != null && r.instrumentationClass != null) {
+            if (r != null && r.instr != null) {
                 return;
             }
 
@@ -398,10 +416,9 @@ class AppErrors {
                         final Set<String> cats = task.intent.getCategories();
                         if (cats != null && cats.contains(Intent.CATEGORY_LAUNCHER)) {
                             mService.startActivityInPackage(task.mCallingUid,
-                                    task.mCallingPackage, task.intent,
-                                    null, null, null, 0, 0,
-                                    ActivityOptions.makeBasic().toBundle(),
-                                    task.userId, null, null);
+                                    task.mCallingPackage, task.intent, null, null, null, 0, 0,
+                                    ActivityOptions.makeBasic().toBundle(), task.userId, null,
+                                    "AppErrors");
                         }
                     }
                 }
@@ -583,20 +600,46 @@ class AppErrors {
 
     boolean handleAppCrashLocked(ProcessRecord app, String reason,
             String shortMsg, String longMsg, String stackTrace, AppErrorDialog.Data data) {
-        long now = SystemClock.uptimeMillis();
-        boolean showBackground = Settings.Secure.getInt(mContext.getContentResolver(),
+        final long now = SystemClock.uptimeMillis();
+        final boolean showBackground = Settings.Secure.getInt(mContext.getContentResolver(),
                 Settings.Secure.ANR_SHOW_BACKGROUND, 0) != 0;
+
+        final boolean procIsBoundForeground =
+            (app.curProcState == ActivityManager.PROCESS_STATE_BOUND_FOREGROUND_SERVICE);
 
         Long crashTime;
         Long crashTimePersistent;
+        boolean tryAgain = false;
+
         if (!app.isolated) {
             crashTime = mProcessCrashTimes.get(app.info.processName, app.uid);
             crashTimePersistent = mProcessCrashTimesPersistent.get(app.info.processName, app.uid);
         } else {
             crashTime = crashTimePersistent = null;
         }
-        if (crashTime != null && now < crashTime+ProcessList.MIN_CRASH_INTERVAL) {
-            // This process loses!
+
+        // Bump up the crash count of any services currently running in the proc.
+        for (int i = app.services.size() - 1; i >= 0; i--) {
+            // Any services running in the application need to be placed
+            // back in the pending list.
+            ServiceRecord sr = app.services.valueAt(i);
+            // If the service was restarted a while ago, then reset crash count, else increment it.
+            if (now > sr.restartTime + ProcessList.MIN_CRASH_INTERVAL) {
+                sr.crashCount = 1;
+            } else {
+                sr.crashCount++;
+            }
+            // Allow restarting for started or bound foreground services that are crashing.
+            // This includes wallpapers.
+            if (sr.crashCount < mService.mConstants.BOUND_SERVICE_MAX_CRASH_RETRY
+                    && (sr.isForeground || procIsBoundForeground)) {
+                tryAgain = true;
+            }
+        }
+
+        if (crashTime != null && now < crashTime + ProcessList.MIN_CRASH_INTERVAL) {
+            // The process crashed again very quickly. If it was a bound foreground service, let's
+            // try to restart again in a while, otherwise the process loses!
             Slog.w(TAG, "Process " + app.info.processName
                     + " has crashed too many times: killing!");
             EventLog.writeEvent(EventLogTags.AM_PROCESS_CRASHED_TOO_MUCH,
@@ -621,7 +664,7 @@ class AppErrors {
                 // Don't let services in this process be restarted and potentially
                 // annoy the user repeatedly.  Unless it is persistent, since those
                 // processes run critical code.
-                mService.removeProcessLocked(app, false, false, "crash");
+                mService.removeProcessLocked(app, false, tryAgain, "crash");
                 mService.mStackSupervisor.resumeFocusedStackTopActivityLocked();
                 if (!showBackground) {
                     return false;
@@ -640,21 +683,8 @@ class AppErrors {
             }
         }
 
-        boolean procIsBoundForeground =
-                (app.curProcState == ActivityManager.PROCESS_STATE_BOUND_FOREGROUND_SERVICE);
-        // Bump up the crash count of any services currently running in the proc.
-        for (int i=app.services.size()-1; i>=0; i--) {
-            // Any services running in the application need to be placed
-            // back in the pending list.
-            ServiceRecord sr = app.services.valueAt(i);
-            sr.crashCount++;
-
-            // Allow restarting for started or bound foreground services that are crashing the
-            // first time. This includes wallpapers.
-            if ((data != null) && (sr.crashCount <= 1)
-                    && (sr.isForeground || procIsBoundForeground)) {
-                data.isRestartableForService = true;
-            }
+        if (data != null && tryAgain) {
+            data.isRestartableForService = true;
         }
 
         // If the crashing process is what we consider to be the "home process" and it has been
@@ -680,7 +710,7 @@ class AppErrors {
 
         if (!app.isolated) {
             // XXX Can't keep track of crash times for isolated processes,
-            // because they don't have a perisistent identity.
+            // because they don't have a persistent identity.
             mProcessCrashTimes.put(app.info.processName, app.uid, now);
             mProcessCrashTimesPersistent.put(app.info.processName, app.uid, now);
         }
@@ -730,6 +760,8 @@ class AppErrors {
         }
         // If we've created a crash dialog, show it without the lock held
         if(data.proc.crashDialog != null) {
+            Slog.i(TAG, "Showing crash dialog for package " + data.proc.info.packageName
+                    + " u" + data.proc.userId);
             data.proc.crashDialog.show();
         }
     }
@@ -739,6 +771,26 @@ class AppErrors {
             mAppsNotReportingCrashes = new ArraySet<>();
         }
         mAppsNotReportingCrashes.add(proc.info.packageName);
+    }
+
+    static boolean isInterestingForBackgroundTraces(ProcessRecord app) {
+        // The system_server is always considered interesting.
+        if (app.pid == MY_PID) {
+            return true;
+        }
+
+        // A package is considered interesting if any of the following is true :
+        //
+        // - It's displaying an activity.
+        // - It's the SystemUI.
+        // - It has an overlay or a top UI visible.
+        //
+        // NOTE: The check whether a given ProcessRecord belongs to the systemui
+        // process is a bit of a kludge, but the same pattern seems repeated at
+        // several places in the system server.
+        return app.isInterestingToUserLocked() ||
+            (app.info != null && "com.android.systemui".equals(app.info.packageName)) ||
+            (app.hasTopUi || app.hasOverlayUi);
     }
 
     final void appNotResponding(ProcessRecord app, ActivityRecord activity,
@@ -802,7 +854,7 @@ class AppErrors {
             firstPids.add(app.pid);
 
             // Don't dump other PIDs if it's a background ANR
-            isSilentANR = !showBackground && !app.isInterestingToUserLocked() && app.pid != MY_PID;
+            isSilentANR = !showBackground && !isInterestingForBackgroundTraces(app);
             if (!isSilentANR) {
                 int parentPid = app.pid;
                 if (parent != null && parent.app != null && parent.app.pid > 0) {
@@ -820,6 +872,9 @@ class AppErrors {
                             if (r.persistent) {
                                 firstPids.add(pid);
                                 if (DEBUG_ANR) Slog.i(TAG, "Adding persistent proc: " + r);
+                            } else if (r.treatLikeActivity) {
+                                firstPids.add(pid);
+                                if (DEBUG_ANR) Slog.i(TAG, "Adding likely IME: " + r);
                             } else {
                                 lastPids.put(pid, Boolean.TRUE);
                                 if (DEBUG_ANR) Slog.i(TAG, "Adding ANR proc: " + r);
@@ -848,16 +903,36 @@ class AppErrors {
 
         ProcessCpuTracker processCpuTracker = new ProcessCpuTracker(true);
 
-        String[] nativeProcs = NATIVE_STACKS_OF_INTEREST;
-        // don't dump native PIDs for background ANRs
-        File tracesFile = null;
+        // don't dump native PIDs for background ANRs unless it is the process of interest
+        String[] nativeProcs = null;
         if (isSilentANR) {
-            tracesFile = mService.dumpStackTraces(true, firstPids, null, lastPids,
-                null);
+            for (int i = 0; i < NATIVE_STACKS_OF_INTEREST.length; i++) {
+                if (NATIVE_STACKS_OF_INTEREST[i].equals(app.processName)) {
+                    nativeProcs = new String[] { app.processName };
+                    break;
+                }
+            }
         } else {
-            tracesFile = mService.dumpStackTraces(true, firstPids, processCpuTracker, lastPids,
-                nativeProcs);
+            nativeProcs = NATIVE_STACKS_OF_INTEREST;
         }
+
+        int[] pids = nativeProcs == null ? null : Process.getPidsForCommands(nativeProcs);
+        ArrayList<Integer> nativePids = null;
+
+        if (pids != null) {
+            nativePids = new ArrayList<Integer>(pids.length);
+            for (int i : pids) {
+                nativePids.add(i);
+            }
+        }
+
+        // For background ANRs, don't pass the ProcessCpuTracker to
+        // avoid spending 1/2 second collecting stats to rank lastPids.
+        File tracesFile = ActivityManagerService.dumpStackTraces(
+                true, firstPids,
+                (isSilentANR) ? null : processCpuTracker,
+                (isSilentANR) ? null : lastPids,
+                nativePids);
 
         String cpuInfo = null;
         if (ActivityManagerService.MONITOR_CPU_USAGE) {
@@ -915,23 +990,6 @@ class AppErrors {
                     annotation != null ? "ANR " + annotation : "ANR",
                     info.toString());
 
-            boolean enableTraceRename = SystemProperties.getBoolean("persist.sys.enableTraceRename", false);
-            //Set the trace file name to app name + current date format to avoid overrinding trace file based on debug flag
-            if(enableTraceRename) {
-                String tracesPath = SystemProperties.get("dalvik.vm.stack-trace-file", null);
-                if (tracesPath != null && tracesPath.length() != 0) {
-                    File traceRenameFile = new File(tracesPath);
-                    String newTracesPath;
-                    int lpos = tracesPath.lastIndexOf (".");
-                    if (-1 != lpos)
-                        newTracesPath = tracesPath.substring (0, lpos) + "_" + app.processName + "_" + mTraceDateFormat.format(new Date()) + tracesPath.substring (lpos);
-                    else
-                        newTracesPath = tracesPath + "_" + app.processName;
-
-                    traceRenameFile.renameTo(new File(newTracesPath));
-                    SystemClock.sleep(1000);
-                }
-            }
             // Bring up the infamous App Not Responding dialog
             Message msg = Message.obtain();
             HashMap<String, Object> map = new HashMap<String, Object>();

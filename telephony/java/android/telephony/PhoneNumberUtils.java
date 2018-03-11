@@ -20,7 +20,7 @@ import com.android.i18n.phonenumbers.NumberParseException;
 import com.android.i18n.phonenumbers.PhoneNumberUtil;
 import com.android.i18n.phonenumbers.PhoneNumberUtil.PhoneNumberFormat;
 import com.android.i18n.phonenumbers.Phonenumber.PhoneNumber;
-import com.android.i18n.phonenumbers.ShortNumberUtil;
+import com.android.i18n.phonenumbers.ShortNumberInfo;
 
 import android.content.Context;
 import android.content.Intent;
@@ -1442,6 +1442,35 @@ public class PhoneNumberUtils
     }
 
     /**
+     * Determines if a {@param phoneNumber} is international if dialed from
+     * {@param defaultCountryIso}.
+     *
+     * @param phoneNumber The phone number.
+     * @param defaultCountryIso The current country ISO.
+     * @return {@code true} if the number is international, {@code false} otherwise.
+     * @hide
+     */
+    public static boolean isInternationalNumber(String phoneNumber, String defaultCountryIso) {
+        // If no phone number is provided, it can't be international.
+        if (TextUtils.isEmpty(phoneNumber)) {
+            return false;
+        }
+
+        // If it starts with # or * its not international.
+        if (phoneNumber.startsWith("#") || phoneNumber.startsWith("*")) {
+            return false;
+        }
+
+        PhoneNumberUtil util = PhoneNumberUtil.getInstance();
+        try {
+            PhoneNumber pn = util.parseAndKeepRawInput(phoneNumber, defaultCountryIso);
+            return pn.getCountryCode() != util.getCountryCodeForRegion(defaultCountryIso);
+        } catch (NumberParseException e) {
+            return false;
+        }
+    }
+
+    /**
      * Format a phone number.
      * <p>
      * If the given number doesn't have the country code, the phone will be
@@ -1598,7 +1627,7 @@ public class PhoneNumberUtils
     //
     // Australia: Short codes are six or eight digits in length, starting with the prefix "19"
     //            followed by an additional four or six digits and two.
-    // Czech Republic: Codes are seven digits in length for MO and five (not billed) or
+    // Czechia: Codes are seven digits in length for MO and five (not billed) or
     //            eight (billed) for MT direction
     //
     // see http://en.wikipedia.org/wiki/Short_code#Regional_differences for reference
@@ -1875,7 +1904,7 @@ public class PhoneNumberUtils
         number = extractNetworkPortionAlt(number);
 
         String emergencyNumbers = "";
-        int slotId = SubscriptionManager.getSlotId(subId);
+        int slotId = SubscriptionManager.getSlotIndex(subId);
 
         // retrieve the list of emergency numbers
         // check read-write ecclist property first
@@ -1933,11 +1962,11 @@ public class PhoneNumberUtils
 
         // No ecclist system property, so use our own list.
         if (defaultCountryIso != null) {
-            ShortNumberUtil util = new ShortNumberUtil();
+            ShortNumberInfo info = ShortNumberInfo.getInstance();
             if (useExactMatch) {
-                return util.isEmergencyNumber(number, defaultCountryIso);
+                return info.isEmergencyNumber(number, defaultCountryIso);
             } else {
-                return util.connectsToEmergencyNumber(number, defaultCountryIso);
+                return info.connectsToEmergencyNumber(number, defaultCountryIso);
             }
         }
 
@@ -2385,9 +2414,8 @@ public class PhoneNumberUtils
                 if (useNanp) {
                     networkDialStr = extractNetworkPortion(tempDialStr);
                 } else  {
-                    Rlog.e("cdmaCheckAndProcessPlusCodeByNumberFormat:non-NANP not supported",
-                            dialStr);
-                    return dialStr;
+                    networkDialStr = extractNetworkPortionAlt(tempDialStr);
+
                 }
 
                 networkDialStr = processPlusCode(networkDialStr, useNanp);
@@ -2533,11 +2561,11 @@ public class PhoneNumberUtils
     }
 
     // Split a phone number like "+20(123)-456#" using spaces, ignoring anything that is not
-    // a digit, to produce a result like "20 123 456".
+    // a digit or the characters * and #, to produce a result like "20 123 456#".
     private static String splitAtNonNumerics(CharSequence number) {
         StringBuilder sb = new StringBuilder(number.length());
         for (int i = 0; i < number.length(); i++) {
-            sb.append(PhoneNumberUtils.isISODigit(number.charAt(i))
+            sb.append(PhoneNumberUtils.is12Key(number.charAt(i))
                     ? number.charAt(i)
                     : " ");
         }
@@ -3091,34 +3119,20 @@ public class PhoneNumberUtils
     /*
      * The config held calling number conversion map, expected to convert to emergency number.
      */
-    private static final String[] CONVERT_TO_EMERGENCY_MAP = Resources.getSystem().getStringArray(
-            com.android.internal.R.array.config_convert_to_emergency_number_map);
-    /**
-     * Check whether conversion to emergency number is enabled
-     *
-     * @return {@code true} when conversion to emergency numbers is enabled,
-     *         {@code false} otherwise
-     *
-     * @hide
-     */
-    public static boolean isConvertToEmergencyNumberEnabled() {
-        return CONVERT_TO_EMERGENCY_MAP != null && CONVERT_TO_EMERGENCY_MAP.length > 0;
-    }
+    private static String[] sConvertToEmergencyMap = null;
 
     /**
      * Converts to emergency number based on the conversion map.
      * The conversion map is declared as config_convert_to_emergency_number_map.
      *
-     * Make sure {@link #isConvertToEmergencyNumberEnabled} is true before calling
-     * this function.
-     *
+     * @param context a context to use for accessing resources
      * @return The converted emergency number if the number matches conversion map,
      * otherwise original number.
      *
      * @hide
      */
-    public static String convertToEmergencyNumber(String number) {
-        if (TextUtils.isEmpty(number)) {
+    public static String convertToEmergencyNumber(Context context, String number) {
+        if (context == null || TextUtils.isEmpty(number)) {
             return number;
         }
 
@@ -3129,7 +3143,17 @@ public class PhoneNumberUtils
             return number;
         }
 
-        for (String convertMap : CONVERT_TO_EMERGENCY_MAP) {
+        if (sConvertToEmergencyMap == null) {
+            sConvertToEmergencyMap = context.getResources().getStringArray(
+                    com.android.internal.R.array.config_convert_to_emergency_number_map);
+        }
+
+        // The conversion map is not defined (this is default). Skip conversion.
+        if (sConvertToEmergencyMap == null || sConvertToEmergencyMap.length == 0 ) {
+            return number;
+        }
+
+        for (String convertMap : sConvertToEmergencyMap) {
             if (DBG) log("convertToEmergencyNumber: " + convertMap);
             String[] entry = null;
             String[] filterNumbers = null;

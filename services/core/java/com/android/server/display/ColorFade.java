@@ -57,7 +57,7 @@ import com.android.server.LocalServices;
  * that belongs to the {@link DisplayPowerController}.
  * </p>
  */
-final class ColorFade {
+final class ColorFade implements ScreenStateAnimator {
     private static final String TAG = "ColorFade";
 
     private static final boolean DEBUG = false;
@@ -556,6 +556,11 @@ final class ColorFade {
                 logEglError("eglChooseConfig");
                 return false;
             }
+            if (numEglConfigs[0] <= 0) {
+                Slog.e(TAG, "no valid config found");
+                return false;
+            }
+
             mEglConfig = eglConfigs[0];
         }
 

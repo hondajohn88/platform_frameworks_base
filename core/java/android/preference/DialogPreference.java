@@ -322,7 +322,7 @@ public abstract class DialogPreference extends Preference implements
         onPrepareDialogBuilder(mBuilder);
         
         getPreferenceManager().registerOnActivityDestroyListener(this);
-
+        
         return mBuilder.create();
     }
 

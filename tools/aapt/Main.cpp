@@ -224,11 +224,10 @@ void usage(void)
         "       localization\n"
         "   --no-version-vectors\n"
         "       Do not automatically generate versioned copies of vector XML resources.\n"
+        "   --no-version-transitions\n"
+        "       Do not automatically generate versioned copies of transition XML resources.\n"
         "   --private-symbols\n"
-        "       Java package name to use when generating R.java for private resources.\n"
-        "   --compress\n"
-        "       Specifies if aapt should prefer compression or not.\n"
-        "       Possible values are 0(Stored) and 1(Deflated).\n",
+        "       Java package name to use when generating R.java for private resources.\n",
         gDefaultIgnoreAssets);
 }
 
@@ -269,8 +268,8 @@ int main(int argc, char* const argv[])
     int result = 1;    // pessimistically assume an error.
     int tolerance = 0;
 
-    /* default to 0 compression */
-    bundle.setCompressionMethod(ZipEntry::kCompressStored);
+    /* default to compression */
+    bundle.setCompressionMethod(ZipEntry::kCompressDeflated);
 
     if (argc < 2) {
         wantUsage = true;
@@ -716,6 +715,8 @@ int main(int argc, char* const argv[])
                     bundle.setPseudolocalize(PSEUDO_ACCENTED | PSEUDO_BIDI);
                 } else if (strcmp(cp, "-no-version-vectors") == 0) {
                     bundle.setNoVersionVectors(true);
+                } else if (strcmp(cp, "-no-version-transitions") == 0) {
+                    bundle.setNoVersionTransitions(true);
                 } else if (strcmp(cp, "-private-symbols") == 0) {
                     argc--;
                     argv++;
@@ -726,23 +727,6 @@ int main(int argc, char* const argv[])
                         goto bail;
                     }
                     bundle.setPrivateSymbolsPackage(String8(argv[0]));
-                } else if (strcmp(cp, "-compress") == 0) {
-                    argc--;
-                    argv++;
-                    if (!argc) {
-                        fprintf(stderr, "ERROR: No argument supplied for '--compress' option\n");
-                        wantUsage = true;
-                        goto bail;
-                    }
-                    if (strcmp(argv[0], "0") == 0) {
-                        bundle.setCompressionMethod(ZipEntry::kCompressStored);
-                    } else if (strcmp(argv[0], "1") == 0) {
-                        bundle.setCompressionMethod(ZipEntry::kCompressDeflated);
-                    } else {
-                        fprintf(stderr, "ERROR: Invalid argument supplied for '--compress' option\n");
-                        wantUsage = true;
-                        goto bail;
-                    }
                 } else {
                     fprintf(stderr, "ERROR: Unknown option '-%s'\n", cp);
                     wantUsage = true;

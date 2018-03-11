@@ -117,25 +117,37 @@ public abstract class WindowOrientationListener {
      * {@link #onProposedRotationChanged(int)} when the device orientation changes.
      */
     public void enable() {
+        enable(true /* clearCurrentRotation */);
+    }
+
+    /**
+     * Enables the WindowOrientationListener so it will monitor the sensor and call
+     * {@link #onProposedRotationChanged(int)} when the device orientation changes.
+     *
+     * @param clearCurrentRotation True if the current proposed sensor rotation should be cleared as
+     *                             part of the reset.
+     */
+    public void enable(boolean clearCurrentRotation) {
         synchronized (mLock) {
             if (mSensor == null) {
                 Slog.w(TAG, "Cannot detect sensors. Not enabled");
                 return;
             }
-            if (mEnabled == false) {
-                if (LOG) {
-                    Slog.d(TAG, "WindowOrientationListener enabled");
-                }
-                mOrientationJudge.resetLocked();
-                if (mSensor.getType() == Sensor.TYPE_ACCELEROMETER
-                        && mUseDefaultBatchingForAccel) {
-                    mSensorManager.registerListener(
-                            mOrientationJudge, mSensor, mRate, DEFAULT_BATCH_LATENCY, mHandler);
-                } else {
-                    mSensorManager.registerListener(mOrientationJudge, mSensor, mRate, mHandler);
-                }
-                mEnabled = true;
+            if (mEnabled) {
+                return;
             }
+            if (LOG) {
+                Slog.d(TAG, "WindowOrientationListener enabled clearCurrentRotation="
+                        + clearCurrentRotation);
+            }
+            mOrientationJudge.resetLocked(clearCurrentRotation);
+            if (mSensor.getType() == Sensor.TYPE_ACCELEROMETER && mUseDefaultBatchingForAccel) {
+                mSensorManager.registerListener(
+                        mOrientationJudge, mSensor, mRate, DEFAULT_BATCH_LATENCY, mHandler);
+            } else {
+                mSensorManager.registerListener(mOrientationJudge, mSensor, mRate, mHandler);
+            }
+            mEnabled = true;
         }
     }
 
@@ -287,8 +299,11 @@ public abstract class WindowOrientationListener {
          * Resets the state of the judge.
          *
          * Should only be called when holding WindowOrientationListener lock.
+         *
+         * @param clearCurrentRotation True if the current proposed sensor rotation should be
+         *                             cleared as part of the reset.
          */
-        public abstract void resetLocked();
+        public abstract void resetLocked(boolean clearCurrentRotation);
 
         /**
          * Dumps internal state of the orientation judge.
@@ -356,7 +371,7 @@ public abstract class WindowOrientationListener {
         // the low-pass filter already suppresses most of the noise so we're really just
         // looking for quick confirmation that the last few samples are in agreement as to
         // the desired orientation.
-        private static final long PROPOSAL_SETTLE_TIME_NANOS = 25 * NANOS_PER_MS;
+        private static final long PROPOSAL_SETTLE_TIME_NANOS = 20 * NANOS_PER_MS;
 
         // The minimum amount of time that must have elapsed since the device last exited
         // the flat state (time since it was picked up) before the proposed rotation
@@ -612,7 +627,7 @@ public abstract class WindowOrientationListener {
                     if (LOG) {
                         Slog.v(TAG, "Resetting orientation listener.");
                     }
-                    resetLocked();
+                    resetLocked(true /* clearCurrentRotation */);
                     skipSample = true;
                 } else {
                     final float alpha = timeDeltaMS / (FILTER_TIME_CONSTANT_MS + timeDeltaMS);
@@ -788,9 +803,11 @@ public abstract class WindowOrientationListener {
         }
 
         @Override
-        public void resetLocked() {
+        public void resetLocked(boolean clearCurrentRotation) {
             mLastFilteredTimestampNanos = Long.MIN_VALUE;
-            mProposedRotation = -1;
+            if (clearCurrentRotation) {
+                mProposedRotation = -1;
+            }
             mFlatTimestampNanos = Long.MIN_VALUE;
             mFlat = false;
             mSwingTimestampNanos = Long.MIN_VALUE;
@@ -1025,9 +1042,11 @@ public abstract class WindowOrientationListener {
         }
 
         @Override
-        public void resetLocked() {
-            mProposedRotation = -1;
-            mDesiredRotation = -1;
+        public void resetLocked(boolean clearCurrentRotation) {
+            if (clearCurrentRotation) {
+                mProposedRotation = -1;
+                mDesiredRotation = -1;
+            }
             mTouching = false;
             mTouchEndedTimestampNanos = Long.MIN_VALUE;
             unscheduleRotationEvaluationLocked();

@@ -36,7 +36,7 @@ interface INetworkStatsService {
      *  PACKAGE_USAGE_STATS permission is always checked. If PACKAGE_USAGE_STATS is not granted
      *  READ_NETWORK_USAGE_STATS is checked for.
      */
-    INetworkStatsSession openSessionForUsageStats(String callingPackage);
+    INetworkStatsSession openSessionForUsageStats(int flags, String callingPackage);
 
     /** Return network layer usage total for traffic that matches template. */
     long getNetworkTotalBytes(in NetworkTemplate template, long start, long end);
@@ -67,6 +67,4 @@ interface INetworkStatsService {
     /** Unregisters a callback on data usage. */
     void unregisterUsageRequest(in DataUsageRequest request);
 
-    /** record video call data usage. */
-    void recordVideoCallData(String iface, int ifaceType, long rxBytes, long txBytes);
 }

@@ -45,8 +45,8 @@ import static android.hardware.camera2.CameraDevice.TEMPLATE_PREVIEW;
 
 import com.android.mediaframeworktest.MediaFrameworkIntegrationTestRunner;
 
-import org.mockito.ArgumentMatcher;
 import org.mockito.ArgumentCaptor;
+import org.mockito.compat.ArgumentMatcher;
 import static org.mockito.Mockito.*;
 
 public class CameraDeviceBinderTest extends AndroidTestCase {
@@ -66,7 +66,7 @@ public class CameraDeviceBinderTest extends AndroidTestCase {
     private static final int DEFAULT_IMAGE_HEIGHT = 480;
     private static final int MAX_NUM_IMAGES = 5;
 
-    private int mCameraId;
+    private String mCameraId;
     private ICameraDeviceUser mCameraUser;
     private CameraBinderTestUtils mUtils;
     private ICameraDeviceCallbacks.Stub mMockCb;
@@ -148,17 +148,27 @@ public class CameraDeviceBinderTest extends AndroidTestCase {
 
         /*
          * (non-Javadoc)
+         * @see android.hardware.camera2.ICameraDeviceCallbacks#onRequestQueueEmpty()
+         */
+        @Override
+        public void onRequestQueueEmpty() throws RemoteException {
+            // TODO Auto-generated method stub
+
+        }
+
+        /*
+         * (non-Javadoc)
          * @see android.hardware.camera2.ICameraDeviceCallbacks#onRepeatingRequestError()
          */
         @Override
-        public void onRepeatingRequestError(long lastFrameNumber) {
+        public void onRepeatingRequestError(long lastFrameNumber, int repeatingRequestId) {
             // TODO Auto-generated method stub
         }
     }
 
     class IsMetadataNotEmpty extends ArgumentMatcher<CameraMetadataNative> {
         @Override
-        public boolean matches(Object obj) {
+        public boolean matchesObject(Object obj) {
             return !((CameraMetadataNative) obj).isEmpty();
         }
     }

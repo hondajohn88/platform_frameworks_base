@@ -7,6 +7,7 @@ import android.net.metrics.DhcpErrorEvent;
 import android.os.Build;
 import android.os.SystemProperties;
 import android.system.OsConstants;
+import android.text.TextUtils;
 import com.android.internal.annotations.VisibleForTesting;
 
 import java.io.UnsupportedEncodingException;
@@ -253,6 +254,11 @@ public abstract class DhcpPacket {
     protected static final byte DHCP_CLIENT_IDENTIFIER = 61;
 
     /**
+     * DHCP zero-length option code: rapid commit
+     */
+    protected static final byte DHCP_OPTION_RAPID_COMMIT = 80;
+
+    /**
      * DHCP zero-length option code: pad
      */
     protected static final byte DHCP_OPTION_PAD = 0x00;
@@ -293,6 +299,11 @@ public abstract class DhcpPacket {
     protected final byte[] mClientMac;
 
     /**
+     * Whether the packet should be built with rapid commit option
+     */
+    protected boolean mRapidCommit;
+
+    /**
      * Asks the packet object to create a ByteBuffer serialization of
      * the packet for transmission.
      */
@@ -312,7 +323,7 @@ public abstract class DhcpPacket {
 
     protected DhcpPacket(int transId, short secs, Inet4Address clientIp, Inet4Address yourIp,
                          Inet4Address nextIp, Inet4Address relayIp,
-                         byte[] clientMac, boolean broadcast) {
+                         byte[] clientMac, boolean broadcast, boolean rapidCommit) {
         mTransId = transId;
         mSecs = secs;
         mClientIp = clientIp;
@@ -321,6 +332,14 @@ public abstract class DhcpPacket {
         mRelayIp = relayIp;
         mClientMac = clientMac;
         mBroadcast = broadcast;
+        mRapidCommit = rapidCommit;
+    }
+
+    protected DhcpPacket(int transId, short secs, Inet4Address clientIp, Inet4Address yourIp,
+                         Inet4Address nextIp, Inet4Address relayIp,
+                         byte[] clientMac, boolean broadcast) {
+        this(transId, secs, clientIp, yourIp, nextIp,
+                        relayIp, clientMac, broadcast, false);
     }
 
     /**
@@ -520,6 +539,14 @@ public abstract class DhcpPacket {
     }
 
     /**
+     * Adds an optional parameter not containing any payload.
+     */
+    protected static void addTlv(ByteBuffer buf, byte type) {
+        buf.put(type);
+        buf.put((byte) 0);
+    }
+
+    /**
      * Adds an optional parameter containing a single byte value.
      */
     protected static void addTlv(ByteBuffer buf, byte type, byte value) {
@@ -619,11 +646,7 @@ public abstract class DhcpPacket {
 
     private String getHostname() {
         if (testOverrideHostname != null) return testOverrideHostname;
-        /* the default 'android-dhcp' is there to make sure the hostname is
-         * never empty, because the DHCP standard forbids it (RFC2132, section
-         * 3.14) and certain DHCP forwarders and servers ignore such malformed
-         * requests */
-        return SystemProperties.get("net.hostname", "android-dhcp");
+        return SystemProperties.get("net.hostname");
     }
 
     /**
@@ -635,7 +658,8 @@ public abstract class DhcpPacket {
     protected void addCommonClientTlvs(ByteBuffer buf) {
         addTlv(buf, DHCP_MAX_MESSAGE_SIZE, (short) MAX_LENGTH);
         addTlv(buf, DHCP_VENDOR_CLASS_ID, getVendorId());
-        addTlv(buf, DHCP_HOST_NAME, getHostname());
+        final String hn = getHostname();
+        if (!TextUtils.isEmpty(hn)) addTlv(buf, DHCP_HOST_NAME, hn);
     }
 
     /**
@@ -1175,8 +1199,14 @@ public abstract class DhcpPacket {
      */
     public static ByteBuffer buildDiscoverPacket(int encap, int transactionId,
         short secs, byte[] clientMac, boolean broadcast, byte[] expectedParams) {
+        return buildDiscoverPacket(encap, transactionId, secs, clientMac,
+                                   broadcast, expectedParams, false);
+    }
+    public static ByteBuffer buildDiscoverPacket(int encap, int transactionId,
+        short secs, byte[] clientMac, boolean broadcast, byte[] expectedParams,
+        boolean rapidCommit) {
         DhcpPacket pkt = new DhcpDiscoverPacket(
-            transactionId, secs, clientMac, broadcast);
+            transactionId, secs, clientMac, broadcast, rapidCommit);
         pkt.mRequestedParams = expectedParams;
         return pkt.buildPacket(encap, DHCP_SERVER, DHCP_CLIENT);
     }

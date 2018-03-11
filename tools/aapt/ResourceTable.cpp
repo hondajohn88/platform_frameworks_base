@@ -78,6 +78,17 @@ status_t compileXmlFile(const Bundle* bundle,
                         ResourceTable* table,
                         int options)
 {
+    if (table->versionForCompat(bundle, resourceName, target, root)) {
+        // The file was versioned, so stop processing here.
+        // The resource entry has already been removed and the new one added.
+        // Remove the assets entry.
+        sp<AaptDir> resDir = assets->getDirs().valueFor(String8("res"));
+        sp<AaptDir> dir = resDir->getDirs().valueFor(target->getGroupEntry().toDirName(
+                target->getResourceType()));
+        dir->removeFile(target->getPath().getPathLeaf());
+        return NO_ERROR;
+    }
+
     if ((options&XML_COMPILE_STRIP_WHITESPACE) != 0) {
         root->removeWhitespace(true, NULL);
     } else  if ((options&XML_COMPILE_COMPACT_WHITESPACE) != 0) {
@@ -800,7 +811,6 @@ status_t compileResourceFile(Bundle* bundle,
     const String16 string_array16("string-array");
     const String16 integer_array16("integer-array");
     const String16 public16("public");
-    const String16 overlay16("overlay");
     const String16 public_padding16("public-padding");
     const String16 private_symbols16("private-symbols");
     const String16 java_symbol16("java-symbol");
@@ -998,41 +1008,6 @@ status_t compileResourceFile(Bundle* bundle,
                 while ((code=block.next()) != ResXMLTree::END_DOCUMENT && code != ResXMLTree::BAD_DOCUMENT) {
                     if (code == ResXMLTree::END_TAG) {
                         if (strcmp16(block.getElementName(&len), public16.string()) == 0) {
-                            break;
-                        }
-                    }
-                }
-                continue;
-
-            } else if (strcmp16(block.getElementName(&len), overlay16.string()) == 0) {
-                SourcePos srcPos(in->getPrintableSource(), block.getLineNumber());
-
-                String16 type;
-                const ssize_t typeIdx = block.indexOfAttribute(NULL, "type");
-                if (typeIdx < 0) {
-                    srcPos.error("A 'type' attribute is required for <overlay>\n");
-                    hasErrors = localHasErrors = true;
-                }
-                type = String16(block.getAttributeStringValue(typeIdx, &len));
-
-                String16 name;
-                const ssize_t nameIdx = block.indexOfAttribute(NULL, "name");
-                if (nameIdx < 0) {
-                    srcPos.error("A 'name' attribute is required for <overlay>\n");
-                    hasErrors = localHasErrors = true;
-                }
-                name = String16(block.getAttributeStringValue(nameIdx, &len));
-
-                if (!localHasErrors) {
-                    err = outTable->addOverlay(srcPos, myPackage, type, name);
-                    if (err < NO_ERROR) {
-                        hasErrors = localHasErrors = true;
-                    }
-                }
-
-                while ((code=block.next()) != ResXMLTree::END_DOCUMENT && code != ResXMLTree::BAD_DOCUMENT) {
-                    if (code == ResXMLTree::END_TAG) {
-                        if (strcmp16(block.getElementName(&len), overlay16.string()) == 0) {
                             break;
                         }
                     }
@@ -1901,29 +1876,6 @@ status_t ResourceTable::addPublic(const SourcePos& sourcePos,
     return t->addPublic(sourcePos, name, ident);
 }
 
-status_t ResourceTable::addOverlay(const SourcePos& sourcePos,
-                                  const String16& package,
-                                  const String16& type,
-                                  const String16& name)
-{
-    uint32_t rid = mAssets->getIncludedResources()
-        .identifierForName(name.string(), name.size(),
-                           type.string(), type.size(),
-                           package.string(), package.size());
-    if (rid != 0) {
-        sourcePos.error("Error declaring overlay resource %s/%s for included package %s\n",
-                String8(type).string(), String8(name).string(),
-                String8(package).string());
-        return UNKNOWN_ERROR;
-    }
-
-    sp<Type> t = getType(package, type, sourcePos);
-    if (t == NULL) {
-        return UNKNOWN_ERROR;
-    }
-    return t->addOverlay(sourcePos, name);
-}
-
 status_t ResourceTable::addEntry(const SourcePos& sourcePos,
                                  const String16& package,
                                  const String16& type,
@@ -2284,8 +2236,10 @@ uint32_t ResourceTable::getResId(const String16& package,
                            package.string(), package.size(),
                            &specFlags);
     if (rid != 0) {
-        if (onlyPublic) {
-            if ((specFlags & ResTable_typeSpec::SPEC_PUBLIC) == 0) {
+        if (onlyPublic && (specFlags & ResTable_typeSpec::SPEC_PUBLIC) == 0) {
+            // If this is a feature split and the resource has the same
+            // package name as us, then everything is public.
+            if (mPackageType != AppFeature || mAssetsPackage != package) {
                 return 0;
             }
         }
@@ -2724,11 +2678,6 @@ status_t ResourceTable::assignResourceIds()
                 firstError = err;
             }
 
-            err = t->applyOverlay();
-            if (err != NO_ERROR && firstError == NO_ERROR) {
-                firstError = err;
-            }
-
             const size_t N = t->getOrderedConfigs().size();
             t->setIndex(ti + 1 + typeIdOffset);
 
@@ -2884,8 +2833,10 @@ ResourceTable::validateLocalizations(void)
 
         // Look for strings with no default localization
         if (configSrcMap.count(defaultLocale) == 0) {
+            #ifdef SHOW_LOCALIZATION_WARNING
             SourcePos().warning("string '%s' has no default translation.",
                     String8(nameIter.first).string());
+            #endif
             if (mBundle->getVerbose()) {
                 for (const auto& locale : configSrcMap) {
                     locale.second.printf("locale %s found", locale.first.string());
@@ -2937,10 +2888,12 @@ ResourceTable::validateLocalizations(void)
                 for (const auto& iter : missingConfigs) {
                     configStr.appendFormat(" %s", iter.string());
                 }
+                #ifdef SHOW_LOCALIZATION_WARNING
                 SourcePos().warning("string '%s' is missing %u required localizations:%s",
                         String8(nameIter.first).string(),
                         (unsigned int)missingConfigs.size(),
                         configStr.string());
+                #endif
             }
         }
     }
@@ -2968,9 +2921,8 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<const ResourceFilter>& 
     for (size_t i = 0; i < basePackageCount; i++) {
         size_t packageId = table.getBasePackageId(i);
         String16 packageName(table.getBasePackageName(i));
-        if (packageId > 0x01 && packageId != 0x7f && packageId != 0x3f &&
-                packageName != String16("android")
-                && packageName != String16("cyanogenmod.platform")) {
+        if (packageId > 0x01 && packageId != 0x7f &&
+                packageName != String16("android")) {
             libraryPackages.add(sp<Package>(new Package(packageName, packageId)));
         }
     }
@@ -3318,7 +3270,7 @@ status_t ResourceTable::flatten(Bundle* bundle, const sp<const ResourceFilter>& 
                         index[ei] = htodl(data->getSize()-typeStart-typeSize);
 
                         // Create the entry.
-                        ssize_t amt = e->flatten(bundle, data, cl->getPublic(), cl->getOverlay());
+                        ssize_t amt = e->flatten(bundle, data, cl->getPublic());
                         if (amt < 0) {
                             return amt;
                         }
@@ -3823,8 +3775,7 @@ status_t ResourceTable::Entry::remapStringValue(StringPool* strings)
     return NO_ERROR;
 }
 
-ssize_t ResourceTable::Entry::flatten(Bundle* /* bundle */, const sp<AaptFile>& data, bool isPublic,
-        bool isOverlay)
+ssize_t ResourceTable::Entry::flatten(Bundle* /* bundle */, const sp<AaptFile>& data, bool isPublic)
 {
     size_t amt = 0;
     ResTable_entry header;
@@ -3836,9 +3787,6 @@ ssize_t ResourceTable::Entry::flatten(Bundle* /* bundle */, const sp<AaptFile>& 
     }
     if (isPublic) {
         header.flags |= htods(header.FLAG_PUBLIC);
-    }
-    if (isOverlay) {
-        header.flags |= htods(header.FLAG_OVERLAY);
     }
     header.key.index = htodl(mNameIndex);
     if (ty != TYPE_BAG) {
@@ -3980,13 +3928,6 @@ status_t ResourceTable::Type::addPublic(const SourcePos& sourcePos,
     return NO_ERROR;
 }
 
-status_t ResourceTable::Type::addOverlay(const SourcePos& sourcePos,
-                                         const String16& name)
-{
-    mOverlay.add(name, Overlay(sourcePos, String16()));
-    return NO_ERROR;
-}
-
 void ResourceTable::Type::canAddEntry(const String16& name)
 {
     mCanAddEntries.add(name);
@@ -4089,7 +4030,6 @@ sp<ResourceTable::ConfigList> ResourceTable::Type::removeEntry(const String16& e
     }
 
     mPublic.removeItem(entry);
-    mOverlay.removeItem(entry);
     return removed;
 }
 
@@ -4179,7 +4119,7 @@ status_t ResourceTable::Type::applyPublicEntryOrder()
     
     j = 0;
     for (i=0; i<N; i++) {
-        sp<ConfigList> e = origOrder.itemAt(i);
+        const sp<ConfigList>& e = origOrder.itemAt(i);
         // There will always be enough room for the remaining entries.
         while (mOrderedConfigs.itemAt(j) != NULL) {
             j++;
@@ -4189,22 +4129,6 @@ status_t ResourceTable::Type::applyPublicEntryOrder()
     }
 
     return hasError ? STATUST(UNKNOWN_ERROR) : NO_ERROR;
-}
-
-status_t ResourceTable::Type::applyOverlay() {
-    const size_t N = mOverlay.size();
-    const size_t M = mOrderedConfigs.size();
-    for (size_t i = 0; i < N; i++) {
-        const String16& name = mOverlay.keyAt(i);
-        for (size_t j = 0; j < M; j++) {
-            sp<ConfigList> e = mOrderedConfigs.itemAt(j);
-            if (e->getName() == name) {
-                e->setOverlay(true);
-                break;
-            }
-        }
-    }
-    return NO_ERROR;
 }
 
 ResourceTable::Package::Package(const String16& name, size_t packageId)
@@ -4317,7 +4241,7 @@ status_t ResourceTable::Package::applyPublicTypeOrder()
 
     size_t j=0;
     for (i=0; i<N; i++) {
-        sp<Type> t = origOrder.itemAt(i);
+        const sp<Type>& t = origOrder.itemAt(i);
         // There will always be enough room for the remaining types.
         while (mOrderedTypes.itemAt(j) != NULL) {
             j++;
@@ -4750,7 +4674,7 @@ status_t ResourceTable::modifyForCompat(const Bundle* bundle) {
                         c->getEntries();
                 const size_t entryCount = entries.size();
                 for (size_t ei = 0; ei < entryCount; ei++) {
-                    sp<Entry> e = entries.valueAt(ei);
+                    const sp<Entry>& e = entries.valueAt(ei);
                     if (e == NULL || e->getType() != Entry::TYPE_BAG) {
                         continue;
                     }
@@ -4844,12 +4768,111 @@ status_t ResourceTable::modifyForCompat(const Bundle* bundle) {
     return NO_ERROR;
 }
 
+const String16 kTransitionElements[] = {
+    String16("fade"),
+    String16("changeBounds"),
+    String16("slide"),
+    String16("explode"),
+    String16("changeImageTransform"),
+    String16("changeTransform"),
+    String16("changeClipBounds"),
+    String16("autoTransition"),
+    String16("recolor"),
+    String16("changeScroll"),
+    String16("transitionSet"),
+    String16("transition"),
+    String16("transitionManager"),
+};
+
+static bool IsTransitionElement(const String16& name) {
+    for (int i = 0, size = sizeof(kTransitionElements) / sizeof(kTransitionElements[0]);
+         i < size; ++i) {
+        if (name == kTransitionElements[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ResourceTable::versionForCompat(const Bundle* bundle, const String16& resourceName,
+                                         const sp<AaptFile>& target, const sp<XMLNode>& root) {
+    XMLNode* node = root.get();
+    while (node->getType() != XMLNode::TYPE_ELEMENT) {
+        // We're assuming the root element is what we're looking for, which can only be under a
+        // bunch of namespace declarations.
+        if (node->getChildren().size() != 1) {
+          // Not sure what to do, bail.
+          return false;
+        }
+        node = node->getChildren().itemAt(0).get();
+    }
+
+    if (node->getElementNamespace().size() != 0) {
+        // Not something we care about.
+        return false;
+    }
+
+    int versionedSdk = 0;
+    if (node->getElementName() == String16("adaptive-icon")) {
+        versionedSdk = SDK_O;
+    }
+
+    const int minSdkVersion = getMinSdkVersion(bundle);
+    const ConfigDescription config(target->getGroupEntry().toParams());
+    if (versionedSdk <= minSdkVersion || versionedSdk <= config.sdkVersion) {
+        return false;
+    }
+
+    sp<ConfigList> cl = getConfigList(String16(mAssets->getPackage()),
+            String16(target->getResourceType()), resourceName);
+    if (!shouldGenerateVersionedResource(cl, config, versionedSdk)) {
+        return false;
+    }
+
+    // Remove the original entry.
+    cl->removeEntry(config);
+
+    // We need to wholesale version this file.
+    ConfigDescription newConfig(config);
+    newConfig.sdkVersion = versionedSdk;
+    sp<AaptFile> newFile = new AaptFile(target->getSourceFile(),
+            AaptGroupEntry(newConfig), target->getResourceType());
+    String8 resPath = String8::format("res/%s/%s.xml",
+            newFile->getGroupEntry().toDirName(target->getResourceType()).string(),
+            String8(resourceName).string());
+    resPath.convertToResPath();
+
+    // Add a resource table entry.
+    addEntry(SourcePos(),
+            String16(mAssets->getPackage()),
+            String16(target->getResourceType()),
+            resourceName,
+            String16(resPath),
+            NULL,
+            &newConfig);
+
+    // Schedule this to be compiled.
+    CompileResourceWorkItem item;
+    item.resourceName = resourceName;
+    item.resPath = resPath;
+    item.file = newFile;
+    item.xmlRoot = root->clone();
+    item.needsCompiling = true;
+    mWorkQueue.push(item);
+
+    // Now mark the old entry as deleted.
+    return true;
+}
+
 status_t ResourceTable::modifyForCompat(const Bundle* bundle,
                                         const String16& resourceName,
                                         const sp<AaptFile>& target,
                                         const sp<XMLNode>& root) {
     const String16 vector16("vector");
     const String16 animatedVector16("animated-vector");
+    const String16 pathInterpolator16("pathInterpolator");
+    const String16 objectAnimator16("objectAnimator");
+    const String16 gradient16("gradient");
 
     const int minSdk = getMinSdkVersion(bundle);
     if (minSdk >= SDK_LOLLIPOP_MR1) {
@@ -4875,8 +4898,16 @@ status_t ResourceTable::modifyForCompat(const Bundle* bundle,
         nodesToVisit.pop();
 
         if (bundle->getNoVersionVectors() && (node->getElementName() == vector16 ||
-                    node->getElementName() == animatedVector16)) {
+                    node->getElementName() == animatedVector16 ||
+                    node->getElementName() == objectAnimator16 ||
+                    node->getElementName() == pathInterpolator16 ||
+                    node->getElementName() == gradient16)) {
             // We were told not to version vector tags, so skip the children here.
+            continue;
+        }
+
+        if (bundle->getNoVersionTransitions() && (IsTransitionElement(node->getElementName()))) {
+            // We were told not to version transition tags, so skip the children here.
             continue;
         }
 

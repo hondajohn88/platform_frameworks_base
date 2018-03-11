@@ -29,11 +29,10 @@ import android.provider.ContactsContract.Contacts;
 import android.provider.ContactsContract.Data;
 import android.provider.ContactsContract.PhoneLookup;
 import android.provider.ContactsContract.RawContacts;
-import android.provider.ContactsContract.Contacts;
 import android.telephony.PhoneNumberUtils;
+import android.telephony.Rlog;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
-import android.telephony.Rlog;
 import android.util.Log;
 
 import com.android.i18n.phonenumbers.geocoding.PhoneNumberOfflineGeocoder;
@@ -172,7 +171,6 @@ public class CallerInfo {
      * number. The returned CallerInfo is null if no number is supplied.
      */
     public static CallerInfo getCallerInfo(Context context, Uri contactRef, Cursor cursor) {
-        android.util.SeempLog.record_uri(12, contactRef);
         CallerInfo info = new CallerInfo();
         info.photoResource = 0;
         info.phoneLabel = null;
@@ -192,11 +190,6 @@ public class CallerInfo {
                 // CallerInfo object as well.
 
                 int columnIndex;
-                String photoUri;
-                do {
-                    photoUri = cursor.getString(cursor.getColumnIndex(PhoneLookup.PHOTO_URI));
-                    columnIndex = (photoUri != null) ? photoUri.indexOf(Contacts.Photo.DISPLAY_PHOTO) : 0;
-                } while(columnIndex <= 0 && !cursor.isLast() && cursor.moveToNext());
 
                 // Look for the name
                 columnIndex = cursor.getColumnIndex(PhoneLookup.DISPLAY_NAME);
@@ -350,7 +343,6 @@ public class CallerInfo {
      * with all relevant fields empty or null.
      */
     public static CallerInfo getCallerInfo(Context context, String number, int subId) {
-        android.util.SeempLog.record_str(12, "number="+number+",subId="+subId);
 
         if (TextUtils.isEmpty(number)) {
             return null;
@@ -603,7 +595,8 @@ public class CallerInfo {
             pn = util.parse(number, countryIso);
             if (VDBG) Rlog.v(TAG, "- parsed number: " + pn);
         } catch (NumberParseException e) {
-            Rlog.w(TAG, "getGeoDescription: NumberParseException for incoming number '" + number + "'");
+            Rlog.w(TAG, "getGeoDescription: NumberParseException for incoming number '"
+                    + Rlog.pii(TAG, number) + "'");
         }
 
         if (pn != null) {

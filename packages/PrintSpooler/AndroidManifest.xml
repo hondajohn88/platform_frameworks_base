@@ -36,6 +36,8 @@
     <uses-permission android:name="android.permission.START_PRINT_SERVICE_CONFIG_ACTIVITY"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.READ_PRINT_SERVICES" />
+    <uses-permission android:name="android.permission.READ_PRINT_SERVICE_RECOMMENDATIONS" />
 
     <application
         android:allowClearUserData="true"
@@ -71,6 +73,7 @@
             android:name=".ui.SelectPrinterActivity"
             android:label="@string/all_printers_label"
             android:theme="@style/Theme.SelectPrinterActivity"
+            android:parentActivityName=".ui.PrintActivity"
             android:exported="false">
         </activity>
 
@@ -78,6 +81,7 @@
             android:name=".ui.AddPrinterActivity"
             android:label="@string/print_add_printer"
             android:theme="@style/Theme.AddPrinterActivity"
+            android:parentActivityName=".ui.SelectPrinterActivity"
             android:exported="false">
         </activity>
 

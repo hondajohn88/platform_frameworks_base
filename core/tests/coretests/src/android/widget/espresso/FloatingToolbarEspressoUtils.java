@@ -23,22 +23,30 @@ import static android.support.test.espresso.matcher.RootMatchers.withDecorView;
 import static android.support.test.espresso.matcher.ViewMatchers.hasDescendant;
 import static android.support.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static android.support.test.espresso.matcher.ViewMatchers.isRoot;
-import static android.support.test.espresso.matcher.ViewMatchers.withTagValue;
 import static android.support.test.espresso.matcher.ViewMatchers.withId;
+import static android.support.test.espresso.matcher.ViewMatchers.withTagValue;
 import static android.support.test.espresso.matcher.ViewMatchers.withText;
+
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.is;
-
-import org.hamcrest.Matcher;
 
 import android.support.test.espresso.NoMatchingRootException;
 import android.support.test.espresso.NoMatchingViewException;
 import android.support.test.espresso.UiController;
 import android.support.test.espresso.ViewAction;
 import android.support.test.espresso.ViewInteraction;
+import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 
 import com.android.internal.widget.FloatingToolbar;
+
+import org.hamcrest.Description;
+import org.hamcrest.Matcher;
+import org.hamcrest.TypeSafeMatcher;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Espresso utility methods for the floating toolbar.
@@ -123,6 +131,39 @@ public class FloatingToolbarEspressoUtils {
     }
 
     /**
+     * Asserts that the floating toolbar contains a specified item at a specified index.
+     *
+     * @param menuItemId id of the menu item
+     * @param index expected index of the menu item in the floating toolbar
+     * @throws AssertionError if the assertion fails
+     */
+    public static void assertFloatingToolbarItemIndex(final int menuItemId, final int index) {
+        onFloatingToolBar().check(matches(new TypeSafeMatcher<View>() {
+            private List<Integer> menuItemIds = new ArrayList<>();
+
+            @Override
+            public boolean matchesSafely(View view) {
+                collectMenuItemIds(view);
+                return menuItemIds.size() > index && menuItemIds.get(index) == menuItemId;
+            }
+
+            @Override
+            public void describeTo(Description description) {}
+
+            private void collectMenuItemIds(View view) {
+                if (view.getTag() instanceof MenuItem) {
+                    menuItemIds.add(((MenuItem) view.getTag()).getItemId());
+                } else if (view instanceof ViewGroup) {
+                    ViewGroup viewGroup = (ViewGroup) view;
+                    for (int i = 0; i < viewGroup.getChildCount(); i++) {
+                        collectMenuItemIds(viewGroup.getChildAt(i));
+                    }
+                }
+            }
+        }));
+    }
+
+    /**
      * Asserts that the floating toolbar doesn't contain the specified item.
      *
      * @param itemLabel label of the item.
@@ -135,6 +176,39 @@ public class FloatingToolbarEspressoUtils {
             return;
         }
         throw new AssertionError("Floating toolbar contains " + itemLabel);
+    }
+
+    /**
+     * Asserts that the floating toolbar does not contain a menu item with the specified id.
+     *
+     * @param menuItemId id of the menu item
+     * @throws AssertionError if the assertion fails
+     */
+    public static void assertFloatingToolbarDoesNotContainItem(final int menuItemId) {
+        onFloatingToolBar().check(matches(new TypeSafeMatcher<View>() {
+            @Override
+            public boolean matchesSafely(View view) {
+                return !hasMenuItemWithSpecifiedId(view);
+            }
+
+            @Override
+            public void describeTo(Description description) {}
+
+            private boolean hasMenuItemWithSpecifiedId(View view) {
+                if (view.getTag() instanceof MenuItem
+                        && ((MenuItem) view.getTag()).getItemId() == menuItemId) {
+                    return true;
+                } else if (view instanceof ViewGroup) {
+                    ViewGroup viewGroup = (ViewGroup) view;
+                    for (int i = 0; i < viewGroup.getChildCount(); i++) {
+                        if (hasMenuItemWithSpecifiedId(viewGroup.getChildAt(i))) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+        }));
     }
 
     /**

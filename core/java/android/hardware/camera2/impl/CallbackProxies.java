@@ -88,7 +88,7 @@ public class CallbackProxies {
     }
 
     @SuppressWarnings("deprecation")
-    public static class DeviceCaptureCallbackProxy extends CameraDeviceImpl.CaptureCallback {
+    public static class DeviceCaptureCallbackProxy implements CameraDeviceImpl.CaptureCallback {
         private final MethodNameInvoker<CameraDeviceImpl.CaptureCallback> mProxy;
 
         public DeviceCaptureCallbackProxy(
@@ -108,13 +108,6 @@ public class CallbackProxies {
                 CaptureRequest request, CaptureResult result) {
             mProxy.invoke("onCapturePartial", camera, request, result);
         }
-
-        @Override
-        public void onCaptureBufferLost(CameraDevice camera,
-                CaptureRequest request, Surface target, long frameNumber) {
-            mProxy.invoke("onCaptureBufferLost", camera, request, target, frameNumber);
-        }
-
 
         @Override
         public void onCaptureProgressed(CameraDevice camera,
@@ -145,6 +138,13 @@ public class CallbackProxies {
                 int sequenceId) {
             mProxy.invoke("onCaptureSequenceAborted", camera, sequenceId);
         }
+
+        @Override
+        public void onCaptureBufferLost(CameraDevice camera,
+                CaptureRequest request, Surface target, long frameNumber) {
+            mProxy.invoke("onCaptureBufferLost", camera, request, target, frameNumber);
+        }
+
     }
 
     public static class SessionStateCallbackProxy
@@ -177,6 +177,11 @@ public class CallbackProxies {
         @Override
         public void onActive(CameraCaptureSession session) {
             mProxy.invoke("onActive", session);
+        }
+
+        @Override
+        public void onCaptureQueueEmpty(CameraCaptureSession session) {
+            mProxy.invoke("onCaptureQueueEmpty", session);
         }
 
         @Override

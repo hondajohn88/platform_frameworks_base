@@ -20,8 +20,7 @@
 #include <cutils/properties.h>
 
 /**
- * This file contains the list of system properties used to configure
- * the OpenGLRenderer.
+ * This file contains the list of system properties used to configure libhwui.
  */
 
 namespace android {
@@ -153,80 +152,26 @@ enum DebugLevel {
 
 #define PROPERTY_FILTER_TEST_OVERHEAD "debug.hwui.filter_test_overhead"
 
-///////////////////////////////////////////////////////////////////////////////
-// Runtime configuration properties
-///////////////////////////////////////////////////////////////////////////////
-
-/**
- * Used to enable/disable scissor optimization. The accepted values are
- * "true" and "false". The default value is "false".
- *
- * When scissor optimization is enabled, OpenGLRenderer will attempt to
- * minimize the use of scissor by selectively enabling and disabling the
- * GL scissor test.
- * When the optimization is disabled, OpenGLRenderer will keep the GL
- * scissor test enabled and change the scissor rect as needed.
- * Some GPUs (for instance the SGX 540) perform better when changing
- * the scissor rect often than when enabling/disabling the scissor test
- * often.
- */
-#define PROPERTY_DISABLE_SCISSOR_OPTIMIZATION "ro.hwui.disable_scissor_opt"
-
 /**
  * Indicates whether PBOs can be used to back pixel buffers.
  * Accepted values are "true" and "false". Default is true.
  */
-#define PROPERTY_ENABLE_GPU_PIXEL_BUFFERS "ro.hwui.use_gpu_pixel_buffers"
+#define PROPERTY_ENABLE_GPU_PIXEL_BUFFERS "debug.hwui.use_gpu_pixel_buffers"
 
-// These properties are defined in mega-bytes
-#define PROPERTY_TEXTURE_CACHE_SIZE "ro.hwui.texture_cache_size"
-#define PROPERTY_LAYER_CACHE_SIZE "ro.hwui.layer_cache_size"
-#define PROPERTY_RENDER_BUFFER_CACHE_SIZE "ro.hwui.r_buffer_cache_size"
-#define PROPERTY_GRADIENT_CACHE_SIZE "ro.hwui.gradient_cache_size"
-#define PROPERTY_PATH_CACHE_SIZE "ro.hwui.path_cache_size"
-#define PROPERTY_VERTEX_CACHE_SIZE "ro.hwui.vertex_cache_size"
-#define PROPERTY_PATCH_CACHE_SIZE "ro.hwui.patch_cache_size"
-#define PROPERTY_DROP_SHADOW_CACHE_SIZE "ro.hwui.drop_shadow_cache_size"
-#define PROPERTY_FBO_CACHE_SIZE "ro.hwui.fbo_cache_size"
-
-// These properties are defined in percentage (range 0..1)
-#define PROPERTY_TEXTURE_CACHE_FLUSH_RATE "ro.hwui.texture_cache_flushrate"
-
-// These properties are defined in pixels
-#define PROPERTY_TEXT_SMALL_CACHE_WIDTH "ro.hwui.text_small_cache_width"
-#define PROPERTY_TEXT_SMALL_CACHE_HEIGHT "ro.hwui.text_small_cache_height"
-#define PROPERTY_TEXT_LARGE_CACHE_WIDTH "ro.hwui.text_large_cache_width"
-#define PROPERTY_TEXT_LARGE_CACHE_HEIGHT "ro.hwui.text_large_cache_height"
-
-// Gamma (>= 1.0, <= 10.0)
-#define PROPERTY_TEXT_GAMMA "hwui.text_gamma"
-
-///////////////////////////////////////////////////////////////////////////////
-// Default property values
-///////////////////////////////////////////////////////////////////////////////
-
-#define DEFAULT_TEXTURE_CACHE_SIZE 24.0f
-#define DEFAULT_LAYER_CACHE_SIZE 16.0f
-#define DEFAULT_RENDER_BUFFER_CACHE_SIZE 2.0f
-#define DEFAULT_PATH_CACHE_SIZE 4.0f
-#define DEFAULT_VERTEX_CACHE_SIZE 1.0f
-#define DEFAULT_PATCH_CACHE_SIZE 128.0f // in kB
-#define DEFAULT_GRADIENT_CACHE_SIZE 0.5f
-#define DEFAULT_DROP_SHADOW_CACHE_SIZE 2.0f
-#define DEFAULT_FBO_CACHE_SIZE 0
-
-#define DEFAULT_TEXTURE_CACHE_FLUSH_RATE 0.6f
-
-#define DEFAULT_TEXT_GAMMA 1.4f
+/**
+ * Allows to set rendering pipeline mode to OpenGL (default), Skia OpenGL
+ * or Vulkan.
+ */
+#define PROPERTY_RENDERER "debug.hwui.renderer"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Misc
 ///////////////////////////////////////////////////////////////////////////////
 
 // Converts a number of mega-bytes into bytes
-#define MB(s) s * 1024 * 1024
+#define MB(s) ((s) * 1024 * 1024)
 // Converts a number of kilo-bytes into bytes
-#define KB(s) s * 1024
+#define KB(s) ((s) * 1024)
 
 enum class ProfileType {
     None,
@@ -243,6 +188,13 @@ enum class StencilClipDebug {
     Hide,
     ShowHighlight,
     ShowRegion
+};
+
+enum class RenderPipelineType {
+    OpenGL = 0,
+    SkiaGL,
+    SkiaVulkan,
+    NotInitialized = 128
 };
 
 /**
@@ -264,18 +216,8 @@ public:
     static bool useBufferAge;
     static bool enablePartialUpdates;
 
-    static float textGamma;
-
-    static int fboCacheSize;
-    static int gradientCacheSize;
-    static int layerPoolSize;
-    static int patchCacheSize;
-    static int pathCacheSize;
-    static int renderBufferCacheSize;
-    static int tessellationCacheSize;
-    static int textDropShadowCacheSize;
-    static int textureCacheSize;
-    static float textureCacheFlushRate;
+    // TODO: Move somewhere else?
+    static constexpr float textGamma = 1.45f;
 
     static DebugLevel debugLevel;
     static OverdrawColorSet overdrawColorSet;
@@ -292,18 +234,32 @@ public:
     static int overrideSpotShadowStrength;
 
     static ProfileType getProfileType();
+    static RenderPipelineType getRenderPipelineType();
+    static bool isSkiaEnabled();
 
     // Should be used only by test apps
     static bool waitForGpuCompletion;
+    static bool forceDrawFrame;
 
     // Should only be set by automated tests to try and filter out
     // any overhead they add
     static bool filterOutTestOverhead;
 
+    // Workaround a device lockup in edge cases by switching to async mode
+    // instead of the default vsync (b/38372997). Only system_server should hit this.
+    // Any existing RenderProxy & Surface combination will be unaffected, only things
+    // created after changing this.
+    static bool disableVsync;
+
+    // Used for testing only to change the render pipeline.
+#ifdef HWUI_GLES_WRAP_ENABLED
+    static void overrideRenderPipelineType(RenderPipelineType);
+#endif
+
 private:
     static ProfileType sProfileType;
     static bool sDisableProfileBars;
-
+    static RenderPipelineType sRenderPipelineType;
 }; // class Caches
 
 }; // namespace uirenderer

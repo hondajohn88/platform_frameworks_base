@@ -53,8 +53,6 @@ final class BasePermission {
      */
     private boolean perUser;
 
-    boolean allowViaWhitelist;
-
     BasePermission(String _name, String _sourcePackage, int _type) {
         name = _name;
         sourcePackage = _sourcePackage;
@@ -95,5 +93,13 @@ final class BasePermission {
         return (protectionLevel & PermissionInfo.PROTECTION_MASK_BASE)
                 == PermissionInfo.PROTECTION_SIGNATURE
                 && (protectionLevel & PermissionInfo.PROTECTION_FLAG_DEVELOPMENT) != 0;
+    }
+
+    public boolean isInstant() {
+        return (protectionLevel & PermissionInfo.PROTECTION_FLAG_INSTANT) != 0;
+    }
+
+    public boolean isRuntimeOnly() {
+        return (protectionLevel & PermissionInfo.PROTECTION_FLAG_RUNTIME_ONLY) != 0;
     }
 }

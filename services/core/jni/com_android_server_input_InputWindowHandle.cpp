@@ -16,7 +16,7 @@
 
 #define LOG_TAG "InputWindowHandle"
 
-#include "JNIHelp.h"
+#include <nativehelper/JNIHelp.h>
 #include "jni.h"
 #include <android_runtime/AndroidRuntime.h>
 #include <utils/threads.h>
@@ -218,11 +218,11 @@ static const JNINativeMethod gInputWindowHandleMethods[] = {
 
 #define FIND_CLASS(var, className) \
         var = env->FindClass(className); \
-        LOG_FATAL_IF(! var, "Unable to find class " className);
+        LOG_FATAL_IF(! (var), "Unable to find class " className);
 
 #define GET_FIELD_ID(var, clazz, fieldName, fieldDescriptor) \
         var = env->GetFieldID(clazz, fieldName, fieldDescriptor); \
-        LOG_FATAL_IF(! var, "Unable to find field " fieldName);
+        LOG_FATAL_IF(! (var), "Unable to find field " fieldName);
 
 int register_android_server_InputWindowHandle(JNIEnv* env) {
     int res = jniRegisterNativeMethods(env, "com/android/server/input/InputWindowHandle",

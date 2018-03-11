@@ -41,8 +41,9 @@ public class KeyButtonRipple extends Drawable {
 
     private static final float GLOW_MAX_SCALE_FACTOR = 1.35f;
     private static final float GLOW_MAX_ALPHA = 0.2f;
-    private static final int ANIMATION_DURATION_SCALE = 350;
-    private static final int ANIMATION_DURATION_FADE = 450;
+    private static final float GLOW_MAX_ALPHA_DARK = 0.1f;
+    private static final int ANIMATION_DURATION_SCALE = 340;
+    private static final int ANIMATION_DURATION_FADE = 420;
 
     private Paint mRipplePaint;
     private CanvasProperty<Float> mLeftProp;
@@ -57,6 +58,8 @@ public class KeyButtonRipple extends Drawable {
     private boolean mPressed;
     private boolean mDrawingHardwareGlow;
     private int mMaxWidth;
+    private boolean mLastDark;
+    private boolean mDark;
 
     private final Interpolator mInterpolator = new LogInterpolator();
     private boolean mSupportHardware;
@@ -66,18 +69,24 @@ public class KeyButtonRipple extends Drawable {
     private final ArrayList<Animator> mTmpArray = new ArrayList<>();
 
     private int mRippleColor;
+    private int mRippleColorDark;
 
     public KeyButtonRipple(Context ctx, View targetView) {
         mMaxWidth =  ctx.getResources().getDimensionPixelSize(R.dimen.key_button_ripple_max_width);
         mTargetView = targetView;
         mRippleColor = ctx.getResources().getColor(R.color.navbutton_ripple_color);
+        mRippleColorDark = ctx.getResources().getColor(R.color.navbutton_ripple_color_dark);
+    }
+
+    public void setDarkIntensity(float darkIntensity) {
+        mDark = darkIntensity >= 0.5f;
     }
 
     private Paint getRipplePaint() {
         if (mRipplePaint == null) {
             mRipplePaint = new Paint();
             mRipplePaint.setAntiAlias(true);
-            mRipplePaint.setColor(mRippleColor);
+            mRipplePaint.setColor(mLastDark ? mRippleColorDark : mRippleColor);
         }
         return mRipplePaint;
     }
@@ -158,6 +167,10 @@ public class KeyButtonRipple extends Drawable {
         invalidateSelf();
     }
 
+    private float getMaxGlowAlpha() {
+        return mLastDark ? GLOW_MAX_ALPHA_DARK : GLOW_MAX_ALPHA;
+    }
+
     @Override
     protected boolean onStateChange(int[] state) {
         boolean pressed = false;
@@ -186,7 +199,16 @@ public class KeyButtonRipple extends Drawable {
         return true;
     }
 
+    @Override
+    public boolean hasFocusStateSpecified() {
+        return true;
+    }
+
     public void setPressed(boolean pressed) {
+        if (mDark != mLastDark && pressed) {
+            mRipplePaint = null;
+            mLastDark = mDark;
+        }
         if (mSupportHardware) {
             setPressedHardware(pressed);
         } else {
@@ -215,7 +237,7 @@ public class KeyButtonRipple extends Drawable {
 
     private void enterSoftware() {
         cancelAnimations();
-        mGlowAlpha = GLOW_MAX_ALPHA;
+        mGlowAlpha = getMaxGlowAlpha();
         ObjectAnimator scaleAnimator = ObjectAnimator.ofFloat(this, "glowScale",
                 0f, GLOW_MAX_SCALE_FACTOR);
         scaleAnimator.setInterpolator(mInterpolator);
@@ -315,7 +337,7 @@ public class KeyButtonRipple extends Drawable {
         }
 
         mGlowScale = GLOW_MAX_SCALE_FACTOR;
-        mGlowAlpha = GLOW_MAX_ALPHA;
+        mGlowAlpha = getMaxGlowAlpha();
         mRipplePaint = getRipplePaint();
         mRipplePaint.setAlpha((int) (mGlowAlpha * 255));
         mPaintProp = CanvasProperty.createPaint(mRipplePaint);

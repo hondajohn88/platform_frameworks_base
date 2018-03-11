@@ -17,7 +17,7 @@
 #define LOG_TAG "NetUtils"
 
 #include "jni.h"
-#include "JNIHelp.h"
+#include <nativehelper/JNIHelp.h>
 #include "NetdClient.h"
 #include <utils/misc.h>
 #include <android_runtime/AndroidRuntime.h>
@@ -25,11 +25,8 @@
 #include <arpa/inet.h>
 #include <net/if.h>
 #include <linux/filter.h>
-#include <linux/if.h>
 #include <linux/if_arp.h>
-#include <linux/if_ether.h>
-#include <linux/if_packet.h>
-#include <net/if_ether.h>
+#include <netinet/ether.h>
 #include <netinet/icmp6.h>
 #include <netinet/ip.h>
 #include <netinet/ip6.h>

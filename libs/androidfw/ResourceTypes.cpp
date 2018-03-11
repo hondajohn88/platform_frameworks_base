@@ -59,10 +59,9 @@ namespace android {
 #endif
 
 #define IDMAP_MAGIC             0x504D4449
-#define IDMAP_CURRENT_VERSION   0x00000002
+#define IDMAP_CURRENT_VERSION   0x00000001
 
 #define APP_PACKAGE_ID      0x7f
-#define CMSDK_PACKAGE_ID    0x3f
 #define SYS_PACKAGE_ID      0x01
 
 static const bool kDebugStringPoolNoisy = false;
@@ -141,7 +140,7 @@ static void fill9patchOffsets(Res_png_9patch* patch) {
     patch->colorsOffset = patch->yDivsOffset + (patch->numYDivs * sizeof(int32_t));
 }
 
-inline void Res_value::copyFrom_dtoh(const Res_value& src)
+void Res_value::copyFrom_dtoh(const Res_value& src)
 {
     size = dtohs(src.size);
     res0 = src.res0;
@@ -777,7 +776,7 @@ const char16_t* ResStringPool::stringAt(size_t idx, size_t* u16len) const
                     if (kDebugStringPoolNoisy) {
                         ALOGI("Caching UTF8 string: %s", u8str);
                     }
-                    utf8_to_utf16(u8str, u8len, u16str);
+                    utf8_to_utf16(u8str, u8len, u16str, *u16len + 1);
                     mCache[idx] = u16str;
                     return u16str;
                 } else {
@@ -805,8 +804,14 @@ const char* ResStringPool::string8At(size_t idx, size_t* outLen) const
         if (off < (mStringPoolSize-1)) {
             const uint8_t* strings = (uint8_t*)mStrings;
             const uint8_t* str = strings+off;
-            *outLen = decodeLength(&str);
-            size_t encLen = decodeLength(&str);
+
+            // Decode the UTF-16 length. This is not used if we're not
+            // converting to UTF-16 from UTF-8.
+            decodeLength(&str);
+
+            const size_t encLen = decodeLength(&str);
+            *outLen = encLen;
+
             if ((uint32_t)(str+encLen-strings) < mStringPoolSize) {
                 return (const char*)str;
             } else {
@@ -878,7 +883,8 @@ ssize_t ResStringPool::indexOfString(const char16_t* str, size_t strLen) const
             // the ordering, we need to convert strings in the pool to UTF-16.
             // But we don't want to hit the cache, so instead we will have a
             // local temporary allocation for the conversions.
-            char16_t* convBuffer = (char16_t*)malloc(strLen+4);
+            size_t convBufferLen = strLen + 4;
+            char16_t* convBuffer = (char16_t*)calloc(convBufferLen, sizeof(char16_t));
             ssize_t l = 0;
             ssize_t h = mHeader->stringCount-1;
 
@@ -888,8 +894,7 @@ ssize_t ResStringPool::indexOfString(const char16_t* str, size_t strLen) const
                 const uint8_t* s = (const uint8_t*)string8At(mid, &len);
                 int c;
                 if (s != NULL) {
-                    char16_t* end = utf8_to_utf16_n(s, len, convBuffer, strLen+3);
-                    *end = 0;
+                    char16_t* end = utf8_to_utf16(s, len, convBuffer, convBufferLen);
                     c = strzcmp16(convBuffer, end-convBuffer, str, strLen);
                 } else {
                     c = -1;
@@ -1902,6 +1907,8 @@ int ResTable_config::compare(const ResTable_config& o) const {
     if (diff != 0) return diff;
     diff = (int32_t)(screenLayout2 - o.screenLayout2);
     if (diff != 0) return diff;
+    diff = (int32_t)(colorMode - o.colorMode);
+    if (diff != 0) return diff;
     diff = (int32_t)(uiMode - o.uiMode);
     if (diff != 0) return diff;
     diff = (int32_t)(smallestScreenWidthDp - o.smallestScreenWidthDp);
@@ -1962,6 +1969,9 @@ int ResTable_config::compareLogical(const ResTable_config& o) const {
     if (screenLayout2 != o.screenLayout2) {
         return screenLayout2 < o.screenLayout2 ? -1 : 1;
     }
+    if (colorMode != o.colorMode) {
+        return colorMode < o.colorMode ? -1 : 1;
+    }
     if (uiMode != o.uiMode) {
         return uiMode < o.uiMode ? -1 : 1;
     }
@@ -1987,6 +1997,8 @@ int ResTable_config::diff(const ResTable_config& o) const {
     if ((screenLayout & MASK_LAYOUTDIR) != (o.screenLayout & MASK_LAYOUTDIR)) diffs |= CONFIG_LAYOUTDIR;
     if ((screenLayout & ~MASK_LAYOUTDIR) != (o.screenLayout & ~MASK_LAYOUTDIR)) diffs |= CONFIG_SCREEN_LAYOUT;
     if ((screenLayout2 & MASK_SCREENROUND) != (o.screenLayout2 & MASK_SCREENROUND)) diffs |= CONFIG_SCREEN_ROUND;
+    if ((colorMode & MASK_WIDE_COLOR_GAMUT) != (o.colorMode & MASK_WIDE_COLOR_GAMUT)) diffs |= CONFIG_COLOR_MODE;
+    if ((colorMode & MASK_HDR) != (o.colorMode & MASK_HDR)) diffs |= CONFIG_COLOR_MODE;
     if (uiMode != o.uiMode) diffs |= CONFIG_UI_MODE;
     if (smallestScreenWidthDp != o.smallestScreenWidthDp) diffs |= CONFIG_SMALLEST_SCREEN_SIZE;
     if (screenSizeDp != o.screenSizeDp) diffs |= CONFIG_SCREEN_SIZE;
@@ -2025,7 +2037,6 @@ int ResTable_config::isLocaleMoreSpecificThan(const ResTable_config& o) const {
         ((o.localeVariant[0] != '\0') ? 2 : 0);
 
     return score - oScore;
-
 }
 
 bool ResTable_config::isMoreSpecificThan(const ResTable_config& o) const {
@@ -2096,6 +2107,17 @@ bool ResTable_config::isMoreSpecificThan(const ResTable_config& o) const {
         if (((screenLayout2^o.screenLayout2) & MASK_SCREENROUND) != 0) {
             if (!(screenLayout2 & MASK_SCREENROUND)) return false;
             if (!(o.screenLayout2 & MASK_SCREENROUND)) return true;
+        }
+    }
+
+    if (colorMode || o.colorMode) {
+        if (((colorMode^o.colorMode) & MASK_HDR) != 0) {
+            if (!(colorMode & MASK_HDR)) return false;
+            if (!(o.colorMode & MASK_HDR)) return true;
+        }
+        if (((colorMode^o.colorMode) & MASK_WIDE_COLOR_GAMUT) != 0) {
+            if (!(colorMode & MASK_WIDE_COLOR_GAMUT)) return false;
+            if (!(o.colorMode & MASK_WIDE_COLOR_GAMUT)) return true;
         }
     }
 
@@ -2171,6 +2193,23 @@ bool ResTable_config::isMoreSpecificThan(const ResTable_config& o) const {
     return false;
 }
 
+// Codes for specially handled languages and regions
+static const char kEnglish[2] = {'e', 'n'};  // packed version of "en"
+static const char kUnitedStates[2] = {'U', 'S'};  // packed version of "US"
+static const char kFilipino[2] = {'\xAD', '\x05'};  // packed version of "fil"
+static const char kTagalog[2] = {'t', 'l'};  // packed version of "tl"
+
+// Checks if two language or region codes are identical
+inline bool areIdentical(const char code1[2], const char code2[2]) {
+    return code1[0] == code2[0] && code1[1] == code2[1];
+}
+
+inline bool langsAreEquivalent(const char lang1[2], const char lang2[2]) {
+    return areIdentical(lang1, lang2) ||
+            (areIdentical(lang1, kTagalog) && areIdentical(lang2, kFilipino)) ||
+            (areIdentical(lang1, kFilipino) && areIdentical(lang2, kTagalog));
+}
+
 bool ResTable_config::isLocaleBetterThan(const ResTable_config& o,
         const ResTable_config* requested) const {
     if (requested->locale == 0) {
@@ -2180,7 +2219,7 @@ bool ResTable_config::isLocaleBetterThan(const ResTable_config& o,
     }
 
     if (locale == 0 && o.locale == 0) {
-        // The locales parts of both resources are empty, so no one is better
+        // The locale part of both resources is empty, so none is better
         // than the other.
         return false;
     }
@@ -2195,10 +2234,11 @@ bool ResTable_config::isLocaleBetterThan(const ResTable_config& o,
     // 2) If the request's script is known, the resource scripts are either
     //    unknown or match the request.
 
-    if (language[0] != o.language[0]) {
-        // The languages of the two resources are not the same. We can only
-        // assume that one of the two resources matched the request because one
-        // doesn't have a language and the other has a matching language.
+    if (!langsAreEquivalent(language, o.language)) {
+        // The languages of the two resources are not equivalent. If we are
+        // here, we can only assume that the two resources matched the request
+        // because one doesn't have a language and the other has a matching
+        // language.
         //
         // We consider the one that has the language specified a better match.
         //
@@ -2206,15 +2246,15 @@ bool ResTable_config::isLocaleBetterThan(const ResTable_config& o,
         // for US English and similar locales than locales that are a descendant
         // of Internatinal English (en-001), since no-language resources are
         // where the US English resource have traditionally lived for most apps.
-        if (requested->language[0] == 'e' && requested->language[1] == 'n') {
-            if (requested->country[0] == 'U' && requested->country[1] == 'S') {
+        if (areIdentical(requested->language, kEnglish)) {
+            if (areIdentical(requested->country, kUnitedStates)) {
                 // For US English itself, we consider a no-locale resource a
                 // better match if the other resource has a country other than
                 // US specified.
                 if (language[0] != '\0') {
-                    return country[0] == '\0' || (country[0] == 'U' && country[1] == 'S');
+                    return country[0] == '\0' || areIdentical(country, kUnitedStates);
                 } else {
-                    return !(o.country[0] == '\0' || (o.country[0] == 'U' && o.country[1] == 'S'));
+                    return !(o.country[0] == '\0' || areIdentical(o.country, kUnitedStates));
                 }
             } else if (localeDataIsCloseToUsEnglish(requested->country)) {
                 if (language[0] != '\0') {
@@ -2227,27 +2267,38 @@ bool ResTable_config::isLocaleBetterThan(const ResTable_config& o,
         return (language[0] != '\0');
     }
 
-    // If we are here, both the resources have the same non-empty language as
-    // the request.
+    // If we are here, both the resources have an equivalent non-empty language
+    // to the request.
     //
-    // Because the languages are the same, computeScript() always
-    // returns a non-empty script for languages it knows about, and we have passed
-    // the script checks in match(), the scripts are either all unknown or are
-    // all the same. So we can't gain anything by checking the scripts. We need
-    // to check the region and variant.
+    // Because the languages are equivalent, computeScript() always returns a
+    // non-empty script for languages it knows about, and we have passed the
+    // script checks in match(), the scripts are either all unknown or are all
+    // the same. So we can't gain anything by checking the scripts. We need to
+    // check the region and variant.
 
-    // See if any of the regions is better than the other
+    // See if any of the regions is better than the other.
     const int region_comparison = localeDataCompareRegions(
             country, o.country,
-            language, requested->localeScript, requested->country);
+            requested->language, requested->localeScript, requested->country);
     if (region_comparison != 0) {
         return (region_comparison > 0);
     }
 
     // The regions are the same. Try the variant.
-    if (requested->localeVariant[0] != '\0'
-            && strncmp(localeVariant, requested->localeVariant, sizeof(localeVariant)) == 0) {
-        return (strncmp(o.localeVariant, requested->localeVariant, sizeof(localeVariant)) != 0);
+    const bool localeMatches = strncmp(
+            localeVariant, requested->localeVariant, sizeof(localeVariant)) == 0;
+    const bool otherMatches = strncmp(
+            o.localeVariant, requested->localeVariant, sizeof(localeVariant)) == 0;
+    if (localeMatches != otherMatches) {
+        return localeMatches;
+    }
+
+    // Finally, the languages, although equivalent, may still be different
+    // (like for Tagalog and Filipino). Identical is better than just
+    // equivalent.
+    if (areIdentical(language, requested->language)
+            && !areIdentical(o.language, requested->language)) {
+        return true;
     }
 
     return false;
@@ -2354,6 +2405,17 @@ bool ResTable_config::isBetterThan(const ResTable_config& o,
             if (((screenLayout2^o.screenLayout2) & MASK_SCREENROUND) != 0 &&
                     (requested->screenLayout2 & MASK_SCREENROUND)) {
                 return screenLayout2 & MASK_SCREENROUND;
+            }
+        }
+
+        if (colorMode || o.colorMode) {
+            if (((colorMode^o.colorMode) & MASK_WIDE_COLOR_GAMUT) != 0 &&
+                    (requested->colorMode & MASK_WIDE_COLOR_GAMUT)) {
+                return colorMode & MASK_WIDE_COLOR_GAMUT;
+            }
+            if (((colorMode^o.colorMode) & MASK_HDR) != 0 &&
+                    (requested->colorMode & MASK_HDR)) {
+                return colorMode & MASK_HDR;
             }
         }
 
@@ -2523,7 +2585,7 @@ bool ResTable_config::match(const ResTable_config& settings) const {
         //
         // If two configs differ only in their country and variant,
         // they can be weeded out in the isMoreSpecificThan test.
-        if (language[0] != settings.language[0] || language[1] != settings.language[1]) {
+        if (!langsAreEquivalent(language, settings.language)) {
             return false;
         }
 
@@ -2551,9 +2613,7 @@ bool ResTable_config::match(const ResTable_config& settings) const {
         }
 
         if (countriesMustMatch) {
-            if (country[0] != '\0'
-                && (country[0] != settings.country[0]
-                    || country[1] != settings.country[1])) {
+            if (country[0] != '\0' && !areIdentical(country, settings.country)) {
                 return false;
             }
         } else {
@@ -2606,6 +2666,18 @@ bool ResTable_config::match(const ResTable_config& settings) const {
         const int screenRound = screenLayout2 & MASK_SCREENROUND;
         const int setScreenRound = settings.screenLayout2 & MASK_SCREENROUND;
         if (screenRound != 0 && screenRound != setScreenRound) {
+            return false;
+        }
+
+        const int hdr = colorMode & MASK_HDR;
+        const int setHdr = settings.colorMode & MASK_HDR;
+        if (hdr != 0 && hdr != setHdr) {
+            return false;
+        }
+
+        const int wideColorGamut = colorMode & MASK_WIDE_COLOR_GAMUT;
+        const int setWideColorGamut = settings.colorMode & MASK_WIDE_COLOR_GAMUT;
+        if (wideColorGamut != 0 && wideColorGamut != setWideColorGamut) {
             return false;
         }
     }
@@ -2735,37 +2807,43 @@ void ResTable_config::appendDirLocale(String8& out) const {
     }
 }
 
-void ResTable_config::getBcp47Locale(char str[RESTABLE_MAX_LOCALE_LEN]) const {
+void ResTable_config::getBcp47Locale(char str[RESTABLE_MAX_LOCALE_LEN], bool canonicalize) const {
     memset(str, 0, RESTABLE_MAX_LOCALE_LEN);
 
     // This represents the "any" locale value, which has traditionally been
     // represented by the empty string.
-    if (!language[0] && !country[0]) {
+    if (language[0] == '\0' && country[0] == '\0') {
         return;
     }
 
     size_t charsWritten = 0;
-    if (language[0]) {
-        charsWritten += unpackLanguage(str);
+    if (language[0] != '\0') {
+        if (canonicalize && areIdentical(language, kTagalog)) {
+            // Replace Tagalog with Filipino if we are canonicalizing
+            str[0] = 'f'; str[1] = 'i'; str[2] = 'l'; str[3] = '\0';  // 3-letter code for Filipino
+            charsWritten += 3;
+        } else {
+            charsWritten += unpackLanguage(str);
+        }
     }
 
-    if (localeScript[0] && !localeScriptWasComputed) {
-        if (charsWritten) {
+    if (localeScript[0] != '\0' && !localeScriptWasComputed) {
+        if (charsWritten > 0) {
             str[charsWritten++] = '-';
         }
         memcpy(str + charsWritten, localeScript, sizeof(localeScript));
         charsWritten += sizeof(localeScript);
     }
 
-    if (country[0]) {
-        if (charsWritten) {
+    if (country[0] != '\0') {
+        if (charsWritten > 0) {
             str[charsWritten++] = '-';
         }
         charsWritten += unpackRegion(str + charsWritten);
     }
 
-    if (localeVariant[0]) {
-        if (charsWritten) {
+    if (localeVariant[0] != '\0') {
+        if (charsWritten > 0) {
             str[charsWritten++] = '-';
         }
         memcpy(str + charsWritten, localeVariant, sizeof(localeVariant));
@@ -2922,6 +3000,34 @@ String8 ResTable_config::toString() const {
                 break;
         }
     }
+    if ((colorMode&MASK_HDR) != 0) {
+        if (res.size() > 0) res.append("-");
+        switch (colorMode&MASK_HDR) {
+            case ResTable_config::HDR_NO:
+                res.append("lowdr");
+                break;
+            case ResTable_config::HDR_YES:
+                res.append("highdr");
+                break;
+            default:
+                res.appendFormat("hdr=%d", dtohs(colorMode&MASK_HDR));
+                break;
+        }
+    }
+    if ((colorMode&MASK_WIDE_COLOR_GAMUT) != 0) {
+        if (res.size() > 0) res.append("-");
+        switch (colorMode&MASK_WIDE_COLOR_GAMUT) {
+            case ResTable_config::WIDE_COLOR_GAMUT_NO:
+                res.append("nowidecg");
+                break;
+            case ResTable_config::WIDE_COLOR_GAMUT_YES:
+                res.append("widecg");
+                break;
+            default:
+                res.appendFormat("wideColorGamut=%d", dtohs(colorMode&MASK_WIDE_COLOR_GAMUT));
+                break;
+        }
+    }
     if (orientation != ORIENTATION_ANY) {
         if (res.size() > 0) res.append("-");
         switch (orientation) {
@@ -2956,6 +3062,9 @@ String8 ResTable_config::toString() const {
                 break;
             case ResTable_config::UI_MODE_TYPE_WATCH:
                 res.append("watch");
+                break;
+            case ResTable_config::UI_MODE_TYPE_VR_HEADSET:
+                res.append("vrheadset");
                 break;
             default:
                 res.appendFormat("uiModeType=%d",
@@ -3117,7 +3226,7 @@ String8 ResTable_config::toString() const {
 
 struct ResTable::Header
 {
-    Header(ResTable* _owner) : owner(_owner), ownedData(NULL), header(NULL),
+    explicit Header(ResTable* _owner) : owner(_owner), ownedData(NULL), header(NULL),
         resourceIDMap(NULL), resourceIDMapSize(0) { }
 
     ~Header()
@@ -3204,13 +3313,14 @@ struct ResTable::PackageGroup
         clearBagCache();
         const size_t numTypes = types.size();
         for (size_t i = 0; i < numTypes; i++) {
-            const TypeList& typeList = types[i];
+            TypeList& typeList = types.editItemAt(i);
             const size_t numInnerTypes = typeList.size();
             for (size_t j = 0; j < numInnerTypes; j++) {
                 if (typeList[j]->package->owner == owner) {
                     delete typeList[j];
                 }
             }
+            typeList.clear();
         }
 
         const size_t N = packages.size();
@@ -3429,7 +3539,8 @@ status_t ResTable::Theme::applyStyle(uint32_t resID, bool force)
                     attrRes, bag->map.value.dataType, bag->map.value.data,
                     curEntry->value.dataType);
         }
-        if (force || curEntry->value.dataType == Res_value::TYPE_NULL) {
+        if (force || (curEntry->value.dataType == Res_value::TYPE_NULL
+                && curEntry->value.data != Res_value::DATA_NULL_EMPTY)) {
             curEntry->stringBlock = bag->stringBlock;
             curEntry->typeSpecFlags |= bagTypeSpecFlags;
             curEntry->value = bag->map.value;
@@ -3540,7 +3651,7 @@ ssize_t ResTable::Theme::getAttribute(uint32_t resID, Res_value* outValue,
             }
             if (pi != NULL) {
                 if (kDebugTableTheme) {
-                    ALOGI("Desired type index is %zd in avail %zu", t, Res_MAXTYPE + 1);
+                    ALOGI("Desired type index is %u in avail %zu", t, Res_MAXTYPE + 1);
                 }
                 if (t <= Res_MAXTYPE) {
                     const type_info& ti = pi->types[t];
@@ -3565,7 +3676,8 @@ ssize_t ResTable::Theme::getAttribute(uint32_t resID, Res_value* outValue,
                             }
                             ALOGW("Too many attribute references, stopped at: 0x%08x\n", resID);
                             return BAD_INDEX;
-                        } else if (type != Res_value::TYPE_NULL) {
+                        } else if (type != Res_value::TYPE_NULL
+                                || te.value.data == Res_value::DATA_NULL_EMPTY) {
                             *outValue = te.value;
                             return te.stringBlock;
                         }
@@ -4658,7 +4770,6 @@ nope:
                     && (targetTypeLen = attrPrivate.size())
             );
         }
-        break;
     }
     return 0;
 }
@@ -5194,8 +5305,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
                 }
 
                 uint32_t packageId = Res_GETPACKAGE(rid) + 1;
-                if (packageId != APP_PACKAGE_ID && packageId != SYS_PACKAGE_ID &&
-                        packageId != CMSDK_PACKAGE_ID) {
+                if (packageId != APP_PACKAGE_ID && packageId != SYS_PACKAGE_ID) {
                     outValue->dataType = Res_value::TYPE_DYNAMIC_REFERENCE;
                 }
                 outValue->data = rid;
@@ -5216,8 +5326,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
                         outValue->data = rid;
                         outValue->dataType = Res_value::TYPE_DYNAMIC_REFERENCE;
                         return true;
-                    } else if (packageId == APP_PACKAGE_ID || packageId == SYS_PACKAGE_ID ||
-                            packageId == CMSDK_PACKAGE_ID) {
+                    } else if (packageId == APP_PACKAGE_ID || packageId == SYS_PACKAGE_ID) {
                         // We accept packageId's generated as 0x01 in order to support
                         // building the android system resources
                         outValue->data = rid;
@@ -5363,8 +5472,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
             }
 
             uint32_t packageId = Res_GETPACKAGE(rid) + 1;
-            if (packageId != APP_PACKAGE_ID && packageId != SYS_PACKAGE_ID &&
-                    packageId != CMSDK_PACKAGE_ID) {
+            if (packageId != APP_PACKAGE_ID && packageId != SYS_PACKAGE_ID) {
                 outValue->dataType = Res_value::TYPE_DYNAMIC_ATTRIBUTE;
             }
             outValue->data = rid;
@@ -5379,8 +5487,7 @@ bool ResTable::stringToValue(Res_value* outValue, String16* outString,
                     outValue->data = rid;
                     outValue->dataType = Res_value::TYPE_DYNAMIC_ATTRIBUTE;
                     return true;
-                } else if (packageId == APP_PACKAGE_ID || packageId == SYS_PACKAGE_ID ||
-                        packageId == CMSDK_PACKAGE_ID) {
+                } else if (packageId == APP_PACKAGE_ID || packageId == SYS_PACKAGE_ID) {
                     // We accept packageId's generated as 0x01 in order to support
                     // building the android system resources
                     outValue->data = rid;
@@ -5888,20 +5995,19 @@ static bool compareString8AndCString(const String8& str, const char* cStr) {
     return strcmp(str.string(), cStr) < 0;
 }
 
-void ResTable::getLocales(Vector<String8>* locales, bool includeSystemLocales) const {
+void ResTable::getLocales(Vector<String8>* locales, bool includeSystemLocales,
+                          bool mergeEquivalentLangs) const {
     char locale[RESTABLE_MAX_LOCALE_LEN];
 
     forEachConfiguration(false, false, includeSystemLocales, [&](const ResTable_config& cfg) {
-        if (cfg.locale != 0) {
-            cfg.getBcp47Locale(locale);
+        cfg.getBcp47Locale(locale, mergeEquivalentLangs /* canonicalize if merging */);
 
-            const auto beginIter = locales->begin();
-            const auto endIter = locales->end();
+        const auto beginIter = locales->begin();
+        const auto endIter = locales->end();
 
-            auto iter = std::lower_bound(beginIter, endIter, locale, compareString8AndCString);
-            if (iter == endIter || strcmp(iter->string(), locale) != 0) {
-                locales->insertAt(String8(locale), std::distance(beginIter, iter));
-            }
+        auto iter = std::lower_bound(beginIter, endIter, locale, compareString8AndCString);
+        if (iter == endIter || strcmp(iter->string(), locale) != 0) {
+            locales->insertAt(String8(locale), std::distance(beginIter, iter));
         }
     });
 }
@@ -5970,6 +6076,10 @@ bool ResTable::getResourceFlags(uint32_t resID, uint32_t* outFlags) const {
     return true;
 }
 
+static bool keyCompare(const ResTable_sparseTypeEntry& entry , uint16_t entryIdx) {
+  return dtohs(entry.idx) < entryIdx;
+}
+
 status_t ResTable::getEntry(
         const PackageGroup* packageGroup, int typeIndex, int entryIndex,
         const ResTable_config* config,
@@ -6011,8 +6121,11 @@ status_t ResTable::getEntry(
             currentTypeIsOverlay = true;
         }
 
+        // Check that the entry idx is within range of the declared entry count (ResTable_typeSpec).
+        // Particular types (ResTable_type) may be encoded with sparse entries, and so their
+        // entryCount do not need to match.
         if (static_cast<size_t>(realEntryIndex) >= typeSpec->entryCount) {
-            ALOGV("For resource 0x%08x, entry index(%d) is beyond type entryCount(%d)",
+            ALOGW("For resource 0x%08x, entry index(%d) is beyond type entryCount(%d)",
                     Res_MAKEID(packageGroup->id - 1, typeIndex, entryIndex),
                     entryIndex, static_cast<int>(typeSpec->entryCount));
             // We should normally abort here, but some legacy apps declare
@@ -6065,11 +6178,37 @@ status_t ResTable::getEntry(
                 continue;
             }
 
-            // Check if there is the desired entry in this type.
             const uint32_t* const eindex = reinterpret_cast<const uint32_t*>(
                     reinterpret_cast<const uint8_t*>(thisType) + dtohs(thisType->header.headerSize));
 
-            uint32_t thisOffset = dtohl(eindex[realEntryIndex]);
+            uint32_t thisOffset;
+
+            // Check if there is the desired entry in this type.
+            if (thisType->flags & ResTable_type::FLAG_SPARSE) {
+                // This is encoded as a sparse map, so perform a binary search.
+                const ResTable_sparseTypeEntry* sparseIndices =
+                        reinterpret_cast<const ResTable_sparseTypeEntry*>(eindex);
+                const ResTable_sparseTypeEntry* result = std::lower_bound(
+                        sparseIndices, sparseIndices + dtohl(thisType->entryCount), realEntryIndex,
+                        keyCompare);
+                if (result == sparseIndices + dtohl(thisType->entryCount)
+                        || dtohs(result->idx) != realEntryIndex) {
+                    // No entry found.
+                    continue;
+                }
+
+                // Extract the offset from the entry. Each offset must be a multiple of 4
+                // so we store it as the real offset divided by 4.
+                thisOffset = dtohs(result->offset) * 4u;
+            } else {
+                if (static_cast<uint32_t>(realEntryIndex) >= dtohl(thisType->entryCount)) {
+                    // Entry does not exist.
+                    continue;
+                }
+
+                thisOffset = dtohl(eindex[realEntryIndex]);
+            }
+
             if (thisOffset == ResTable_type::NO_ENTRY) {
                 // There is no entry for this index and configuration.
                 continue;
@@ -6295,32 +6434,42 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
             }
 
             if (newEntryCount > 0) {
+                bool addToType = true;
                 uint8_t typeIndex = typeSpec->id - 1;
                 ssize_t idmapIndex = idmapEntries.indexOfKey(typeSpec->id);
                 if (idmapIndex >= 0) {
                     typeIndex = idmapEntries[idmapIndex].targetTypeId() - 1;
+                } else if (header->resourceIDMap != NULL) {
+                    // This is an overlay, but the types in this overlay are not
+                    // overlaying anything according to the idmap. We can skip these
+                    // as they will otherwise conflict with the other resources in the package
+                    // without a mapping.
+                    addToType = false;
                 }
 
-                TypeList& typeList = group->types.editItemAt(typeIndex);
-                if (!typeList.isEmpty()) {
-                    const Type* existingType = typeList[0];
-                    if (existingType->entryCount != newEntryCount && idmapIndex < 0) {
-                        ALOGV("ResTable_typeSpec entry count inconsistent: given %d, previously %d",
-                                (int) newEntryCount, (int) existingType->entryCount);
-                        // We should normally abort here, but some legacy apps declare
-                        // resources in the 'android' package (old bug in AAPT).
+                if (addToType) {
+                    TypeList& typeList = group->types.editItemAt(typeIndex);
+                    if (!typeList.isEmpty()) {
+                        const Type* existingType = typeList[0];
+                        if (existingType->entryCount != newEntryCount && idmapIndex < 0) {
+                            ALOGW("ResTable_typeSpec entry count inconsistent: "
+                                  "given %d, previously %d",
+                                  (int) newEntryCount, (int) existingType->entryCount);
+                            // We should normally abort here, but some legacy apps declare
+                            // resources in the 'android' package (old bug in AAPT).
+                        }
                     }
-                }
 
-                Type* t = new Type(header, package, newEntryCount);
-                t->typeSpec = typeSpec;
-                t->typeSpecFlags = (const uint32_t*)(
-                        ((const uint8_t*)typeSpec) + dtohs(typeSpec->header.headerSize));
-                if (idmapIndex >= 0) {
-                    t->idmapEntries = idmapEntries[idmapIndex];
+                    Type* t = new Type(header, package, newEntryCount);
+                    t->typeSpec = typeSpec;
+                    t->typeSpecFlags = (const uint32_t*)(
+                            ((const uint8_t*)typeSpec) + dtohs(typeSpec->header.headerSize));
+                    if (idmapIndex >= 0) {
+                        t->idmapEntries = idmapEntries[idmapIndex];
+                    }
+                    typeList.add(t);
+                    group->largestTypeId = max(group->largestTypeId, typeSpec->id);
                 }
-                typeList.add(t);
-                group->largestTypeId = max(group->largestTypeId, typeSpec->id);
             } else {
                 ALOGV("Skipping empty ResTable_typeSpec for type %d", typeSpec->id);
             }
@@ -6363,37 +6512,40 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
             }
 
             if (newEntryCount > 0) {
+                bool addToType = true;
                 uint8_t typeIndex = type->id - 1;
                 ssize_t idmapIndex = idmapEntries.indexOfKey(type->id);
                 if (idmapIndex >= 0) {
                     typeIndex = idmapEntries[idmapIndex].targetTypeId() - 1;
+                } else if (header->resourceIDMap != NULL) {
+                    // This is an overlay, but the types in this overlay are not
+                    // overlaying anything according to the idmap. We can skip these
+                    // as they will otherwise conflict with the other resources in the package
+                    // without a mapping.
+                    addToType = false;
                 }
 
-                TypeList& typeList = group->types.editItemAt(typeIndex);
-                if (typeList.isEmpty()) {
-                    ALOGE("No TypeSpec for type %d", type->id);
-                    return (mError=BAD_TYPE);
-                }
+                if (addToType) {
+                    TypeList& typeList = group->types.editItemAt(typeIndex);
+                    if (typeList.isEmpty()) {
+                        ALOGE("No TypeSpec for type %d", type->id);
+                        return (mError=BAD_TYPE);
+                    }
 
-                Type* t = typeList.editItemAt(typeList.size() - 1);
-                if (newEntryCount != t->entryCount) {
-                    ALOGE("ResTable_type entry count inconsistent: given %d, previously %d",
-                        (int)newEntryCount, (int)t->entryCount);
-                    return (mError=BAD_TYPE);
-                }
+                    Type* t = typeList.editItemAt(typeList.size() - 1);
+                    if (t->package != package) {
+                        ALOGE("No TypeSpec for type %d", type->id);
+                        return (mError=BAD_TYPE);
+                    }
 
-                if (t->package != package) {
-                    ALOGE("No TypeSpec for type %d", type->id);
-                    return (mError=BAD_TYPE);
-                }
+                    t->configs.add(type);
 
-                t->configs.add(type);
-
-                if (kDebugTableGetEntry) {
-                    ResTable_config thisConfig;
-                    thisConfig.copyFromDtoH(type->config);
-                    ALOGI("Adding config to type %d: %s\n", type->id,
-                            thisConfig.toString().string());
+                    if (kDebugTableGetEntry) {
+                        ResTable_config thisConfig;
+                        thisConfig.copyFromDtoH(type->config);
+                        ALOGI("Adding config to type %d: %s\n", type->id,
+                                thisConfig.toString().string());
+                    }
                 }
             } else {
                 ALOGV("Skipping empty ResTable_type for type %d", type->id);
@@ -6428,6 +6580,8 @@ status_t ResTable::parsePackage(const ResTable_package* const pkg,
     return NO_ERROR;
 }
 
+DynamicRefTable::DynamicRefTable() : DynamicRefTable(0, false) {}
+
 DynamicRefTable::DynamicRefTable(uint8_t packageId, bool appAsLib)
     : mAssignedPackageId(packageId)
     , mAppAsLib(appAsLib)
@@ -6437,7 +6591,6 @@ DynamicRefTable::DynamicRefTable(uint8_t packageId, bool appAsLib)
     // Reserved package ids
     mLookupTable[APP_PACKAGE_ID] = APP_PACKAGE_ID;
     mLookupTable[SYS_PACKAGE_ID] = SYS_PACKAGE_ID;
-    mLookupTable[CMSDK_PACKAGE_ID] = CMSDK_PACKAGE_ID;
 }
 
 status_t DynamicRefTable::load(const ResTable_lib_header* const header)
@@ -6512,6 +6665,10 @@ status_t DynamicRefTable::addMapping(const String16& packageName, uint8_t packag
     return NO_ERROR;
 }
 
+void DynamicRefTable::addMapping(uint8_t buildPackageId, uint8_t runtimePackageId) {
+    mLookupTable[buildPackageId] = runtimePackageId;
+}
+
 status_t DynamicRefTable::lookupResourceId(uint32_t* resId) const {
     uint32_t res = *resId;
     size_t packageId = Res_GETPACKAGE(res) + 1;
@@ -6534,11 +6691,11 @@ status_t DynamicRefTable::lookupResourceId(uint32_t* resId) const {
     // Do a proper lookup.
     uint8_t translatedId = mLookupTable[packageId];
     if (translatedId == 0) {
-        ALOGV("DynamicRefTable(0x%02x): No mapping for build-time package ID 0x%02x.",
+        ALOGW("DynamicRefTable(0x%02x): No mapping for build-time package ID 0x%02x.",
                 (uint8_t)mAssignedPackageId, (uint8_t)packageId);
         for (size_t i = 0; i < 256; i++) {
             if (mLookupTable[i] != 0) {
-                ALOGV("e[0x%02x] -> 0x%02x", (uint8_t)i, mLookupTable[i]);
+                ALOGW("e[0x%02x] -> 0x%02x", (uint8_t)i, mLookupTable[i]);
             }
         }
         return UNKNOWN_ERROR;
@@ -6603,7 +6760,6 @@ status_t ResTable::createIdmap(const ResTable& overlay,
         return UNKNOWN_ERROR;
     }
 
-    bool isDangerous = false;
     KeyedVector<uint8_t, IdmapTypeMap> map;
 
     // overlaid packages are assumed to contain only one package group
@@ -6678,13 +6834,6 @@ status_t ResTable::createIdmap(const ResTable& overlay,
                 }
             }
             typeMap.entryMap.add(Res_GETENTRY(overlayResID));
-
-            Entry entry;
-            if (getEntry(pg, typeIndex, entryIndex, NULL, &entry)) {
-                return UNKNOWN_ERROR;
-            }
-            isDangerous = isDangerous ||
-                ((dtohs(entry.entry->flags) & ResTable_entry::FLAG_OVERLAY) == 0);
         }
 
         if (!typeMap.entryMap.isEmpty()) {
@@ -6707,7 +6856,6 @@ status_t ResTable::createIdmap(const ResTable& overlay,
     uint32_t* data = (uint32_t*)*outData;
     *data++ = htodl(IDMAP_MAGIC);
     *data++ = htodl(IDMAP_CURRENT_VERSION);
-    *data++ = htodl(isDangerous ? 1 : 0);
     *data++ = htodl(targetCrc);
     *data++ = htodl(overlayCrc);
     const char* paths[] = { targetPath, overlayPath };
@@ -6748,7 +6896,7 @@ status_t ResTable::createIdmap(const ResTable& overlay,
 }
 
 bool ResTable::getIdmapInfo(const void* idmap, size_t sizeBytes,
-                            uint32_t* pVersion, uint32_t* pDangerous,
+                            uint32_t* pVersion,
                             uint32_t* pTargetCrc, uint32_t* pOverlayCrc,
                             String8* pTargetPath, String8* pOverlayPath)
 {
@@ -6759,28 +6907,26 @@ bool ResTable::getIdmapInfo(const void* idmap, size_t sizeBytes,
     if (pVersion) {
         *pVersion = dtohl(map[1]);
     }
-    if (pDangerous) {
-        *pDangerous = dtohl(map[2]);
-    }
     if (pTargetCrc) {
-        *pTargetCrc = dtohl(map[3]);
+        *pTargetCrc = dtohl(map[2]);
     }
     if (pOverlayCrc) {
-        *pOverlayCrc = dtohl(map[4]);
+        *pOverlayCrc = dtohl(map[3]);
     }
     if (pTargetPath) {
-        pTargetPath->setTo(reinterpret_cast<const char*>(map + 5));
+        pTargetPath->setTo(reinterpret_cast<const char*>(map + 4));
     }
     if (pOverlayPath) {
-        pOverlayPath->setTo(reinterpret_cast<const char*>(map + 5 + 256 / sizeof(uint32_t)));
+        pOverlayPath->setTo(reinterpret_cast<const char*>(map + 4 + 256 / sizeof(uint32_t)));
     }
     return true;
 }
 
+
 #define CHAR16_TO_CSTR(c16, len) (String8(String16(c16,len)).string())
 
 #define CHAR16_ARRAY_EQ(constant, var, len) \
-        ((len == (sizeof(constant)/sizeof(constant[0]))) && (0 == memcmp((var), (constant), (len))))
+        (((len) == (sizeof(constant)/sizeof((constant)[0]))) && (0 == memcmp((var), (constant), (len))))
 
 static void print_complex(uint32_t complex, bool isFraction)
 {
@@ -7004,8 +7150,17 @@ void ResTable::print(bool inclValues) const
                 thisConfig.copyFromDtoH(type->config);
 
                 String8 configStr = thisConfig.toString();
-                printf("      config %s:\n", configStr.size() > 0
+                printf("      config %s", configStr.size() > 0
                         ? configStr.string() : "(default)");
+                if (type->flags != 0u) {
+                    printf(" flags=0x%02x", type->flags);
+                    if (type->flags & ResTable_type::FLAG_SPARSE) {
+                        printf(" [sparse]");
+                    }
+                }
+
+                printf(":\n");
+
                 size_t entryCount = dtohl(type->entryCount);
                 uint32_t entriesStart = dtohl(type->entriesStart);
                 if ((entriesStart&0x3) != 0) {
@@ -7017,18 +7172,30 @@ void ResTable::print(bool inclValues) const
                     printf("      NON-INTEGER ResTable_type header.size: 0x%x\n", typeSize);
                     continue;
                 }
-                for (size_t entryIndex=0; entryIndex<entryCount; entryIndex++) {
-                    const uint32_t* const eindex = (const uint32_t*)
-                        (((const uint8_t*)type) + dtohs(type->header.headerSize));
 
-                    uint32_t thisOffset = dtohl(eindex[entryIndex]);
-                    if (thisOffset == ResTable_type::NO_ENTRY) {
-                        continue;
+                const uint32_t* const eindex = (const uint32_t*)
+                        (((const uint8_t*)type) + dtohs(type->header.headerSize));
+                for (size_t entryIndex=0; entryIndex<entryCount; entryIndex++) {
+                    size_t entryId;
+                    uint32_t thisOffset;
+                    if (type->flags & ResTable_type::FLAG_SPARSE) {
+                        const ResTable_sparseTypeEntry* entry =
+                                reinterpret_cast<const ResTable_sparseTypeEntry*>(
+                                        eindex + entryIndex);
+                        entryId = dtohs(entry->idx);
+                        // Offsets are encoded as divided by 4.
+                        thisOffset = static_cast<uint32_t>(dtohs(entry->offset)) * 4u;
+                    } else {
+                        entryId = entryIndex;
+                        thisOffset = dtohl(eindex[entryIndex]);
+                        if (thisOffset == ResTable_type::NO_ENTRY) {
+                            continue;
+                        }
                     }
 
                     uint32_t resID = (0xff000000 & ((packageId)<<24))
                                 | (0x00ff0000 & ((typeIndex+1)<<16))
-                                | (0x0000ffff & (entryIndex));
+                                | (0x0000ffff & (entryId));
                     if (packageId == 0) {
                         pg->dynamicRefTable.lookupResourceId(&resID);
                     }
@@ -7098,9 +7265,6 @@ void ResTable::print(bool inclValues) const
 
                     if ((dtohs(ent->flags)&ResTable_entry::FLAG_PUBLIC) != 0) {
                         printf(" (PUBLIC)");
-                    }
-                    if ((dtohs(ent->flags)&ResTable_entry::FLAG_OVERLAY) != 0) {
-                        printf(" (OVERLAY)");
                     }
                     printf("\n");
 

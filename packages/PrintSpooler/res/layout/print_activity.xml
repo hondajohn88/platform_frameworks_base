@@ -31,7 +31,7 @@
         android:elevation="@dimen/preview_controls_elevation"
         android:background="?android:attr/colorPrimary">
 
-        <Spinner
+        <com.android.printspooler.widget.ClickInterceptSpinner
             android:id="@+id/destination_spinner"
             android:layout_width="wrap_content"
             android:minWidth="@dimen/preview_destination_spinner_width"
@@ -39,7 +39,7 @@
             android:layout_marginTop="4dip"
             android:dropDownWidth="wrap_content"
             android:minHeight="?android:attr/listPreferredItemHeightSmall">
-        </Spinner>
+        </com.android.printspooler.widget.ClickInterceptSpinner>
 
     </FrameLayout>
 
@@ -49,8 +49,10 @@
         android:id="@+id/summary_content"
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
+        android:paddingTop="2dip"
         android:paddingStart="16dip"
         android:paddingEnd="16dip"
+        android:paddingBottom="8dip"
         android:orientation="horizontal"
         android:elevation="@dimen/preview_controls_elevation"
         android:background="?android:attr/colorPrimary">

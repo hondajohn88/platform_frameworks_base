@@ -25,11 +25,13 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
 
+import com.android.internal.util.aos.aosUtils;
 import com.android.systemui.ExpandHelper;
 import com.android.systemui.Gefingerpoken;
 import com.android.systemui.Interpolators;
 import com.android.systemui.R;
 import com.android.systemui.classifier.FalsingManager;
+import com.android.systemui.statusbar.phone.StatusBar;
 
 /**
  * A utility class to enable the downward swipe on the lockscreen to go to the full shade and expand
@@ -56,15 +58,31 @@ public class DragDownHelper implements Gefingerpoken {
     private float mLastHeight;
     private FalsingManager mFalsingManager;
 
+    // omni additions start
+    private boolean mDoubleTapToSleepEnabled;
+    private int mStatusBarHeaderHeight;
+    private long mLastDownEvent = -1;
+    private long mDoubleTapTimeout;
+    private Runnable mGoToSleep;
+
     public DragDownHelper(Context context, View host, ExpandHelper.Callback callback,
             DragDownCallback dragDownCallback) {
         mMinDragDistance = context.getResources().getDimensionPixelSize(
                 R.dimen.keyguard_drag_down_min_distance);
         mTouchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
+        mDoubleTapTimeout = ViewConfiguration.get(context).getDoubleTapTimeout();
         mCallback = callback;
         mDragDownCallback = dragDownCallback;
         mHost = host;
         mFalsingManager = FalsingManager.getInstance(context);
+        mStatusBarHeaderHeight = context
+                .getResources().getDimensionPixelSize(R.dimen.status_bar_header_height_keyguard);
+        mGoToSleep = new Runnable() {
+            @Override
+            public void run() {
+                aosUtils.switchScreenOff(context);
+            }
+        };
     }
 
     @Override
@@ -79,6 +97,20 @@ public class DragDownHelper implements Gefingerpoken {
                 mStartingChild = null;
                 mInitialTouchY = y;
                 mInitialTouchX = x;
+
+                if (mDoubleTapToSleepEnabled && y < mStatusBarHeaderHeight) {
+                    long eventTime = event.getEventTime();
+                    if (mLastDownEvent != -1) {
+                        long diff = eventTime - mLastDownEvent;
+
+                        if (diff < mDoubleTapTimeout) {
+                            mGoToSleep.run();
+                        }
+                        mLastDownEvent = -1;
+                    } else {
+                        mLastDownEvent = eventTime;
+                    }
+                }
                 break;
 
             case MotionEvent.ACTION_MOVE:
@@ -133,6 +165,7 @@ public class DragDownHelper implements Gefingerpoken {
                         mDragDownCallback.setEmptyDragAmount(0f);
                     } else {
                         mCallback.setUserLockedChild(mStartingChild, false);
+                        mStartingChild = null;
                     }
                     mDraggingDown = false;
                 } else {
@@ -148,6 +181,9 @@ public class DragDownHelper implements Gefingerpoken {
     }
 
     private boolean isFalseTouch() {
+        if (!mDragDownCallback.isFalsingCheckNeeded()) {
+            return false;
+        }
         return mFalsingManager.isFalseTouch() || !mDraggedFarEnough;
     }
 
@@ -214,6 +250,7 @@ public class DragDownHelper implements Gefingerpoken {
         mFalsingManager.onNotificatonStopDraggingDown();
         if (mStartingChild != null) {
             cancelExpansion(mStartingChild);
+            mStartingChild = null;
         } else {
             cancelExpansion();
         }
@@ -226,6 +263,10 @@ public class DragDownHelper implements Gefingerpoken {
         x += mTemp2[0];
         y += mTemp2[1];
         return mCallback.getChildAtRawPosition(x, y);
+    }
+
+    public boolean isDraggingDown() {
+        return mDraggingDown;
     }
 
     public interface DragDownCallback {
@@ -243,5 +284,10 @@ public class DragDownHelper implements Gefingerpoken {
         void onCrossedThreshold(boolean above);
         void onTouchSlopExceeded();
         void setEmptyDragAmount(float amount);
+        boolean isFalsingCheckNeeded();
+    }
+
+    public void updateDoubleTapToSleep(boolean updateDoubleTapToSleep) {
+        mDoubleTapToSleepEnabled = updateDoubleTapToSleep;
     }
 }

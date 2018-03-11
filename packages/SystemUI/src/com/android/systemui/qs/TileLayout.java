@@ -30,7 +30,6 @@ public class TileLayout extends ViewGroup implements QSTileLayout {
     protected final ArrayList<TileRecord> mRecords = new ArrayList<>();
     private int mCellMarginTop;
     private boolean mListening;
-    private boolean mShowTitles = true;
 
     public TileLayout(Context context) {
         this(context, null);
@@ -79,32 +78,23 @@ public class TileLayout extends ViewGroup implements QSTileLayout {
 
     public boolean updateResources() {
         final Resources res = mContext.getResources();
-
         final ContentResolver resolver = mContext.getContentResolver();
-        final int columnsConfig = Settings.Secure.getInt(resolver,
-                Settings.Secure.QS_COLUMNS, 3);
-        final int columns = Math.max(1, columnsConfig);
 
-        boolean showTitles = Settings.System.getIntForUser(resolver,
-                Settings.System.QS_TILE_TITLE_VISIBILITY, 1,
-                UserHandle.USER_CURRENT) == 1;
-
-        if (showTitles) {
-            mCellHeight = res.getDimensionPixelSize(R.dimen.qs_tile_height);
+        final int columns;
+        if (res.getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT) {
+            columns = Settings.System.getIntForUser(resolver,
+                    Settings.System.QS_COLUMNS_PORTRAIT, 4,
+                    UserHandle.USER_CURRENT);
         } else {
-            mCellHeight = res.getDimensionPixelSize(R.dimen.qs_tile_height_wo_label);
+            columns = Settings.System.getIntForUser(resolver,
+                    Settings.System.QS_COLUMNS_LANDSCAPE, 4,
+                    UserHandle.USER_CURRENT);
         }
+        mCellHeight = mContext.getResources().getDimensionPixelSize(R.dimen.qs_tile_height);
         mCellMargin = res.getDimensionPixelSize(R.dimen.qs_tile_margin);
         mCellMarginTop = res.getDimensionPixelSize(R.dimen.qs_tile_margin_top);
-
-        if (mColumns != columns || mShowTitles != showTitles) {
+        if (mColumns != columns) {
             mColumns = columns;
-            mShowTitles = showTitles;
-            for (TileRecord record : mRecords) {
-                if (record.tileView instanceof QSTileView) {
-                    ((QSTileView) record.tileView).setLabelVisibility(mShowTitles);
-                }
-            }
             requestLayout();
             return true;
         }
@@ -124,8 +114,9 @@ public class TileLayout extends ViewGroup implements QSTileLayout {
             record.tileView.measure(exactly(mCellWidth), exactly(mCellHeight));
             previousView = record.tileView.updateAccessibilityOrder(previousView);
         }
-        setMeasuredDimension(width,
-                (mCellHeight + mCellMargin) * rows + (mCellMarginTop - mCellMargin));
+        int height = (mCellHeight + mCellMargin) * rows + (mCellMarginTop - mCellMargin);
+        if (height < 0) height = 0;
+        setMeasuredDimension(width, height);
     }
 
     private static int exactly(int size) {

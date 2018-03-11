@@ -19,9 +19,15 @@ package android.app.admin;
 import android.os.Parcel;
 import android.os.Parcelable;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+
 /**
- * A class that represents a connect library call event.
- * @hide
+ * A class that represents a TCP connect event initiated through the standard network stack.
+ *
+ * <p>It contains information about the originating app as well as the remote TCP endpoint.
+ *
+ * <p>Support both IPv4 and IPv6 connections.
  */
 public final class ConnectEvent extends NetworkEvent implements Parcelable {
 
@@ -45,8 +51,14 @@ public final class ConnectEvent extends NetworkEvent implements Parcelable {
         this.timestamp = in.readLong();
     }
 
-    public String getIpAddress() {
-        return ipAddress;
+    public InetAddress getInetAddress() {
+        try {
+            // ipAddress is already an address, not a host name, no DNS resolution will happen.
+            return InetAddress.getByName(ipAddress);
+        } catch (UnknownHostException e) {
+            // Should never happen as we aren't passing a host name.
+            return InetAddress.getLoopbackAddress();
+        }
     }
 
     public int getPort() {

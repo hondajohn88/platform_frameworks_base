@@ -22,7 +22,7 @@
 
 #include <sstream>
 #include <jni.h>
-#include <JNIHelp.h>
+#include <nativehelper/JNIHelp.h>
 #include "core_jni_helpers.h"
 
 #include <media/AudioSystem.h>
@@ -326,6 +326,12 @@ android_media_AudioSystem_newAudioSessionId(JNIEnv *env, jobject thiz)
 }
 
 static jint
+android_media_AudioSystem_newAudioPlayerId(JNIEnv *env, jobject thiz)
+{
+    return AudioSystem::newAudioUniqueId(AUDIO_UNIQUE_ID_USE_PLAYER);
+}
+
+static jint
 android_media_AudioSystem_setParameters(JNIEnv *env, jobject thiz, jstring keyValuePairs)
 {
     const jchar* c_keyValuePairs = env->GetStringCritical(keyValuePairs, 0);
@@ -390,7 +396,7 @@ android_media_AudioSystem_dyn_policy_callback(int event, String8 regId, int val)
 }
 
 static void
-android_media_AudioSystem_recording_callback(int event, audio_session_t session, int source,
+android_media_AudioSystem_recording_callback(int event, const record_client_info_t *clientInfo,
         const audio_config_base_t *clientConfig, const audio_config_base_t *deviceConfig,
         audio_patch_handle_t patchHandle)
 {
@@ -398,8 +404,8 @@ android_media_AudioSystem_recording_callback(int event, audio_session_t session,
     if (env == NULL) {
         return;
     }
-    if (clientConfig == NULL || deviceConfig == NULL) {
-        ALOGE("Unexpected null client/device configurations in recording callback");
+    if (clientInfo == NULL || clientConfig == NULL || deviceConfig == NULL) {
+        ALOGE("Unexpected null client/device info or configurations in recording callback");
         return;
     }
 
@@ -427,7 +433,7 @@ android_media_AudioSystem_recording_callback(int event, audio_session_t session,
     jclass clazz = env->FindClass(kClassPathName);
     env->CallStaticVoidMethod(clazz,
             gAudioPolicyEventHandlerMethods.postRecordConfigEventFromNative,
-            event, session, source, recParamArray);
+            event, (jint) clientInfo->uid, clientInfo->session, clientInfo->source, recParamArray);
     env->DeleteLocalRef(clazz);
 
     env->DeleteLocalRef(recParamArray);
@@ -454,6 +460,18 @@ android_media_AudioSystem_getDeviceConnectionState(JNIEnv *env, jobject thiz, ji
                                           c_address));
     env->ReleaseStringUTFChars(device_address, c_address);
     return (jint) state;
+}
+
+static jint
+android_media_AudioSystem_handleDeviceConfigChange(JNIEnv *env, jobject thiz, jint device, jstring device_address, jstring device_name)
+{
+    const char *c_address = env->GetStringUTFChars(device_address, NULL);
+    const char *c_name = env->GetStringUTFChars(device_name, NULL);
+    int status = check_AudioSystem_Command(AudioSystem::handleDeviceConfigChange(static_cast <audio_devices_t>(device),
+                                          c_address, c_name));
+    env->ReleaseStringUTFChars(device_address, c_address);
+    env->ReleaseStringUTFChars(device_name, c_name);
+    return (jint) status;
 }
 
 static jint
@@ -1743,6 +1761,14 @@ android_media_AudioSystem_systemReady(JNIEnv *env, jobject thiz)
     return nativeToJavaStatus(AudioSystem::systemReady());
 }
 
+static jfloat
+android_media_AudioSystem_getStreamVolumeDB(JNIEnv *env, jobject thiz,
+                                            jint stream, jint index, jint device)
+{
+    return (jfloat)AudioSystem::getStreamVolumeDB((audio_stream_type_t)stream,
+                                                  (int)index,
+                                                  (audio_devices_t)device);
+}
 
 // ----------------------------------------------------------------------------
 
@@ -1755,8 +1781,10 @@ static const JNINativeMethod gMethods[] = {
     {"isStreamActiveRemotely","(II)Z",  (void *)android_media_AudioSystem_isStreamActiveRemotely},
     {"isSourceActive",      "(I)Z",     (void *)android_media_AudioSystem_isSourceActive},
     {"newAudioSessionId",   "()I",      (void *)android_media_AudioSystem_newAudioSessionId},
+    {"newAudioPlayerId",    "()I",      (void *)android_media_AudioSystem_newAudioPlayerId},
     {"setDeviceConnectionState", "(IILjava/lang/String;Ljava/lang/String;)I", (void *)android_media_AudioSystem_setDeviceConnectionState},
     {"getDeviceConnectionState", "(ILjava/lang/String;)I",  (void *)android_media_AudioSystem_getDeviceConnectionState},
+    {"handleDeviceConfigChange", "(ILjava/lang/String;Ljava/lang/String;)I", (void *)android_media_AudioSystem_handleDeviceConfigChange},
     {"setPhoneState",       "(I)I",     (void *)android_media_AudioSystem_setPhoneState},
     {"setForceUse",         "(II)I",    (void *)android_media_AudioSystem_setForceUse},
     {"getForceUse",         "(I)I",     (void *)android_media_AudioSystem_getForceUse},
@@ -1794,6 +1822,7 @@ static const JNINativeMethod gMethods[] = {
     {"native_register_recording_callback", "()V",
                                     (void *)android_media_AudioSystem_registerRecordingCallback},
     {"systemReady", "()I", (void *)android_media_AudioSystem_systemReady},
+    {"getStreamVolumeDB", "(III)F", (void *)android_media_AudioSystem_getStreamVolumeDB},
 };
 
 
@@ -1901,7 +1930,7 @@ int register_android_media_AudioSystem(JNIEnv *env)
                     "dynamicPolicyCallbackFromNative", "(ILjava/lang/String;I)V");
     gAudioPolicyEventHandlerMethods.postRecordConfigEventFromNative =
             GetStaticMethodIDOrDie(env, env->FindClass(kClassPathName),
-                    "recordingCallbackFromNative", "(III[I)V");
+                    "recordingCallbackFromNative", "(IIII[I)V");
 
     jclass audioMixClass = FindClassOrDie(env, "android/media/audiopolicy/AudioMix");
     gAudioMixClass = MakeGlobalRefOrDie(env, audioMixClass);

@@ -16,14 +16,16 @@
 
 package com.android.internal.widget;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import android.content.Context;
 import android.support.test.InstrumentationRegistry;
 import android.support.test.filters.SmallTest;
+import android.text.Layout;
 import android.view.View.MeasureSpec;
 import android.widget.TextView;
 
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -38,6 +40,7 @@ public class ImageFloatingTextViewTest {
     public void setup() {
         mContext = InstrumentationRegistry.getTargetContext();
         mView = new ImageFloatingTextView(mContext, null, 0, 0);
+        mView.setMaxLines(9);
         mTextView = new TextView(mContext, null, 0, 0);
         mTextView.setMaxLines(9);
     }
@@ -101,6 +104,16 @@ public class ImageFloatingTextViewTest {
                 + "Yada yada, yada yada. Lorem ipsum dolor sit amet.");
     }
 
+    @Test
+    public void usesTransformationMethod() {
+        mView.setSingleLine();
+        String text = "Test \n Test";
+        parametrizedTest(text);
+        Layout layout = mView.getLayout();
+        Assert.assertFalse("The transformation method wasn't used, string is still the same",
+                text.equals(layout.getText()));
+    }
+
     private void parametrizedTest(CharSequence text) {
         int heightMeasureSpec = MeasureSpec.makeMeasureSpec(500, MeasureSpec.AT_MOST);
         int widthMeasureSpec = MeasureSpec.makeMeasureSpec(500, MeasureSpec.EXACTLY);
@@ -111,6 +124,9 @@ public class ImageFloatingTextViewTest {
         mTextView.measure(widthMeasureSpec, heightMeasureSpec);
         mView.measure(widthMeasureSpec, heightMeasureSpec);
 
-        assertEquals(mTextView.getMeasuredHeight(), mView.getMeasuredHeight());
+        // We're at most allowed to be the same height as the regular textview and maybe a bit
+        // smaller since our layout snaps to full textlines.
+        assertTrue("The measured view should never be taller then the normal textview!",
+                mView.getMeasuredHeight() <= mTextView.getMeasuredHeight());
     }
 }

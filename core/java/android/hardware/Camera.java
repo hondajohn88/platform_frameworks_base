@@ -16,10 +16,11 @@
 
 package android.hardware;
 
-import android.app.ActivityThread;
+import static android.system.OsConstants.*;
+
 import android.annotation.SdkConstant;
 import android.annotation.SdkConstant.SdkConstantType;
-import android.app.job.JobInfo;
+import android.app.ActivityThread;
 import android.content.Context;
 import android.graphics.ImageFormat;
 import android.graphics.Point;
@@ -32,25 +33,21 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.RemoteException;
 import android.os.ServiceManager;
-import android.os.SystemProperties;
 import android.renderscript.Allocation;
 import android.renderscript.Element;
-import android.renderscript.RenderScript;
 import android.renderscript.RSIllegalArgumentException;
+import android.renderscript.RenderScript;
 import android.renderscript.Type;
-import android.util.Log;
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.Surface;
 import android.view.SurfaceHolder;
-import android.os.SystemProperties;
 
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-
-import static android.system.OsConstants.*;
 
 /**
  * The Camera class is used to set image capture settings, start/stop preview,
@@ -195,27 +192,41 @@ public class Camera {
     /* ### QC ADD-ONS: END */
 
     /**
-     * @deprecated This broadcast is no longer delivered by the system; use
-     * {@link android.app.job.JobInfo.Builder JobInfo.Builder}.{@link android.app.job.JobInfo.Builder#addTriggerContentUri}
-     * instead.
      * Broadcast Action:  A new picture is taken by the camera, and the entry of
      * the picture has been added to the media store.
      * {@link android.content.Intent#getData} is URI of the picture.
+     *
+     * <p>In {@link android.os.Build.VERSION_CODES#N Android N} this broadcast was removed, and
+     * applications are recommended to use
+     * {@link android.app.job.JobInfo.Builder JobInfo.Builder}.{@link android.app.job.JobInfo.Builder#addTriggerContentUri}
+     * instead.</p>
+     *
+     * <p>In {@link android.os.Build.VERSION_CODES#O Android O} this broadcast has been brought
+     * back, but only for <em>registered</em> receivers.  Apps that are actively running can
+     * again listen to the broadcast if they want an immediate clear signal about a picture
+     * being taken, however anything doing heavy work (or needing to be launched) as a result of
+     * this should still use JobScheduler.</p>
      */
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
-    @Deprecated
     public static final String ACTION_NEW_PICTURE = "android.hardware.action.NEW_PICTURE";
 
     /**
-     * @deprecated This broadcast is no longer delivered by the system; use
-     * {@link android.app.job.JobInfo.Builder JobInfo.Builder}.{@link android.app.job.JobInfo.Builder#addTriggerContentUri}
-     * instead.
      * Broadcast Action:  A new video is recorded by the camera, and the entry
      * of the video has been added to the media store.
      * {@link android.content.Intent#getData} is URI of the video.
+     *
+     * <p>In {@link android.os.Build.VERSION_CODES#N Android N} this broadcast was removed, and
+     * applications are recommended to use
+     * {@link android.app.job.JobInfo.Builder JobInfo.Builder}.{@link android.app.job.JobInfo.Builder#addTriggerContentUri}
+     * instead.</p>
+     *
+     * <p>In {@link android.os.Build.VERSION_CODES#O Android O} this broadcast has been brought
+     * back, but only for <em>registered</em> receivers.  Apps that are actively running can
+     * again listen to the broadcast if they want an immediate clear signal about a video
+     * being taken, however anything doing heavy work (or needing to be launched) as a result of
+     * this should still use JobScheduler.</p>
      */
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
-    @Deprecated
     public static final String ACTION_NEW_VIDEO = "android.hardware.action.NEW_VIDEO";
 
     /**
@@ -246,45 +257,21 @@ public class Camera {
 
     /**
      * Returns the number of physical cameras available on this device.
+     *
+     * @return total number of accessible camera devices, or 0 if there are no
+     *   cameras or an error was encountered enumerating them.
      */
-    public static int getNumberOfCameras() {
-        boolean exposeAuxCamera = true;
-        String packageName = ActivityThread.currentOpPackageName();
-        /* Force exposing only two cameras
-         * if the package name falls in this bucket
-         */
-        String packageList = SystemProperties.get("camera.auxdisable.packagelist");
-        if (packageList.length() > 0) {
-            TextUtils.StringSplitter splitter = new TextUtils.SimpleStringSplitter(',');
-            splitter.setString(packageList);
-            for (String str : splitter) {
-                if (packageName.equals(str)) {
-                    exposeAuxCamera = false;
-                    break;
-                }
-            }
-        }
-        int numberOfCameras = _getNumberOfCameras();
-        if (exposeAuxCamera == false && (numberOfCameras > 2)) {
-            numberOfCameras = 2;
-        }
-        return numberOfCameras;
-    }
-
-    /**
-     * Returns the number of physical cameras available on this device.
-     */
-    /** @hide */
-    public native static int _getNumberOfCameras();
+    public native static int getNumberOfCameras();
 
     /**
      * Returns the information about a particular camera.
      * If {@link #getNumberOfCameras()} returns N, the valid id is 0 to N-1.
+     *
+     * @throws RuntimeException if an invalid ID is provided, or if there is an
+     *    error retrieving the information (generally due to a hardware or other
+     *    low-level failure).
      */
     public static void getCameraInfo(int cameraId, CameraInfo cameraInfo) {
-        if(cameraId >= getNumberOfCameras()){
-            throw new RuntimeException("Unknown camera ID");
-        }
         _getCameraInfo(cameraId, cameraInfo);
         IBinder b = ServiceManager.getService(Context.AUDIO_SERVICE);
         IAudioService audioService = IAudioService.Stub.asInterface(b);
@@ -407,7 +394,10 @@ public class Camera {
     /**
      * Creates a new Camera object to access the first back-facing camera on the
      * device. If the device does not have a back-facing camera, this returns
-     * null.
+     * null. Otherwise acts like the {@link #open(int)} call.
+     *
+     * @return a new Camera object for the first back-facing camera, or null if there is no
+     *  backfacing camera
      * @see #open(int)
      */
     public static Camera open() {
@@ -525,21 +515,8 @@ public class Camera {
             mEventHandler = null;
         }
 
-        String packageName = ActivityThread.currentOpPackageName();
-
-        //Force HAL1 if the package name falls in this bucket
-        String packageList = SystemProperties.get("camera.hal1.packagelist", "");
-        if (packageList.length() > 0) {
-            TextUtils.StringSplitter splitter = new TextUtils.SimpleStringSplitter(',');
-            splitter.setString(packageList);
-            for (String str : splitter) {
-                if (packageName.equals(str)) {
-                    halVersion = CAMERA_HAL_API_VERSION_1_0;
-                    break;
-                }
-            }
-        }
-        return native_setup(new WeakReference<Camera>(this), cameraId, halVersion, packageName);
+        return native_setup(new WeakReference<Camera>(this), cameraId, halVersion,
+                ActivityThread.currentOpPackageName());
     }
 
     private int cameraInitNormal(int cameraId) {
@@ -566,9 +543,6 @@ public class Camera {
 
     /** used by Camera#open, Camera#open(int) */
     Camera(int cameraId) {
-        if(cameraId >= getNumberOfCameras()){
-             throw new RuntimeException("Unknown camera ID");
-        }
         int err = cameraInitNormal(cameraId);
         if (checkInitErrors(err)) {
             if (err == -EACCES) {
@@ -674,6 +648,8 @@ public class Camera {
      *
      * @throws IOException if a connection cannot be re-established (for
      *     example, if the camera is still in use by another process).
+     * @throws RuntimeException if release() has been called on this Camera
+     *     instance.
      */
     public native final void reconnect() throws IOException;
 
@@ -702,6 +678,8 @@ public class Camera {
      *     or null to remove the preview surface
      * @throws IOException if the method fails (for example, if the surface
      *     is unavailable or unsuitable).
+     * @throws RuntimeException if release() has been called on this Camera
+     *    instance.
      */
     public final void setPreviewDisplay(SurfaceHolder holder) throws IOException {
         if (holder != null) {
@@ -749,6 +727,8 @@ public class Camera {
      *     texture
      * @throws IOException if the method fails (for example, if the surface
      *     texture is unavailable or unsuitable).
+     * @throws RuntimeException if release() has been called on this Camera
+     *    instance.
      */
     public native final void setPreviewTexture(SurfaceTexture surfaceTexture) throws IOException;
 
@@ -798,12 +778,20 @@ public class Camera {
      * {@link #setPreviewCallbackWithBuffer(Camera.PreviewCallback)} were
      * called, {@link Camera.PreviewCallback#onPreviewFrame(byte[], Camera)}
      * will be called when preview data becomes available.
+     *
+     * @throws RuntimeException if starting preview fails; usually this would be
+     *    because of a hardware or other low-level error, or because release()
+     *    has been called on this Camera instance.
      */
     public native final void startPreview();
 
     /**
      * Stops capturing and drawing preview frames to the surface, and
      * resets the camera for a future call to {@link #startPreview()}.
+     *
+     * @throws RuntimeException if stopping preview fails; usually this would be
+     *    because of a hardware or other low-level error, or because release()
+     *    has been called on this Camera instance.
      */
     public final void stopPreview() {
         _stopPreview();
@@ -842,10 +830,11 @@ public class Camera {
      *
      * @param cb a callback object that receives a copy of each preview frame,
      *     or null to stop receiving callbacks.
+     * @throws RuntimeException if release() has been called on this Camera
+     *     instance.
      * @see android.media.MediaActionSound
      */
     public final void setPreviewCallback(PreviewCallback cb) {
-        android.util.SeempLog.record(66);
         mPreviewCallback = cb;
         mOneShot = false;
         mWithBuffer = false;
@@ -869,10 +858,11 @@ public class Camera {
      *
      * @param cb a callback object that receives a copy of the next preview frame,
      *     or null to stop receiving callbacks.
+     * @throws RuntimeException if release() has been called on this Camera
+     *     instance.
      * @see android.media.MediaActionSound
      */
     public final void setOneShotPreviewCallback(PreviewCallback cb) {
-        android.util.SeempLog.record(68);
         mPreviewCallback = cb;
         mOneShot = true;
         mWithBuffer = false;
@@ -907,11 +897,12 @@ public class Camera {
      *
      * @param cb a callback object that receives a copy of the preview frame,
      *     or null to stop receiving callbacks and clear the buffer queue.
+     * @throws RuntimeException if release() has been called on this Camera
+     *     instance.
      * @see #addCallbackBuffer(byte[])
      * @see android.media.MediaActionSound
      */
     public final void setPreviewCallbackWithBuffer(PreviewCallback cb) {
-        android.util.SeempLog.record(67);
         mPreviewCallback = cb;
         mOneShot = false;
         mWithBuffer = true;
@@ -1343,6 +1334,9 @@ public class Camera {
      * success sound to the user.</p>
      *
      * @param cb the callback to run
+     * @throws RuntimeException if starting autofocus fails; usually this would
+     *    be because of a hardware or other low-level error, or because
+     *    release() has been called on this Camera instance.
      * @see #cancelAutoFocus()
      * @see android.hardware.Camera.Parameters#setAutoExposureLock(boolean)
      * @see android.hardware.Camera.Parameters#setAutoWhiteBalanceLock(boolean)
@@ -1363,6 +1357,9 @@ public class Camera {
      * this function will return the focus position to the default.
      * If the camera does not support auto-focus, this is a no-op.
      *
+     * @throws RuntimeException if canceling autofocus fails; usually this would
+     *    be because of a hardware or other low-level error, or because
+     *    release() has been called on this Camera instance.
      * @see #autoFocus(Camera.AutoFocusCallback)
      */
     public final void cancelAutoFocus()
@@ -1417,6 +1414,9 @@ public class Camera {
      * Sets camera auto-focus move callback.
      *
      * @param cb the callback to run
+     * @throws RuntimeException if enabling the focus move callback fails;
+     *    usually this would be because of a hardware or other low-level error,
+     *    or because release() has been called on this Camera instance.
      */
     public void setAutoFocusMoveCallback(AutoFocusMoveCallback cb) {
         mAutoFocusMoveCallback = cb;
@@ -1468,13 +1468,12 @@ public class Camera {
     };
 
     /**
-     * Equivalent to takePicture(shutter, raw, null, jpeg).
+     * Equivalent to <pre>takePicture(Shutter, raw, null, jpeg)</pre>.
      *
      * @see #takePicture(ShutterCallback, PictureCallback, PictureCallback, PictureCallback)
      */
     public final void takePicture(ShutterCallback shutter, PictureCallback raw,
             PictureCallback jpeg) {
-        android.util.SeempLog.record(65);
         takePicture(shutter, raw, null, jpeg);
     }
     private native final void native_takePicture(int msgType);
@@ -1507,10 +1506,12 @@ public class Camera {
      * @param raw       the callback for raw (uncompressed) image data, or null
      * @param postview  callback with postview image data, may be null
      * @param jpeg      the callback for JPEG image data, or null
+     * @throws RuntimeException if starting picture capture fails; usually this
+     *    would be because of a hardware or other low-level error, or because
+     *    release() has been called on this Camera instance.
      */
     public final void takePicture(ShutterCallback shutter, PictureCallback raw,
             PictureCallback postview, PictureCallback jpeg) {
-        android.util.SeempLog.record(65);
         mShutterCallback = shutter;
         mRawImageCallback = raw;
         mPostviewCallback = postview;
@@ -1620,6 +1621,9 @@ public class Camera {
      *
      * @param degrees the angle that the picture will be rotated clockwise.
      *                Valid values are 0, 90, 180, and 270.
+     * @throws RuntimeException if setting orientation fails; usually this would
+     *    be because of a hardware or other low-level error, or because
+     *    release() has been called on this Camera instance.
      * @see #setPreviewDisplay(SurfaceHolder)
      */
     public native final void setDisplayOrientation(int degrees);
@@ -1645,6 +1649,9 @@ public class Camera {
      *         changed. {@code false} if the shutter sound state could not be
      *         changed. {@code true} is also returned if shutter sound playback
      *         is already set to the requested state.
+     * @throws RuntimeException if the call fails; usually this would be because
+     *    of a hardware or other low-level error, or because release() has been
+     *    called on this Camera instance.
      * @see #takePicture
      * @see CameraInfo#canDisableShutterSound
      * @see ShutterCallback
@@ -1920,23 +1927,6 @@ public class Camera {
          * as a set. Either they are all valid, or none of them are.
          */
         public Point mouth = null;
-
-        /**
-         * {@hide}
-         */
-        public int smileDegree = 0;
-        /**
-         * {@hide}
-         */
-        public int smileScore = 0;
-        /**
-         * {@hide}
-         */
-        public int blinkDetected = 0;
-        /**
-         * {@hide}
-         */
-        public int faceRecognised = 0;
     }
 
     /**
@@ -2020,6 +2010,9 @@ public class Camera {
      * If modifications are made to the returned Parameters, they must be passed
      * to {@link #setParameters(Camera.Parameters)} to take effect.
      *
+     * @throws RuntimeException if reading parameters fails; usually this would
+     *    be because of a hardware or other low-level error, or because
+     *    release() has been called on this Camera instance.
      * @see #setParameters(Camera.Parameters)
      */
     public Parameters getParameters() {
@@ -2154,15 +2147,6 @@ public class Camera {
         native_setLongshot(enable);
     }
     private native final void native_setLongshot(boolean enable);
-
-    /** @hide
-     * Stop longshot. Available only in ZSL.
-     */
-    public final void stopLongshot()
-    {
-        native_stopLongshot();
-    }
-    private native final void native_stopLongshot();
 
      /** @hide
      * Handles the Touch Co-ordinate.
@@ -3721,7 +3705,6 @@ public class Camera {
          * @see #getSceneMode()
          */
         public void setSceneMode(String value) {
-            if(getSupportedSceneModes() == null) return;
             set(KEY_SCENE_MODE, value);
         }
 
@@ -3759,7 +3742,6 @@ public class Camera {
          * @see #getFlashMode()
          */
         public void setFlashMode(String value) {
-	    if(getSupportedFlashModes() == null) return;
             set(KEY_FLASH_MODE, value);
         }
 
@@ -3832,12 +3814,7 @@ public class Camera {
          *         valid value.
          */
         public float getHorizontalViewAngle() {
-            try {
-                return Float.parseFloat(get(KEY_HORIZONTAL_VIEW_ANGLE));
-            } catch (NumberFormatException e) {
-                Log.e(TAG, e.getMessage(), e);
-            }
-            return 0;
+            return Float.parseFloat(get(KEY_HORIZONTAL_VIEW_ANGLE));
         }
 
         /**
@@ -3847,12 +3824,7 @@ public class Camera {
          *         valid value.
          */
         public float getVerticalViewAngle() {
-            try {
-                return Float.parseFloat(get(KEY_VERTICAL_VIEW_ANGLE));
-            } catch (NumberFormatException e) {
-                Log.e(TAG, e.getMessage(), e);
-            }
-            return 0;
+            return Float.parseFloat(get(KEY_VERTICAL_VIEW_ANGLE));
         }
 
         /**
@@ -4525,7 +4497,7 @@ public class Camera {
         // Example string: "(10000,26623),(10000,30000)". Return null if the
         // passing string is null or the size is 0.
         private ArrayList<int[]> splitRange(String str) {
-            if (str == null || str.isEmpty() || str.charAt(0) != '('
+            if (TextUtils.isEmpty(str) || str.charAt(0) != '('
                     || str.charAt(str.length() - 1) != ')') {
                 Log.e(TAG, "Invalid range list string=" + str);
                 return null;
@@ -4550,7 +4522,7 @@ public class Camera {
         // Example string: "(-10,-10,0,0,300),(0,0,10,10,700)". Return null if
         // the passing string is null or the size is 0 or (0,0,0,0,0).
         private ArrayList<Area> splitArea(String str) {
-            if (str == null || str.isEmpty() || str.charAt(0) != '('
+            if (TextUtils.isEmpty(str) || str.charAt(0) != '('
                     || str.charAt(str.length() - 1) != ')') {
                 Log.e(TAG, "Invalid area string=" + str);
                 return null;

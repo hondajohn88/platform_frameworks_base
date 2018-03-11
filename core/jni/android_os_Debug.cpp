@@ -15,33 +15,44 @@
  */
 
 #define LOG_TAG "android.os.Debug"
-#include "JNIHelp.h"
-#include "jni.h"
-#include <utils/String8.h>
-#include "utils/misc.h"
-#include "cutils/debugger.h"
-#include <memtrack/memtrack.h>
-#include <memunreachable/memunreachable.h>
 
-#include <cutils/log.h>
+#include <assert.h>
+#include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <malloc.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <time.h>
 #include <sys/time.h>
-#include <errno.h>
-#include <assert.h>
-#include <ctype.h>
-#include <malloc.h>
+#include <time.h>
+#include <unistd.h>
 
+#include <atomic>
 #include <iomanip>
 #include <string>
 
+#include <android-base/stringprintf.h>
+#include <android-base/unique_fd.h>
+#include <debuggerd/client.h>
+#include <log/log.h>
+#include <utils/misc.h>
+#include <utils/String8.h>
+
+#include "JNIHelp.h"
+#include "ScopedUtfChars.h"
+#include "jni.h"
+#include <memtrack/memtrack.h>
+#include <memunreachable/memunreachable.h>
+#include "android_os_Debug.h"
+
 namespace android
 {
+
+static inline UniqueFile MakeUniqueFile(const char* path, const char* mode) {
+    return UniqueFile(fopen(path, mode), safeFclose);
+}
 
 enum {
     HEAP_UNKNOWN,
@@ -66,14 +77,27 @@ enum {
     HEAP_GL,
     HEAP_OTHER_MEMTRACK,
 
+    // Dalvik extra sections (heap).
     HEAP_DALVIK_NORMAL,
     HEAP_DALVIK_LARGE,
-    HEAP_DALVIK_LINEARALLOC,
-    HEAP_DALVIK_ACCOUNTING,
-    HEAP_DALVIK_CODE_CACHE,
     HEAP_DALVIK_ZYGOTE,
     HEAP_DALVIK_NON_MOVING,
-    HEAP_DALVIK_INDIRECT_REFERENCE_TABLE,
+
+    // Dalvik other extra sections.
+    HEAP_DALVIK_OTHER_LINEARALLOC,
+    HEAP_DALVIK_OTHER_ACCOUNTING,
+    HEAP_DALVIK_OTHER_CODE_CACHE,
+    HEAP_DALVIK_OTHER_COMPILER_METADATA,
+    HEAP_DALVIK_OTHER_INDIRECT_REFERENCE_TABLE,
+
+    // Boot vdex / app dex / app vdex
+    HEAP_DEX_BOOT_VDEX,
+    HEAP_DEX_APP_DEX,
+    HEAP_DEX_APP_VDEX,
+
+    // App art, boot art.
+    HEAP_ART_APP,
+    HEAP_ART_BOOT,
 
     _NUM_HEAP,
     _NUM_EXCLUSIVE_HEAP = HEAP_OTHER_MEMTRACK+1,
@@ -116,8 +140,6 @@ static stat_field_names stat_field_names[_NUM_CORE_HEAP] = {
 jfieldID otherStats_field;
 jfieldID hasSwappedOutPss_field;
 
-static bool memtrackLoaded;
-
 struct stats_t {
     int pss;
     int swappablePss;
@@ -128,6 +150,14 @@ struct stats_t {
     int swappedOut;
     int swappedOutPss;
 };
+
+enum pss_rollup_support {
+  PSS_ROLLUP_UNTRIED,
+  PSS_ROLLUP_SUPPORTED,
+  PSS_ROLLUP_UNSUPPORTED
+};
+
+static std::atomic<pss_rollup_support> g_pss_rollup_support;
 
 #define BINDER_STATS "/proc/binder/stats"
 
@@ -199,10 +229,6 @@ static int read_memtrack_memory(struct memtrack_proc* p, int pid,
  */
 static int read_memtrack_memory(int pid, struct graphics_memory_pss* graphics_mem)
 {
-    if (!memtrackLoaded) {
-        return -1;
-    }
-
     struct memtrack_proc* p = memtrack_proc_new();
     if (p == NULL) {
         ALOGW("failed to create memtrack_proc");
@@ -290,12 +316,28 @@ static void read_mapinfo(FILE *fp, stats_t* stats, bool* foundSwapPss)
             } else if ((nameLen > 4 && strstr(name, ".dex") != NULL) ||
                        (nameLen > 5 && strcmp(name+nameLen-5, ".odex") == 0)) {
                 whichHeap = HEAP_DEX;
+                subHeap = HEAP_DEX_APP_DEX;
+                is_swappable = true;
+            } else if (nameLen > 5 && strcmp(name+nameLen-5, ".vdex") == 0) {
+                whichHeap = HEAP_DEX;
+                // Handle system@framework@boot* and system/framework/boot*
+                if (strstr(name, "@boot") != NULL || strstr(name, "/boot") != NULL) {
+                    subHeap = HEAP_DEX_BOOT_VDEX;
+                } else {
+                    subHeap = HEAP_DEX_APP_VDEX;
+                }
                 is_swappable = true;
             } else if (nameLen > 4 && strcmp(name+nameLen-4, ".oat") == 0) {
                 whichHeap = HEAP_OAT;
                 is_swappable = true;
             } else if (nameLen > 4 && strcmp(name+nameLen-4, ".art") == 0) {
                 whichHeap = HEAP_ART;
+                // Handle system@framework@boot* and system/framework/boot*
+                if (strstr(name, "@boot") != NULL || strstr(name, "/boot") != NULL) {
+                    subHeap = HEAP_ART_BOOT;
+                } else {
+                    subHeap = HEAP_ART_APP;
+                }
                 is_swappable = true;
             } else if (strncmp(name, "/dev/", 5) == 0) {
                 if (strncmp(name, "/dev/kgsl-3d0", 13) == 0) {
@@ -304,7 +346,7 @@ static void read_mapinfo(FILE *fp, stats_t* stats, bool* foundSwapPss)
                     if (strncmp(name, "/dev/ashmem/dalvik-", 19) == 0) {
                         whichHeap = HEAP_DALVIK_OTHER;
                         if (strstr(name, "/dev/ashmem/dalvik-LinearAlloc") == name) {
-                            subHeap = HEAP_DALVIK_LINEARALLOC;
+                            subHeap = HEAP_DALVIK_OTHER_LINEARALLOC;
                         } else if ((strstr(name, "/dev/ashmem/dalvik-alloc space") == name) ||
                                    (strstr(name, "/dev/ashmem/dalvik-main space") == name)) {
                             // This is the regular Dalvik heap.
@@ -322,11 +364,14 @@ static void read_mapinfo(FILE *fp, stats_t* stats, bool* foundSwapPss)
                             whichHeap = HEAP_DALVIK;
                             subHeap = HEAP_DALVIK_ZYGOTE;
                         } else if (strstr(name, "/dev/ashmem/dalvik-indirect ref") == name) {
-                            subHeap = HEAP_DALVIK_INDIRECT_REFERENCE_TABLE;
-                        } else if (strstr(name, "/dev/ashmem/dalvik-jit-code-cache") == name) {
-                            subHeap = HEAP_DALVIK_CODE_CACHE;
+                            subHeap = HEAP_DALVIK_OTHER_INDIRECT_REFERENCE_TABLE;
+                        } else if (strstr(name, "/dev/ashmem/dalvik-jit-code-cache") == name ||
+                                   strstr(name, "/dev/ashmem/dalvik-data-code-cache") == name) {
+                            subHeap = HEAP_DALVIK_OTHER_CODE_CACHE;
+                        } else if (strstr(name, "/dev/ashmem/dalvik-CompilerMetadata") == name) {
+                            subHeap = HEAP_DALVIK_OTHER_COMPILER_METADATA;
                         } else {
-                            subHeap = HEAP_DALVIK_ACCOUNTING;  // Default to accounting.
+                            subHeap = HEAP_DALVIK_OTHER_ACCOUNTING;  // Default to accounting.
                         }
                     } else if (strncmp(name, "/dev/ashmem/CursorWindow", 24) == 0) {
                         whichHeap = HEAP_CURSOR;
@@ -411,7 +456,8 @@ static void read_mapinfo(FILE *fp, stats_t* stats, bool* foundSwapPss)
             stats[whichHeap].sharedClean += shared_clean;
             stats[whichHeap].swappedOut += swapped_out;
             stats[whichHeap].swappedOutPss += swapped_out_pss;
-            if (whichHeap == HEAP_DALVIK || whichHeap == HEAP_DALVIK_OTHER) {
+            if (whichHeap == HEAP_DALVIK || whichHeap == HEAP_DALVIK_OTHER ||
+                    whichHeap == HEAP_DEX || whichHeap == HEAP_ART) {
                 stats[subHeap].pss += pss;
                 stats[subHeap].swappablePss += swappable_pss;
                 stats[subHeap].privateDirty += private_dirty;
@@ -427,15 +473,13 @@ static void read_mapinfo(FILE *fp, stats_t* stats, bool* foundSwapPss)
 
 static void load_maps(int pid, stats_t* stats, bool* foundSwapPss)
 {
-    char tmp[128];
-    FILE *fp;
+    *foundSwapPss = false;
 
-    sprintf(tmp, "/proc/%d/smaps", pid);
-    fp = fopen(tmp, "r");
-    if (fp == 0) return;
+    std::string smaps_path = base::StringPrintf("/proc/%d/smaps", pid);
+    UniqueFile fp = MakeUniqueFile(smaps_path.c_str(), "re");
+    if (fp == nullptr) return;
 
-    read_mapinfo(fp, stats, foundSwapPss);
-    fclose(fp);
+    read_mapinfo(fp.get(), stats, foundSwapPss);
 }
 
 static void android_os_Debug_getDirtyPagesPid(JNIEnv *env, jobject clazz,
@@ -508,6 +552,33 @@ static void android_os_Debug_getDirtyPages(JNIEnv *env, jobject clazz, jobject o
     android_os_Debug_getDirtyPagesPid(env, clazz, getpid(), object);
 }
 
+UniqueFile OpenSmapsOrRollup(int pid)
+{
+    enum pss_rollup_support rollup_support =
+            g_pss_rollup_support.load(std::memory_order_relaxed);
+    if (rollup_support != PSS_ROLLUP_UNSUPPORTED) {
+        std::string smaps_rollup_path =
+                base::StringPrintf("/proc/%d/smaps_rollup", pid);
+        UniqueFile fp_rollup = MakeUniqueFile(smaps_rollup_path.c_str(), "re");
+        if (fp_rollup == nullptr && errno != ENOENT) {
+            return fp_rollup;  // Actual error, not just old kernel.
+        }
+        if (fp_rollup != nullptr) {
+            if (rollup_support == PSS_ROLLUP_UNTRIED) {
+                ALOGI("using rollup pss collection");
+                g_pss_rollup_support.store(PSS_ROLLUP_SUPPORTED,
+                                           std::memory_order_relaxed);
+            }
+            return fp_rollup;
+        }
+        g_pss_rollup_support.store(PSS_ROLLUP_UNSUPPORTED,
+                                   std::memory_order_relaxed);
+    }
+
+    std::string smaps_path = base::StringPrintf("/proc/%d/smaps", pid);
+    return MakeUniqueFile(smaps_path.c_str(), "re");
+}
+
 static jlong android_os_Debug_getPssPid(JNIEnv *env, jobject clazz, jint pid,
         jlongArray outUssSwapPss, jlongArray outMemtrack)
 {
@@ -517,51 +588,47 @@ static jlong android_os_Debug_getPssPid(JNIEnv *env, jobject clazz, jint pid,
     jlong uss = 0;
     jlong memtrack = 0;
 
-    char tmp[128];
-    FILE *fp;
-
     struct graphics_memory_pss graphics_mem;
     if (read_memtrack_memory(pid, &graphics_mem) == 0) {
         pss = uss = memtrack = graphics_mem.graphics + graphics_mem.gl + graphics_mem.other;
     }
 
-    sprintf(tmp, "/proc/%d/smaps", pid);
-    fp = fopen(tmp, "r");
+    {
+        UniqueFile fp = OpenSmapsOrRollup(pid);
 
-    if (fp != 0) {
-        while (true) {
-            if (fgets(line, 1024, fp) == NULL) {
-                break;
-            }
+        if (fp != nullptr) {
+            while (true) {
+                if (fgets(line, sizeof (line), fp.get()) == NULL) {
+                    break;
+                }
 
-            if (line[0] == 'P') {
-                if (strncmp(line, "Pss:", 4) == 0) {
-                    char* c = line + 4;
+                if (line[0] == 'P') {
+                    if (strncmp(line, "Pss:", 4) == 0) {
+                        char* c = line + 4;
+                        while (*c != 0 && (*c < '0' || *c > '9')) {
+                            c++;
+                        }
+                        pss += atoi(c);
+                    } else if (strncmp(line, "Private_Clean:", 14) == 0
+                                || strncmp(line, "Private_Dirty:", 14) == 0) {
+                        char* c = line + 14;
+                        while (*c != 0 && (*c < '0' || *c > '9')) {
+                            c++;
+                        }
+                        uss += atoi(c);
+                    }
+                } else if (line[0] == 'S' && strncmp(line, "SwapPss:", 8) == 0) {
+                    char* c = line + 8;
+                    jlong lSwapPss;
                     while (*c != 0 && (*c < '0' || *c > '9')) {
                         c++;
                     }
-                    pss += atoi(c);
-                } else if (strncmp(line, "Private_Clean:", 14) == 0
-                        || strncmp(line, "Private_Dirty:", 14) == 0) {
-                    char* c = line + 14;
-                    while (*c != 0 && (*c < '0' || *c > '9')) {
-                        c++;
-                    }
-                    uss += atoi(c);
+                    lSwapPss = atoi(c);
+                    swapPss += lSwapPss;
+                    pss += lSwapPss; // Also in swap, those pages would be accounted as Pss without SWAP
                 }
-            } else if (line[0] == 'S' && strncmp(line, "SwapPss:", 8) == 0) {
-                char* c = line + 8;
-                jlong lSwapPss;
-                while (*c != 0 && (*c < '0' || *c > '9')) {
-                    c++;
-                }
-                lSwapPss = atoi(c);
-                swapPss += lSwapPss;
-                pss += lSwapPss; // Also in swap, those pages would be accounted as Pss without SWAP
             }
         }
-
-        fclose(fp);
     }
 
     if (outUssSwapPss != NULL) {
@@ -605,12 +672,14 @@ static long get_allocated_vmalloc_memory() {
             NULL
     };
     long size, vmalloc_allocated_size = 0;
-    FILE* fp = fopen("/proc/vmallocinfo", "r");
-    if (fp == NULL) {
+
+    UniqueFile fp = MakeUniqueFile("/proc/vmallocinfo", "re");
+    if (fp == nullptr) {
         return 0;
     }
+
     while (true) {
-        if (fgets(line, 1024, fp) == NULL) {
+        if (fgets(line, 1024, fp.get()) == NULL) {
             break;
         }
         bool valid_line = true;
@@ -626,7 +695,6 @@ static long get_allocated_vmalloc_memory() {
             vmalloc_allocated_size += size;
         }
     }
-    fclose(fp);
     return vmalloc_allocated_size;
 }
 
@@ -637,6 +705,8 @@ enum {
     MEMINFO_CACHED,
     MEMINFO_SHMEM,
     MEMINFO_SLAB,
+    MEMINFO_SLAB_RECLAIMABLE,
+    MEMINFO_SLAB_UNRECLAIMABLE,
     MEMINFO_SWAP_TOTAL,
     MEMINFO_SWAP_FREE,
     MEMINFO_ZRAM_TOTAL,
@@ -650,27 +720,25 @@ enum {
 static long long get_zram_mem_used()
 {
 #define ZRAM_SYSFS "/sys/block/zram0/"
-    FILE *f = fopen(ZRAM_SYSFS "mm_stat", "r");
-    if (f) {
+    UniqueFile mm_stat_file = MakeUniqueFile(ZRAM_SYSFS "mm_stat", "re");
+    if (mm_stat_file) {
         long long mem_used_total = 0;
 
-        int matched = fscanf(f, "%*d %*d %lld %*d %*d %*d %*d", &mem_used_total);
+        int matched = fscanf(mm_stat_file.get(), "%*d %*d %lld %*d %*d %*d %*d", &mem_used_total);
         if (matched != 1)
             ALOGW("failed to parse " ZRAM_SYSFS "mm_stat");
 
-        fclose(f);
         return mem_used_total;
     }
 
-    f = fopen(ZRAM_SYSFS "mem_used_total", "r");
-    if (f) {
+    UniqueFile mem_used_total_file = MakeUniqueFile(ZRAM_SYSFS "mem_used_total", "re");
+    if (mem_used_total_file) {
         long long mem_used_total = 0;
 
-        int matched = fscanf(f, "%lld", &mem_used_total);
+        int matched = fscanf(mem_used_total_file.get(), "%lld", &mem_used_total);
         if (matched != 1)
             ALOGW("failed to parse " ZRAM_SYSFS "mem_used_total");
 
-        fclose(f);
         return mem_used_total;
     }
 
@@ -710,6 +778,8 @@ static void android_os_Debug_getMemInfo(JNIEnv *env, jobject clazz, jlongArray o
             "Cached:",
             "Shmem:",
             "Slab:",
+            "SReclaimable:",
+            "SUnreclaim:",
             "SwapTotal:",
             "SwapFree:",
             "ZRam:",
@@ -726,6 +796,8 @@ static void android_os_Debug_getMemInfo(JNIEnv *env, jobject clazz, jlongArray o
             7,
             6,
             5,
+            13,
+            11,
             10,
             9,
             5,
@@ -735,7 +807,7 @@ static void android_os_Debug_getMemInfo(JNIEnv *env, jobject clazz, jlongArray o
             12,
             0
     };
-    long mem[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+    long mem[] = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
     char* p = buffer;
     while (*p && numFound < (sizeof(tagsLen) / sizeof(tagsLen[0]))) {
@@ -783,8 +855,8 @@ static void android_os_Debug_getMemInfo(JNIEnv *env, jobject clazz, jlongArray o
 
 static jint read_binder_stat(const char* stat)
 {
-    FILE* fp = fopen(BINDER_STATS, "r");
-    if (fp == NULL) {
+    UniqueFile fp = MakeUniqueFile(BINDER_STATS, "re");
+    if (fp == nullptr) {
         return -1;
     }
 
@@ -795,8 +867,7 @@ static jint read_binder_stat(const char* stat)
 
     // loop until we have the block that represents this process
     do {
-        if (fgets(line, 1024, fp) == 0) {
-            fclose(fp);
+        if (fgets(line, 1024, fp.get()) == 0) {
             return -1;
         }
     } while (strncmp(compare, line, len));
@@ -805,8 +876,7 @@ static jint read_binder_stat(const char* stat)
     len = snprintf(compare, 128, "  %s: ", stat);
 
     do {
-        if (fgets(line, 1024, fp) == 0) {
-            fclose(fp);
+        if (fgets(line, 1024, fp.get()) == 0) {
             return -1;
         }
     } while (strncmp(compare, line, len));
@@ -814,7 +884,6 @@ static jint read_binder_stat(const char* stat)
     // we have the line, now increment the line ptr to the value
     char* ptr = line + len;
     jint result = atoi(ptr);
-    fclose(fp);
     return result;
 }
 
@@ -839,7 +908,8 @@ extern "C" void get_malloc_leak_info(uint8_t** info, size_t* overallSize,
     size_t* infoSize, size_t* totalMemory, size_t* backtraceSize);
 extern "C" void free_malloc_leak_info(uint8_t* info);
 #define SIZE_FLAG_ZYGOTE_CHILD  (1<<31)
-#define BACKTRACE_SIZE          32
+
+static size_t gNumBacktraceElements;
 
 /*
  * This is a qsort() callback.
@@ -859,11 +929,11 @@ static int compareHeapRecords(const void* vrec1, const void* vrec2)
         return -1;
     }
 
-    intptr_t* bt1 = (intptr_t*)(rec1 + 2);
-    intptr_t* bt2 = (intptr_t*)(rec2 + 2);
-    for (size_t idx = 0; idx < BACKTRACE_SIZE; idx++) {
-        intptr_t addr1 = bt1[idx];
-        intptr_t addr2 = bt2[idx];
+    uintptr_t* bt1 = (uintptr_t*)(rec1 + 2);
+    uintptr_t* bt2 = (uintptr_t*)(rec2 + 2);
+    for (size_t idx = 0; idx < gNumBacktraceElements; idx++) {
+        uintptr_t addr1 = bt1[idx];
+        uintptr_t addr2 = bt2[idx];
         if (addr1 == addr2) {
             if (addr1 == 0)
                 break;
@@ -907,9 +977,10 @@ static void dumpNativeHeap(FILE* fp)
     if (info == NULL) {
         fprintf(fp, "Native heap dump not available. To enable, run these"
                     " commands (requires root):\n");
-        fprintf(fp, "$ adb shell setprop libc.debug.malloc 1\n");
-        fprintf(fp, "$ adb shell stop\n");
-        fprintf(fp, "$ adb shell start\n");
+        fprintf(fp, "# adb shell stop\n");
+        fprintf(fp, "# adb shell setprop libc.debug.malloc.options "
+                    "backtrace\n");
+        fprintf(fp, "# adb shell start\n");
         return;
     }
     assert(infoSize != 0);
@@ -920,13 +991,11 @@ static void dumpNativeHeap(FILE* fp)
     size_t recordCount = overallSize / infoSize;
     fprintf(fp, "Total memory: %zu\n", totalMemory);
     fprintf(fp, "Allocation records: %zd\n", recordCount);
-    if (backtraceSize != BACKTRACE_SIZE) {
-        fprintf(fp, "WARNING: mismatched backtrace sizes (%zu vs. %d)\n",
-            backtraceSize, BACKTRACE_SIZE);
-    }
+    fprintf(fp, "Backtrace size: %zd\n", backtraceSize);
     fprintf(fp, "\n");
 
     /* re-sort the entries */
+    gNumBacktraceElements = backtraceSize;
     qsort(info, recordCount, infoSize, compareHeapRecords);
 
     /* dump the entries to the file */
@@ -934,7 +1003,7 @@ static void dumpNativeHeap(FILE* fp)
     for (size_t idx = 0; idx < recordCount; idx++) {
         size_t size = *(size_t*) ptr;
         size_t allocations = *(size_t*) (ptr + sizeof(size_t));
-        intptr_t* backtrace = (intptr_t*) (ptr + sizeof(size_t) * 2);
+        uintptr_t* backtrace = (uintptr_t*) (ptr + sizeof(size_t) * 2);
 
         fprintf(fp, "z %d  sz %8zu  num %4zu  bt",
                 (size & SIZE_FLAG_ZYGOTE_CHILD) != 0,
@@ -960,35 +1029,29 @@ static void dumpNativeHeap(FILE* fp)
 
     fprintf(fp, "MAPS\n");
     const char* maps = "/proc/self/maps";
-    FILE* in = fopen(maps, "r");
-    if (in == NULL) {
+    UniqueFile in = MakeUniqueFile(maps, "re");
+    if (in == nullptr) {
         fprintf(fp, "Could not open %s\n", maps);
         return;
     }
     char buf[BUFSIZ];
-    while (size_t n = fread(buf, sizeof(char), BUFSIZ, in)) {
+    while (size_t n = fread(buf, sizeof(char), BUFSIZ, in.get())) {
         fwrite(buf, sizeof(char), n, fp);
     }
-    fclose(in);
 
     fprintf(fp, "END\n");
 }
 
-/*
- * Dump the native heap, writing human-readable output to the specified
- * file descriptor.
- */
-static void android_os_Debug_dumpNativeHeap(JNIEnv* env, jobject clazz,
-    jobject fileDescriptor)
+static bool openFile(JNIEnv* env, jobject fileDescriptor, UniqueFile& fp)
 {
     if (fileDescriptor == NULL) {
         jniThrowNullPointerException(env, "fd == null");
-        return;
+        return false;
     }
     int origFd = jniGetFDFromFileDescriptor(env, fileDescriptor);
     if (origFd < 0) {
         jniThrowRuntimeException(env, "Invalid file descriptor");
-        return;
+        return false;
     }
 
     /* dup() the descriptor so we don't close the original with fclose() */
@@ -996,53 +1059,79 @@ static void android_os_Debug_dumpNativeHeap(JNIEnv* env, jobject clazz,
     if (fd < 0) {
         ALOGW("dup(%d) failed: %s\n", origFd, strerror(errno));
         jniThrowRuntimeException(env, "dup() failed");
-        return;
+        return false;
     }
 
-    FILE* fp = fdopen(fd, "w");
-    if (fp == NULL) {
+    fp.reset(fdopen(fd, "w"));
+    if (fp == nullptr) {
         ALOGW("fdopen(%d) failed: %s\n", fd, strerror(errno));
         close(fd);
         jniThrowRuntimeException(env, "fdopen() failed");
+        return false;
+    }
+    return true;
+}
+
+/*
+ * Dump the native heap, writing human-readable output to the specified
+ * file descriptor.
+ */
+static void android_os_Debug_dumpNativeHeap(JNIEnv* env, jobject,
+    jobject fileDescriptor)
+{
+    UniqueFile fp(nullptr, safeFclose);
+    if (!openFile(env, fileDescriptor, fp)) {
         return;
     }
 
     ALOGD("Native heap dump starting...\n");
-    dumpNativeHeap(fp);
+    dumpNativeHeap(fp.get());
     ALOGD("Native heap dump complete.\n");
-
-    fclose(fp);
 }
 
-
-static void android_os_Debug_dumpNativeBacktraceToFile(JNIEnv* env, jobject clazz,
-    jint pid, jstring fileName)
+/*
+ * Dump the native malloc info, writing xml output to the specified
+ * file descriptor.
+ */
+static void android_os_Debug_dumpNativeMallocInfo(JNIEnv* env, jobject,
+    jobject fileDescriptor)
 {
-    if (fileName == NULL) {
-        jniThrowNullPointerException(env, "file == null");
+    UniqueFile fp(nullptr, safeFclose);
+    if (!openFile(env, fileDescriptor, fp)) {
         return;
     }
-    const jchar* str = env->GetStringCritical(fileName, 0);
-    String8 fileName8;
-    if (str) {
-        fileName8 = String8(reinterpret_cast<const char16_t*>(str),
-                            env->GetStringLength(fileName));
-        env->ReleaseStringCritical(fileName, str);
+
+    malloc_info(0, fp.get());
+}
+
+static bool dumpTraces(JNIEnv* env, jint pid, jstring fileName, jint timeoutSecs,
+                       DebuggerdDumpType dumpType) {
+    const ScopedUtfChars fileNameChars(env, fileName);
+    if (fileNameChars.c_str() == nullptr) {
+        return false;
     }
 
-    int fd = open(fileName8.string(), O_CREAT | O_WRONLY | O_NOFOLLOW, 0666);  /* -rw-rw-rw- */
+    android::base::unique_fd fd(open(fileNameChars.c_str(),
+                                     O_CREAT | O_WRONLY | O_NOFOLLOW | O_CLOEXEC | O_APPEND,
+                                     0666));
     if (fd < 0) {
-        fprintf(stderr, "Can't open %s: %s\n", fileName8.string(), strerror(errno));
-        return;
+        fprintf(stderr, "Can't open %s: %s\n", fileNameChars.c_str(), strerror(errno));
+        return false;
     }
 
-    if (lseek(fd, 0, SEEK_END) < 0) {
-        fprintf(stderr, "lseek: %s\n", strerror(errno));
-    } else {
-        dump_backtrace_to_file(pid, fd);
-    }
+    return (dump_backtrace_to_file_timeout(pid, dumpType, timeoutSecs, fd) == 0);
+}
 
-    close(fd);
+static jboolean android_os_Debug_dumpJavaBacktraceToFileTimeout(JNIEnv* env, jobject clazz,
+        jint pid, jstring fileName, jint timeoutSecs) {
+    const bool ret =  dumpTraces(env, pid, fileName, timeoutSecs, kDebuggerdJavaBacktrace);
+    return ret ? JNI_TRUE : JNI_FALSE;
+}
+
+static jboolean android_os_Debug_dumpNativeBacktraceToFileTimeout(JNIEnv* env, jobject clazz,
+        jint pid, jstring fileName, jint timeoutSecs) {
+    const bool ret = dumpTraces(env, pid, fileName, timeoutSecs, kDebuggerdNativeBacktrace);
+    return ret ? JNI_TRUE : JNI_FALSE;
 }
 
 static jstring android_os_Debug_getUnreachableMemory(JNIEnv* env, jobject clazz,
@@ -1075,6 +1164,8 @@ static const JNINativeMethod gMethods[] = {
             (void*) android_os_Debug_getMemInfo },
     { "dumpNativeHeap",         "(Ljava/io/FileDescriptor;)V",
             (void*) android_os_Debug_dumpNativeHeap },
+    { "dumpNativeMallocInfo",   "(Ljava/io/FileDescriptor;)V",
+            (void*) android_os_Debug_dumpNativeMallocInfo },
     { "getBinderSentTransactions", "()I",
             (void*) android_os_Debug_getBinderSentTransactions },
     { "getBinderReceivedTransactions", "()I",
@@ -1085,22 +1176,16 @@ static const JNINativeMethod gMethods[] = {
             (void*)android_os_Debug_getProxyObjectCount },
     { "getBinderDeathObjectCount", "()I",
             (void*)android_os_Debug_getDeathObjectCount },
-    { "dumpNativeBacktraceToFile", "(ILjava/lang/String;)V",
-            (void*)android_os_Debug_dumpNativeBacktraceToFile },
+    { "dumpJavaBacktraceToFileTimeout", "(ILjava/lang/String;I)Z",
+            (void*)android_os_Debug_dumpJavaBacktraceToFileTimeout },
+    { "dumpNativeBacktraceToFileTimeout", "(ILjava/lang/String;I)Z",
+            (void*)android_os_Debug_dumpNativeBacktraceToFileTimeout },
     { "getUnreachableMemory", "(IZ)Ljava/lang/String;",
             (void*)android_os_Debug_getUnreachableMemory },
 };
 
 int register_android_os_Debug(JNIEnv *env)
 {
-    int err = memtrack_init();
-    if (err != 0) {
-        memtrackLoaded = false;
-        ALOGE("failed to load memtrack module: %d", err);
-    } else {
-        memtrackLoaded = true;
-    }
-
     jclass clazz = env->FindClass("android/os/Debug$MemoryInfo");
 
     // Sanity check the number of other statistics expected in Java matches here.

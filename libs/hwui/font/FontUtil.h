@@ -25,11 +25,6 @@
 // Defines
 ///////////////////////////////////////////////////////////////////////////////
 
-#define DEFAULT_TEXT_SMALL_CACHE_WIDTH 1024
-#define DEFAULT_TEXT_SMALL_CACHE_HEIGHT 512
-#define DEFAULT_TEXT_LARGE_CACHE_WIDTH 2048
-#define DEFAULT_TEXT_LARGE_CACHE_HEIGHT 512
-
 #ifdef TEXTURE_BORDER_SIZE
   #if TEXTURE_BORDER_SIZE != 1
     #error TEXTURE_BORDER_SIZE other than 1 is not currently supported
@@ -44,6 +39,8 @@ typedef uint16_t glyph_t;
 #define GET_METRICS(cache, glyph) cache->getGlyphIDMetrics(glyph)
 #define IS_END_OF_STRING(glyph) false
 
-#define AUTO_KERN(prev, next) (((next) - (prev) + 32) >> 6 << 16)
+// prev, next are assumed to be signed x.6 fixed-point numbers with range
+// [-1, 1]. Result is an integral float.
+#define AUTO_KERN(prev, next) static_cast<float>(((next) - (prev) + 32) >> 6)
 
 #endif // ANDROID_HWUI_FONT_UTIL_H

@@ -16,6 +16,7 @@
 package com.android.internal.os;
 
 import android.os.Process;
+import android.os.SystemClock;
 import android.util.Slog;
 
 import com.android.internal.annotations.VisibleForTesting;
@@ -66,6 +67,7 @@ public class KernelWakelockReader {
         byte[] buffer = new byte[32*1024];
         int len;
         boolean wakeup_sources;
+        final long startTime = SystemClock.uptimeMillis();
 
         try {
             FileInputStream is;
@@ -77,8 +79,8 @@ public class KernelWakelockReader {
                     is = new FileInputStream(sWakeupSourceFile);
                     wakeup_sources = true;
                 } catch (java.io.FileNotFoundException e2) {
-                    Slog.wtf(TAG, "neither " + sWakelockFile + " nor " +
-                            sWakeupSourceFile + " exists");
+                    Slog.w(TAG, "neither " + sWakelockFile + " nor " +
+                            sWakeupSourceFile + " exists, ignoring.");
                     return null;
                 }
             }
@@ -86,13 +88,18 @@ public class KernelWakelockReader {
             len = is.read(buffer);
             is.close();
         } catch (java.io.IOException e) {
-            Slog.wtf(TAG, "failed to read kernel wakelocks", e);
+            Slog.w(TAG, "failed to read kernel wakelocks", e);
             return null;
+        }
+
+        final long readTime = SystemClock.uptimeMillis() - startTime;
+        if (readTime > 100) {
+            Slog.w(TAG, "Reading wakelock stats took " + readTime + "ms");
         }
 
         if (len > 0) {
             if (len >= buffer.length) {
-                Slog.wtf(TAG, "Kernel wake locks exceeded buffer size " + buffer.length);
+                Slog.w(TAG, "Kernel wake locks exceeded buffer size " + buffer.length);
             }
             int i;
             for (i=0; i<len; i++) {

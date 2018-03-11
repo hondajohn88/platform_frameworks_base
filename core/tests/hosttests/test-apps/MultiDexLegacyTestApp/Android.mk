@@ -23,7 +23,7 @@ LOCAL_MODULE_TAGS := tests
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
 
-LOCAL_SDK_VERSION := current
+LOCAL_SDK_VERSION := 8
 
 LOCAL_PACKAGE_NAME := MultiDexLegacyTestApp
 
@@ -43,6 +43,8 @@ include $(BUILD_SYSTEM)/configure_local_jack.mk
 ifdef LOCAL_JACK_ENABLED
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/test.jpp
 endif
+
+LOCAL_MIN_SDK_VERSION := 8
 
 include $(BUILD_PACKAGE)
 
@@ -64,7 +66,7 @@ LOCAL_MODULE_TAGS := tests
 
 LOCAL_SRC_FILES := $(call all-java-files-under, src)
 
-LOCAL_SDK_VERSION := current
+LOCAL_SDK_VERSION := 8
 
 LOCAL_PACKAGE_NAME := MultiDexLegacyTestApp2
 
@@ -84,6 +86,8 @@ include $(BUILD_SYSTEM)/configure_local_jack.mk
 ifdef LOCAL_JACK_ENABLED
 LOCAL_ADDITIONAL_DEPENDENCIES := $(LOCAL_PATH)/test.jpp
 endif
+
+LOCAL_MIN_SDK_VERSION := 8
 
 include $(BUILD_PACKAGE)
 

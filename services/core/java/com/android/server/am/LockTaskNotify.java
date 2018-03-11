@@ -20,13 +20,12 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Message;
-import android.os.RemoteException;
-import android.os.UserHandle;
+import android.os.SystemClock;
+import android.util.Slog;
 import android.view.WindowManager;
 import android.widget.Toast;
 
 import com.android.internal.R;
-import cyanogenmod.providers.CMSettings;
 
 /**
  *  Helper to manage showing/hiding a image to notify them that they are entering
@@ -34,21 +33,16 @@ import cyanogenmod.providers.CMSettings;
  */
 public class LockTaskNotify {
     private static final String TAG = "LockTaskNotify";
+    private static final long SHOW_TOAST_MINIMUM_INTERVAL = 1000;
 
     private final Context mContext;
     private final H mHandler;
     private Toast mLastToast;
+    private long mLastShowToastTime;
 
     public LockTaskNotify(Context context) {
         mContext = context;
         mHandler = new H();
-    }
-
-    private boolean hasNavigationBar() {
-        return mContext.getResources().getBoolean(
-                com.android.internal.R.bool.config_showNavigationBar)
-                || CMSettings.Global.getIntForUser(mContext.getContentResolver(),
-                        CMSettings.Global.DEV_FORCE_SHOW_NAVBAR, 0, UserHandle.USER_CURRENT) == 1;
     }
 
     public void showToast(int lockTaskModeState) {
@@ -56,19 +50,25 @@ public class LockTaskNotify {
     }
 
     public void handleShowToast(int lockTaskModeState) {
-        final int textResId;
+        String text = null;
         if (lockTaskModeState == ActivityManager.LOCK_TASK_MODE_LOCKED) {
-            textResId = R.string.lock_to_app_toast_locked;
+            text = mContext.getString(R.string.lock_to_app_toast_locked);
         } else if (lockTaskModeState == ActivityManager.LOCK_TASK_MODE_PINNED) {
-            textResId = R.string.lock_to_app_toast;
-        } else {
-            textResId = hasNavigationBar() ?
-                    R.string.lock_to_app_toast : R.string.lock_to_app_toast_no_navbar;
+            text = mContext.getString(R.string.lock_to_app_toast);
+        }
+        if (text == null) {
+            return;
+        }
+        long showToastTime = SystemClock.elapsedRealtime();
+        if ((showToastTime - mLastShowToastTime) < SHOW_TOAST_MINIMUM_INTERVAL) {
+            Slog.i(TAG, "Ignore toast since it is requested in very short interval.");
+            return;
         }
         if (mLastToast != null) {
             mLastToast.cancel();
         }
-        mLastToast = makeAllUserToastAndShow(mContext.getString(textResId));
+        mLastToast = makeAllUserToastAndShow(text);
+        mLastShowToastTime = showToastTime;
     }
 
     public void show(boolean starting) {

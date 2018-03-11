@@ -36,6 +36,7 @@ public final class NetworkConstants {
      *
      * See also:
      *     - https://tools.ietf.org/html/rfc894
+     *     - https://tools.ietf.org/html/rfc2464
      *     - https://tools.ietf.org/html/rfc7042
      *     - http://www.iana.org/assignments/ethernet-numbers/ethernet-numbers.xhtml
      *     - http://www.iana.org/assignments/ieee-802-numbers/ieee-802-numbers.xhtml
@@ -56,6 +57,8 @@ public final class NetworkConstants {
     public static final byte[] ETHER_ADDR_BROADCAST = {
         FF, FF, FF, FF, FF, FF
     };
+
+    public static final int ETHER_MTU = 1500;
 
     /**
      * ARP constants.
@@ -84,6 +87,7 @@ public final class NetworkConstants {
     public static final int IPV4_PROTOCOL_OFFSET = 9;
     public static final int IPV4_SRC_ADDR_OFFSET = 12;
     public static final int IPV4_DST_ADDR_OFFSET = 16;
+    public static final int IPV4_ADDR_BITS = 32;
     public static final int IPV4_ADDR_LEN = 4;
 
     /**
@@ -96,7 +100,11 @@ public final class NetworkConstants {
     public static final int IPV6_PROTOCOL_OFFSET = 6;
     public static final int IPV6_SRC_ADDR_OFFSET = 8;
     public static final int IPV6_DST_ADDR_OFFSET = 24;
+    public static final int IPV6_ADDR_BITS = 128;
     public static final int IPV6_ADDR_LEN = 16;
+    public static final int IPV6_MIN_MTU = 1280;
+    public static final int RFC7421_PREFIX_LENGTH = 64;
+    public static final int RFC6177_MIN_PREFIX_LENGTH = 48;
 
     /**
      * ICMPv6 constants.

@@ -31,7 +31,8 @@
 #include "core_jni_helpers.h"
 
 #include "android_util_Binder.h"
-#include "JNIHelp.h"
+#include <nativehelper/JNIHelp.h>
+#include "android_os_Debug.h"
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -177,6 +178,22 @@ void android_os_Process_setThreadGroup(JNIEnv* env, jobject clazz, int tid, jint
     }
 }
 
+void android_os_Process_setThreadGroupAndCpuset(JNIEnv* env, jobject clazz, int tid, jint grp)
+{
+    ALOGV("%s tid=%d grp=%" PRId32, __func__, tid, grp);
+    SchedPolicy sp = (SchedPolicy) grp;
+    int res = set_sched_policy(tid, sp);
+
+    if (res != NO_ERROR) {
+        signalExceptionForGroupError(env, -res, tid);
+    }
+
+    res = set_cpuset_policy(tid, sp);
+    if (res != NO_ERROR) {
+        signalExceptionForGroupError(env, -res, tid);
+    }
+}
+
 void android_os_Process_setProcessGroup(JNIEnv* env, jobject clazz, int pid, jint grp)
 {
     ALOGV("%s pid=%d grp=%" PRId32, __func__, pid, grp);
@@ -253,25 +270,26 @@ void android_os_Process_setProcessGroup(JNIEnv* env, jobject clazz, int pid, jin
             if (t_pri >= ANDROID_PRIORITY_BACKGROUND) {
                 // This task wants to stay at background
                 // update its cpuset so it doesn't only run on bg core(s)
-#ifdef ENABLE_CPUSETS
-                int err = set_cpuset_policy(t_pid, sp);
-                if (err != NO_ERROR) {
-                    signalExceptionForGroupError(env, -err, t_pid);
-                    break;
+                if (cpusets_enabled()) {
+                    int err = set_cpuset_policy(t_pid, sp);
+                    if (err != NO_ERROR) {
+                        signalExceptionForGroupError(env, -err, t_pid);
+                        break;
+                    }
                 }
-#endif
                 continue;
             }
         }
         int err;
-#ifdef ENABLE_CPUSETS
-        // set both cpuset and cgroup for general threads
-        err = set_cpuset_policy(t_pid, sp);
-        if (err != NO_ERROR) {
-            signalExceptionForGroupError(env, -err, t_pid);
-            break;
+
+        if (cpusets_enabled()) {
+            // set both cpuset and cgroup for general threads
+            err = set_cpuset_policy(t_pid, sp);
+            if (err != NO_ERROR) {
+                signalExceptionForGroupError(env, -err, t_pid);
+                break;
+            }
         }
-#endif
 
         err = set_sched_policy(t_pid, sp);
         if (err != NO_ERROR) {
@@ -292,7 +310,6 @@ jint android_os_Process_getProcessGroup(JNIEnv* env, jobject clazz, jint pid)
     return (int) sp;
 }
 
-#ifdef ENABLE_CPUSETS
 /** Sample CPUset list format:
  *  0-3,4,6-8
  */
@@ -341,6 +358,7 @@ static void get_cpuset_cores_for_policy(SchedPolicy policy, cpu_set_t *cpu_set)
         case SP_FOREGROUND:
         case SP_AUDIO_APP:
         case SP_AUDIO_SYS:
+        case SP_RT_APP:
             filename = "/dev/cpuset/foreground/cpus";
             break;
         case SP_TOP_APP:
@@ -368,7 +386,6 @@ static void get_cpuset_cores_for_policy(SchedPolicy policy, cpu_set_t *cpu_set)
     }
     return;
 }
-#endif
 
 
 /**
@@ -377,22 +394,21 @@ static void get_cpuset_cores_for_policy(SchedPolicy policy, cpu_set_t *cpu_set)
  * them in the passed in cpu_set_t
  */
 void get_exclusive_cpuset_cores(SchedPolicy policy, cpu_set_t *cpu_set) {
-#ifdef ENABLE_CPUSETS
-    int i;
-    cpu_set_t tmp_set;
-    get_cpuset_cores_for_policy(policy, cpu_set);
-    for (i = 0; i < SP_CNT; i++) {
-        if ((SchedPolicy) i == policy) continue;
-        get_cpuset_cores_for_policy((SchedPolicy)i, &tmp_set);
-        // First get cores exclusive to one set or the other
-        CPU_XOR(&tmp_set, cpu_set, &tmp_set);
-        // Then get the ones only in cpu_set
-        CPU_AND(cpu_set, cpu_set, &tmp_set);
+    if (cpusets_enabled()) {
+        int i;
+        cpu_set_t tmp_set;
+        get_cpuset_cores_for_policy(policy, cpu_set);
+        for (i = 0; i < SP_CNT; i++) {
+            if ((SchedPolicy) i == policy) continue;
+            get_cpuset_cores_for_policy((SchedPolicy)i, &tmp_set);
+            // First get cores exclusive to one set or the other
+            CPU_XOR(&tmp_set, cpu_set, &tmp_set);
+            // Then get the ones only in cpu_set
+            CPU_AND(cpu_set, cpu_set, &tmp_set);
+        }
+    } else {
+        CPU_ZERO(cpu_set);
     }
-#else
-    (void) policy;
-    CPU_ZERO(cpu_set);
-#endif
     return;
 }
 
@@ -565,10 +581,9 @@ void android_os_Process_setArgV0(JNIEnv* env, jobject clazz, jstring name)
         env->ReleaseStringCritical(name, str);
     }
 
-    if (name8.size() > 0) {
-        const char* procName = name8.string();
-        set_process_name(procName);
-        AndroidRuntime::getRuntime()->setArgv0(procName);
+    if (!name8.isEmpty()) {
+        set_process_name(name8.string());
+        AndroidRuntime::getRuntime()->setArgv0(name8.string(), true /* setProcName */);
     }
 }
 
@@ -1080,26 +1095,20 @@ static jlong android_os_Process_getElapsedCpuTime(JNIEnv* env, jobject clazz)
 
 static jlong android_os_Process_getPss(JNIEnv* env, jobject clazz, jint pid)
 {
-    char filename[64];
-
-    snprintf(filename, sizeof(filename), "/proc/%" PRId32 "/smaps", pid);
-
-    FILE * file = fopen(filename, "r");
-    if (!file) {
+    UniqueFile file = OpenSmapsOrRollup(pid);
+    if (file == nullptr) {
         return (jlong) -1;
     }
 
     // Tally up all of the Pss from the various maps
     char line[256];
     jlong pss = 0;
-    while (fgets(line, sizeof(line), file)) {
+    while (fgets(line, sizeof(line), file.get())) {
         jlong v;
         if (sscanf(line, "Pss: %" SCNd64 " kB", &v) == 1) {
             pss += v;
         }
     }
-
-    fclose(file);
 
     // Return the Pss value in bytes, not kilobytes
     return pss * 1024;
@@ -1212,6 +1221,7 @@ static const JNINativeMethod methods[] = {
     {"getThreadPriority",   "(I)I", (void*)android_os_Process_getThreadPriority},
     {"getThreadScheduler",   "(I)I", (void*)android_os_Process_getThreadScheduler},
     {"setThreadGroup",      "(II)V", (void*)android_os_Process_setThreadGroup},
+    {"setThreadGroupAndCpuset", "(II)V", (void*)android_os_Process_setThreadGroupAndCpuset},
     {"setProcessGroup",     "(II)V", (void*)android_os_Process_setProcessGroup},
     {"getProcessGroup",     "(I)I", (void*)android_os_Process_getProcessGroup},
     {"getExclusiveCores",   "()[I", (void*)android_os_Process_getExclusiveCores},

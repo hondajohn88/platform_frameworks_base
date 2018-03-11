@@ -22,7 +22,6 @@ import android.animation.Animator;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
-import android.app.ActivityManager;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.Outline;
@@ -39,7 +38,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.android.internal.logging.MetricsLogger;
-import com.android.internal.logging.MetricsProto.MetricsEvent;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.Interpolators;
 import com.android.systemui.R;
 import com.android.systemui.recents.Recents;
@@ -57,6 +56,7 @@ import com.android.systemui.recents.misc.SystemServicesProxy;
 import com.android.systemui.recents.misc.Utilities;
 import com.android.systemui.recents.model.Task;
 import com.android.systemui.recents.model.TaskStack;
+import com.android.systemui.recents.model.ThumbnailData;
 
 import java.io.PrintWriter;
 import java.util.ArrayList;
@@ -133,6 +133,7 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
 
     @ViewDebug.ExportedProperty(deepExport=true, prefix="task_")
     private Task mTask;
+    private boolean mTaskBound;
     @ViewDebug.ExportedProperty(category="recents")
     private boolean mClipViewInStack = true;
     @ViewDebug.ExportedProperty(category="recents")
@@ -183,6 +184,7 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
         }
         setOutlineProvider(mViewBounds);
         setOnLongClickListener(this);
+        setAccessibilityDelegate(new TaskViewAccessibilityDelegate(this));
     }
 
     /** Set callback */
@@ -221,20 +223,20 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
     @Override
     protected void onFinishInflate() {
         // Bind the views
-        mHeaderView = (TaskViewHeader) findViewById(R.id.task_view_bar);
-        mThumbnailView = (TaskViewThumbnail) findViewById(R.id.task_view_thumbnail);
+        mHeaderView = findViewById(R.id.task_view_bar);
+        mThumbnailView = findViewById(R.id.task_view_thumbnail);
         mThumbnailView.updateClipToTaskBar(mHeaderView);
-        mActionButtonView = findViewById(R.id.lock_to_app_fab);
-        mActionButtonView.setOutlineProvider(new ViewOutlineProvider() {
-            @Override
-            public void getOutline(View view, Outline outline) {
-                // Set the outline to match the FAB background
-                outline.setOval(0, 0, mActionButtonView.getWidth(), mActionButtonView.getHeight());
-                outline.setAlpha(0.35f);
-            }
-        });
-        mActionButtonView.setOnClickListener(this);
-        mActionButtonTranslationZ = mActionButtonView.getTranslationZ();
+        //mActionButtonView = findViewById(R.id.lock_to_app_fab);
+        //mActionButtonView.setOutlineProvider(new ViewOutlineProvider() {
+        //    @Override
+        //    public void getOutline(View view, Outline outline) {
+        //        // Set the outline to match the FAB background
+        //        outline.setOval(0, 0, mActionButtonView.getWidth(), mActionButtonView.getHeight());
+        //        outline.setAlpha(0.35f);
+        //    }
+        //});
+        //mActionButtonView.setOnClickListener(this);
+        //mActionButtonTranslationZ = mActionButtonView.getTranslationZ();
     }
 
     /**
@@ -251,8 +253,8 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
             mHeaderView.onTaskViewSizeChanged(w, h);
             mThumbnailView.onTaskViewSizeChanged(w, h);
 
-            mActionButtonView.setTranslationX(w - getMeasuredWidth());
-            mActionButtonView.setTranslationY(h - getMeasuredHeight());
+            //mActionButtonView.setTranslationX(w - getMeasuredWidth());
+            //mActionButtonView.setTranslationY(h - getMeasuredHeight());
         }
     }
 
@@ -338,12 +340,12 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
         getHeaderView().reset();
         TaskViewTransform.reset(this);
 
-        mActionButtonView.setScaleX(1f);
-        mActionButtonView.setScaleY(1f);
-        mActionButtonView.setAlpha(0f);
-        mActionButtonView.setTranslationX(0f);
-        mActionButtonView.setTranslationY(0f);
-        mActionButtonView.setTranslationZ(mActionButtonTranslationZ);
+        //mActionButtonView.setScaleX(1f);
+        //mActionButtonView.setScaleY(1f);
+        //mActionButtonView.setAlpha(0f);
+        //mActionButtonView.setTranslationX(0f);
+        //mActionButtonView.setTranslationY(0f);
+        //mActionButtonView.setTranslationZ(mActionButtonTranslationZ);
         if (mIncompatibleAppToastView != null) {
             mIncompatibleAppToastView.setVisibility(View.INVISIBLE);
         }
@@ -361,9 +363,15 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
      * Cancels any current transform animations.
      */
     public void cancelTransformAnimation() {
+        cancelDimAnimationIfExists();
         Utilities.cancelAnimationWithoutCallbacks(mTransformAnimation);
-        Utilities.cancelAnimationWithoutCallbacks(mDimAnimator);
         Utilities.cancelAnimationWithoutCallbacks(mOutlineAnimator);
+    }
+
+    private void cancelDimAnimationIfExists() {
+        if (mDimAnimator != null) {
+            mDimAnimator.cancel();
+        }
     }
 
     /** Enables/disables handling touch on this task view. */
@@ -402,13 +410,21 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
         EventBus.getDefault().send(dismissEvent);
     }
 
+    void screenPinning() {
+        boolean screenPinningRequested = false;
+        screenPinningRequested = true;
+        EventBus.getDefault().send(new LaunchTaskEvent(this, mTask, null, INVALID_STACK_ID,
+                screenPinningRequested));
+    }
+
     /**
      * Returns whether this view should be clipped, or any views below should clip against this
      * view.
      */
     boolean shouldClipViewInStack() {
         // Never clip for freeform tasks or if invisible
-        if (mTask.isFreeformTask() || getVisibility() != View.VISIBLE) {
+        if (mTask.isFreeformTask() || getVisibility() != View.VISIBLE ||
+                Recents.getConfiguration().isLowRamDevice) {
             return false;
         }
         return mClipViewInStack;
@@ -473,7 +489,7 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
      * @param fadeInDuration the duration of the action button animation, only used if
      *                       {@param fadeIn} is true.
      */
-    public void showActionButton(boolean fadeIn, int fadeInDuration) {
+    /*public void showActionButton(boolean fadeIn, int fadeInDuration) {
         mActionButtonView.setVisibility(View.VISIBLE);
 
         if (fadeIn && mActionButtonView.getAlpha() < 1f) {
@@ -490,14 +506,14 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
             mActionButtonView.setAlpha(1f);
             mActionButtonView.setTranslationZ(mActionButtonTranslationZ);
         }
-    }
+    }*/
 
     /**
      * Immediately hides the action button.
      *
      * @param fadeOut whether or not to animate the action button out.
      */
-    public void hideActionButton(boolean fadeOut, int fadeOutDuration, boolean scaleDown,
+    /*public void hideActionButton(boolean fadeOut, int fadeOutDuration, boolean scaleDown,
             final Animator.AnimatorListener animListener) {
         if (fadeOut && mActionButtonView.getAlpha() > 0f) {
             if (scaleDown) {
@@ -527,7 +543,7 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
                 animListener.onAnimationEnd(null);
             }
         }
-    }
+    }*/
 
     /**** TaskStackAnimationHelper.Callbacks Implementation ****/
 
@@ -535,7 +551,7 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
     public void onPrepareLaunchTargetForEnterAnimation() {
         // These values will be animated in when onStartLaunchTargetEnterAnimation() is called
         setDimAlphaWithoutHeader(0);
-        mActionButtonView.setAlpha(0f);
+        //mActionButtonView.setAlpha(0f);
         if (mIncompatibleAppToastView != null &&
                 mIncompatibleAppToastView.getVisibility() == View.VISIBLE) {
             mIncompatibleAppToastView.setAlpha(0f);
@@ -545,7 +561,7 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
     @Override
     public void onStartLaunchTargetEnterAnimation(TaskViewTransform transform, int duration,
             boolean screenPinningEnabled, ReferenceCountedTrigger postAnimationTrigger) {
-        Utilities.cancelAnimationWithoutCallbacks(mDimAnimator);
+        cancelDimAnimationIfExists();
 
         // Dim the view after the app window transitions down into recents
         postAnimationTrigger.increment();
@@ -555,9 +571,9 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
         mDimAnimator.addListener(postAnimationTrigger.decrementOnAnimationEnd());
         mDimAnimator.start();
 
-        if (screenPinningEnabled) {
-            showActionButton(true /* fadeIn */, duration /* fadeInDuration */);
-        }
+        //if (screenPinningEnabled) {
+        //    showActionButton(true /* fadeIn */, duration /* fadeInDuration */);
+        //}
 
         if (mIncompatibleAppToastView != null &&
                 mIncompatibleAppToastView.getVisibility() == View.VISIBLE) {
@@ -581,16 +597,16 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
         mDimAnimator.start();
 
         postAnimationTrigger.increment();
-        hideActionButton(true /* fadeOut */, duration,
-                !screenPinningRequested /* scaleDown */,
-                postAnimationTrigger.decrementOnAnimationEnd());
+        //hideActionButton(true /* fadeOut */, duration,
+        //        !screenPinningRequested /* scaleDown */,
+        //        postAnimationTrigger.decrementOnAnimationEnd());
     }
 
     @Override
     public void onStartFrontTaskEnterAnimation(boolean screenPinningEnabled) {
-        if (screenPinningEnabled) {
-            showActionButton(false /* fadeIn */, 0 /* fadeInDuration */);
-        }
+        //if (screenPinningEnabled) {
+        //    showActionButton(false /* fadeIn */, 0 /* fadeInDuration */);
+        //}
     }
 
     /**** TaskCallbacks Implementation ****/
@@ -600,6 +616,7 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
         SystemServicesProxy ssp = Recents.getSystemServices();
         mTouchExplorationEnabled = touchExplorationEnabled;
         mTask = t;
+        mTaskBound = true;
         mTask.addCallback(this);
         mIsDisabledInSafeMode = !mTask.isSystemApp && ssp.isInSafeMode();
         mThumbnailView.bindToTask(mTask, mIsDisabledInSafeMode, displayOrientation, displayRect);
@@ -609,8 +626,8 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
             if (mIncompatibleAppToastView == null) {
                 mIncompatibleAppToastView = Utilities.findViewStubById(this,
                         R.id.incompatible_app_toast_stub).inflate();
-                TextView msg = (TextView) findViewById(com.android.internal.R.id.message);
-                msg.setText(R.string.recents_incompatible_app_message);
+                TextView msg = findViewById(com.android.internal.R.id.message);
+                msg.setText(R.string.dock_non_resizeble_failed_to_dock_text);
             }
             mIncompatibleAppToastView.setVisibility(View.VISIBLE);
         } else if (mIncompatibleAppToastView != null) {
@@ -619,10 +636,12 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
     }
 
     @Override
-    public void onTaskDataLoaded(Task task, ActivityManager.TaskThumbnailInfo thumbnailInfo) {
-        // Update each of the views to the new task data
-        mThumbnailView.onTaskDataLoaded(thumbnailInfo);
-        mHeaderView.onTaskDataLoaded();
+    public void onTaskDataLoaded(Task task, ThumbnailData thumbnailData) {
+        if (mTaskBound) {
+            // Update each of the views to the new task data
+            mThumbnailView.onTaskDataLoaded(thumbnailData);
+            mHeaderView.onTaskDataLoaded();
+        }
     }
 
     @Override
@@ -631,6 +650,7 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
         mTask.removeCallback(this);
         mThumbnailView.unbindFromTask();
         mHeaderView.unbindFromTask(mTouchExplorationEnabled);
+        mTaskBound = false;
     }
 
     @Override
@@ -656,11 +676,11 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
         }
 
         boolean screenPinningRequested = false;
-        if (v == mActionButtonView) {
+        /*if (v == mActionButtonView) {
             // Reset the translation of the action button before we animate it out
             mActionButtonView.setTranslationZ(0f);
             screenPinningRequested = true;
-        }
+        }*/
         EventBus.getDefault().send(new LaunchTaskEvent(this, mTask, null, INVALID_STACK_ID,
                 screenPinningRequested));
 
@@ -672,6 +692,9 @@ public class TaskView extends FixedSizeFrameLayout implements Task.TaskCallbacks
 
     @Override
     public boolean onLongClick(View v) {
+        if (!Recents.getConfiguration().dragToSplitEnabled) {
+            return false;
+        }
         SystemServicesProxy ssp = Recents.getSystemServices();
         boolean inBounds = false;
         Rect clipBounds = new Rect(mViewBounds.mClipBounds);

@@ -39,6 +39,7 @@ import android.provider.Settings;
 import android.util.AttributeSet;
 import android.util.IntArray;
 import android.util.Log;
+import android.util.SparseArray;
 import android.view.DisplayListCanvas;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
@@ -52,15 +53,13 @@ import android.view.animation.AnimationUtils;
 import android.view.animation.Interpolator;
 
 import com.android.internal.R;
-import com.android.internal.widget.LockPatternUtils;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 
 /**
  * Displays and detects the user's unlock attempt, which is a drag of a finger
- * across regions of the screen.
+ * across 9 regions of the screen.
  *
  * Is also capable of displaying a static pattern in "in progress", "wrong" or
  * "correct" states.
@@ -72,7 +71,7 @@ public class LockPatternView extends View {
     private static final int ASPECT_LOCK_HEIGHT = 2; // Fixed height; width will be minimum of (w,h)
 
     private static final boolean PROFILE_DRAWING = false;
-    private CellState[][] mCellStates;
+    private final CellState[][] mCellStates;
 
     private final int mDotSize;
     private final int mDotSizeActivated;
@@ -90,8 +89,6 @@ public class LockPatternView extends View {
      */
     private static final int MILLIS_PER_CIRCLE_ANIMATING = 700;
 
-    private byte mPatternSize = LockPatternUtils.PATTERN_SIZE_DEFAULT;
-
     /**
      * This can be used to avoid updating the display for very small motions or noisy panels.
      * It didn't seem to have much impact on the devices tested, so currently set to 0.
@@ -102,7 +99,7 @@ public class LockPatternView extends View {
     private static final String TAG = "LockPatternView";
 
     private OnPatternListener mOnPatternListener;
-    private ArrayList<Cell> mPattern = new ArrayList<Cell>(mPatternSize * mPatternSize);
+    private final ArrayList<Cell> mPattern = new ArrayList<Cell>(9);
 
     /**
      * Lookup table for the circles of the pattern we are currently drawing.
@@ -110,7 +107,7 @@ public class LockPatternView extends View {
      * in which case we use this to hold the cells we are drawing for the in
      * progress animation.
      */
-    private boolean[][] mPatternDrawLookup = new boolean[mPatternSize][mPatternSize];
+    private final boolean[][] mPatternDrawLookup = new boolean[3][3];
 
     /**
      * the in progress point:
@@ -127,8 +124,6 @@ public class LockPatternView extends View {
     private boolean mInStealthMode = false;
     private boolean mEnableHapticFeedback = true;
     private boolean mPatternInProgress = false;
-    private boolean mVisibleDots = true;
-    private boolean mShowErrorPath = true;
 
     private float mHitFactor = 0.6f;
 
@@ -153,26 +148,32 @@ public class LockPatternView extends View {
     private Drawable mNotSelectedDrawable;
     private boolean mUseLockPatternDrawable;
 
-    private LockPatternUtils mLockPatternUtils;
-
     /**
-     * Represents a cell in the matrix of the unlock pattern view.
+     * Represents a cell in the 3 X 3 matrix of the unlock pattern view.
      */
     public static final class Cell {
         final int row;
         final int column;
 
-        static Cell[][] sCells;
-        static {
-            updateSize(LockPatternUtils.PATTERN_SIZE_DEFAULT);
+        // keep # objects limited to 9
+        private static final Cell[][] sCells = createCells();
+
+        private static Cell[][] createCells() {
+            Cell[][] res = new Cell[3][3];
+            for (int i = 0; i < 3; i++) {
+                for (int j = 0; j < 3; j++) {
+                    res[i][j] = new Cell(i, j);
+                }
+            }
+            return res;
         }
 
         /**
          * @param row The row of the cell.
          * @param column The column of the cell.
          */
-        private Cell(int row, int column, byte size) {
-            checkRange(row, column, size);
+        private Cell(int row, int column) {
+            checkRange(row, column);
             this.row = row;
             this.column = column;
         }
@@ -185,30 +186,17 @@ public class LockPatternView extends View {
             return column;
         }
 
-        /**
-         * @param row The row of the cell.
-         * @param column The column of the cell.
-         */
-        public static synchronized Cell of(int row, int column, byte size) {
-            checkRange(row, column, size);
+        public static Cell of(int row, int column) {
+            checkRange(row, column);
             return sCells[row][column];
         }
 
-        public static void updateSize(byte size) {
-            sCells = new Cell[size][size];
-            for (int i = 0; i < size; i++) {
-                for (int j = 0; j < size; j++) {
-                    sCells[i][j] = new Cell(i, j, size);
-                }
+        private static void checkRange(int row, int column) {
+            if (row < 0 || row > 2) {
+                throw new IllegalArgumentException("row must be in range 0-2");
             }
-        }
-
-        private static void checkRange(int row, int column, byte size) {
-            if (row < 0 || row > size - 1) {
-                throw new IllegalArgumentException("row must be in range 0-" + (size - 1));
-            }
-            if (column < 0 || column > size - 1) {
-                throw new IllegalArgumentException("column must be in range 0-" + (size - 1));
+            if (column < 0 || column > 2) {
+                throw new IllegalArgumentException("column must be in range 0-2");
             }
         }
 
@@ -290,7 +278,8 @@ public class LockPatternView extends View {
     public LockPatternView(Context context, AttributeSet attrs) {
         super(context, attrs);
 
-        TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.LockPatternView);
+        TypedArray a = context.obtainStyledAttributes(attrs, R.styleable.LockPatternView,
+                R.attr.lockPatternStyle, R.style.Widget_LockPatternView);
 
         final String aspect = a.getString(R.styleable.LockPatternView_aspect);
 
@@ -310,12 +299,9 @@ public class LockPatternView extends View {
         mPathPaint.setAntiAlias(true);
         mPathPaint.setDither(true);
 
-        mRegularColor = context.getColor(R.color.lock_pattern_view_regular_color);
-        mErrorColor = context.getColor(R.color.lock_pattern_view_error_color);
-        mSuccessColor = context.getColor(R.color.lock_pattern_view_success_color);
-        mRegularColor = a.getColor(R.styleable.LockPatternView_regularColor, mRegularColor);
-        mErrorColor = a.getColor(R.styleable.LockPatternView_errorColor, mErrorColor);
-        mSuccessColor = a.getColor(R.styleable.LockPatternView_successColor, mSuccessColor);
+        mRegularColor = a.getColor(R.styleable.LockPatternView_regularColor, 0);
+        mErrorColor = a.getColor(R.styleable.LockPatternView_errorColor, 0);
+        mSuccessColor = a.getColor(R.styleable.LockPatternView_successColor, 0);
 
         int pathColor = a.getColor(R.styleable.LockPatternView_pathColor, mRegularColor);
         mPathPaint.setColor(pathColor);
@@ -340,9 +326,9 @@ public class LockPatternView extends View {
         mPaint.setAntiAlias(true);
         mPaint.setDither(true);
 
-        mCellStates = new CellState[mPatternSize][mPatternSize];
-        for (int i = 0; i < mPatternSize; i++) {
-            for (int j = 0; j < mPatternSize; j++) {
+        mCellStates = new CellState[3][3];
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
                 mCellStates[i][j] = new CellState();
                 mCellStates[i][j].radius = mDotSize/2;
                 mCellStates[i][j].row = i;
@@ -379,13 +365,6 @@ public class LockPatternView extends View {
     }
 
     /**
-     * @return the current pattern lockscreen size.
-     */
-    public byte getLockPatternSize() {
-        return mPatternSize;
-    }
-
-    /**
      * Set whether the view is in stealth mode.  If true, there will be no
      * visible feedback as the user enters the pattern.
      *
@@ -393,22 +372,6 @@ public class LockPatternView extends View {
      */
     public void setInStealthMode(boolean inStealthMode) {
         mInStealthMode = inStealthMode;
-    }
-
-    public void setVisibleDots(boolean visibleDots) {
-        mVisibleDots = visibleDots;
-    }
-
-    public boolean isVisibleDots() {
-        return mVisibleDots;
-    }
-
-    public void setShowErrorPath(boolean showErrorPath) {
-        mShowErrorPath = showErrorPath;
-    }
-
-    public boolean isShowErrorPath() {
-        return mShowErrorPath;
     }
 
     /**
@@ -419,35 +382,6 @@ public class LockPatternView extends View {
      */
     public void setTactileFeedbackEnabled(boolean tactileFeedbackEnabled) {
         mEnableHapticFeedback = tactileFeedbackEnabled;
-    }
-
-    /**
-     * Set the pattern size of the lockscreen
-     *
-     * @param size The pattern size.
-     */
-    public void setLockPatternSize(byte size) {
-        mPatternSize = size;
-        Cell.updateSize(size);
-        mCellStates = new CellState[mPatternSize][mPatternSize];
-        for (int i = 0; i < mPatternSize; i++) {
-            for (int j = 0; j < mPatternSize; j++) {
-                mCellStates[i][j] = new CellState();
-                mCellStates[i][j].radius = mDotSize / 2;
-                mCellStates[i][j].row = i;
-                mCellStates[i][j].col = j;
-            }
-        }
-        mPattern = new ArrayList<Cell>(size * size);
-        mPatternDrawLookup = new boolean[size][size];
-    }
-
-    /**
-     * Set the LockPatternUtil instance used to encode a pattern to a string
-     * @param utils The instance.
-     */
-    public void setLockPatternUtils(LockPatternUtils utils) {
-        mLockPatternUtils = utils;
     }
 
     /**
@@ -665,8 +599,8 @@ public class LockPatternView extends View {
      * Clear the pattern lookup table.
      */
     private void clearPatternDrawLookup() {
-        for (int i = 0; i < mPatternSize; i++) {
-            for (int j = 0; j < mPatternSize; j++) {
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
                 mPatternDrawLookup[i][j] = false;
             }
         }
@@ -690,11 +624,11 @@ public class LockPatternView extends View {
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         final int width = w - mPaddingLeft - mPaddingRight;
-        mSquareWidth = width / (float) mPatternSize;
+        mSquareWidth = width / 3.0f;
 
         if (DEBUG_A11Y) Log.v(TAG, "onSizeChanged(" + w + "," + h + ")");
         final int height = h - mPaddingTop - mPaddingBottom;
-        mSquareHeight = height / (float) mPatternSize;
+        mSquareHeight = height / 3.0f;
         mExploreByTouchHelper.invalidateRoot();
 
         if (mUseLockPatternDrawable) {
@@ -755,6 +689,7 @@ public class LockPatternView extends View {
         if (cell != null) {
 
             // check for gaps in existing pattern
+            Cell fillInGapCell = null;
             final ArrayList<Cell> pattern = mPattern;
             if (!pattern.isEmpty()) {
                 final Cell lastCell = pattern.get(pattern.size() - 1);
@@ -764,19 +699,21 @@ public class LockPatternView extends View {
                 int fillInRow = lastCell.row;
                 int fillInColumn = lastCell.column;
 
-                if (dRow == 0 || dColumn == 0 || Math.abs(dRow) == Math.abs(dColumn)) {
-                    while (true) {
-                        fillInRow += Integer.signum(dRow);
-                        fillInColumn += Integer.signum(dColumn);
-                        if (fillInRow == cell.row && fillInColumn == cell.column) break;
-                        Cell fillInGapCell = Cell.of(fillInRow, fillInColumn, mPatternSize);
-                        if (!mPatternDrawLookup[fillInGapCell.row][fillInGapCell.column]) {
-                            addCellToPattern(fillInGapCell);
-                        }
-                    }
+                if (Math.abs(dRow) == 2 && Math.abs(dColumn) != 1) {
+                    fillInRow = lastCell.row + ((dRow > 0) ? 1 : -1);
                 }
+
+                if (Math.abs(dColumn) == 2 && Math.abs(dRow) != 1) {
+                    fillInColumn = lastCell.column + ((dColumn > 0) ? 1 : -1);
+                }
+
+                fillInGapCell = Cell.of(fillInRow, fillInColumn);
             }
 
+            if (fillInGapCell != null &&
+                    !mPatternDrawLookup[fillInGapCell.row][fillInGapCell.column]) {
+                addCellToPattern(fillInGapCell);
+            }
             addCellToPattern(cell);
             if (mEnableHapticFeedback) {
                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY,
@@ -874,7 +811,7 @@ public class LockPatternView extends View {
         if (mPatternDrawLookup[rowHit][columnHit]) {
             return null;
         }
-        return Cell.of(rowHit, columnHit, mPatternSize);
+        return Cell.of(rowHit, columnHit);
     }
 
     /**
@@ -888,7 +825,7 @@ public class LockPatternView extends View {
         float hitSize = squareHeight * mHitFactor;
 
         float offset = mPaddingTop + (squareHeight - hitSize) / 2f;
-        for (int i = 0; i < mPatternSize; i++) {
+        for (int i = 0; i < 3; i++) {
 
             final float hitTop = offset + squareHeight * i;
             if (y >= hitTop && y <= hitTop + hitSize) {
@@ -908,7 +845,7 @@ public class LockPatternView extends View {
         float hitSize = squareWidth * mHitFactor;
 
         float offset = mPaddingLeft + (squareWidth - hitSize) / 2f;
-        for (int i = 0; i < mPatternSize; i++) {
+        for (int i = 0; i < 3; i++) {
 
             final float hitLeft = offset + squareWidth * i;
             if (x >= hitLeft && x <= hitLeft + hitSize) {
@@ -1062,8 +999,8 @@ public class LockPatternView extends View {
     }
 
     private void cancelLineAnimations() {
-        for (int i = 0; i < mPatternSize; i++) {
-            for (int j = 0; j < mPatternSize; j++) {
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
                 CellState state = mCellStates[i][j];
                 if (state.lineAnimator != null) {
                     state.lineAnimator.cancel();
@@ -1166,25 +1103,23 @@ public class LockPatternView extends View {
         currentPath.rewind();
 
         // draw the circles
-        if (mVisibleDots) {
-            for (int i = 0; i < mPatternSize; i++) {
-                float centerY = getCenterYForRow(i);
-                for (int j = 0; j < mPatternSize; j++) {
-                    CellState cellState = mCellStates[i][j];
-                    float centerX = getCenterXForColumn(j);
-                    float translationY = cellState.translationY;
+        for (int i = 0; i < 3; i++) {
+            float centerY = getCenterYForRow(i);
+            for (int j = 0; j < 3; j++) {
+                CellState cellState = mCellStates[i][j];
+                float centerX = getCenterXForColumn(j);
+                float translationY = cellState.translationY;
 
-                    if (mUseLockPatternDrawable) {
-                        drawCellDrawable(canvas, i, j, cellState.radius, drawLookup[i][j]);
+                if (mUseLockPatternDrawable) {
+                    drawCellDrawable(canvas, i, j, cellState.radius, drawLookup[i][j]);
+                } else {
+                    if (isHardwareAccelerated() && cellState.hwAnimating) {
+                        DisplayListCanvas displayListCanvas = (DisplayListCanvas) canvas;
+                        displayListCanvas.drawCircle(cellState.hwCenterX, cellState.hwCenterY,
+                                cellState.hwRadius, cellState.hwPaint);
                     } else {
-                        if (isHardwareAccelerated() && cellState.hwAnimating) {
-                            DisplayListCanvas displayListCanvas = (DisplayListCanvas) canvas;
-                            displayListCanvas.drawCircle(cellState.hwCenterX, cellState.hwCenterY,
-                                    cellState.hwRadius, cellState.hwPaint);
-                        } else {
-                            drawCircle(canvas, (int) centerX, (int) centerY + translationY,
-                                    cellState.radius, drawLookup[i][j], cellState.alpha);
-                        }
+                        drawCircle(canvas, (int) centerX, (int) centerY + translationY,
+                                cellState.radius, drawLookup[i][j], cellState.alpha);
                     }
                 }
             }
@@ -1193,8 +1128,8 @@ public class LockPatternView extends View {
         // TODO: the path should be created and cached every time we hit-detect a cell
         // only the last segment of the path should be computed here
         // draw the path of the pattern (unless we are in stealth mode)
-        final boolean drawPath = ((!mInStealthMode && mPatternDisplayMode != DisplayMode.Wrong)
-                || (mPatternDisplayMode == DisplayMode.Wrong && mShowErrorPath));
+        final boolean drawPath = !mInStealthMode;
+
         if (drawPath) {
             mPathPaint.setColor(getCurrentColor(true /* partOfPattern */));
 
@@ -1252,9 +1187,7 @@ public class LockPatternView extends View {
     }
 
     private int getCurrentColor(boolean partOfPattern) {
-        if (!partOfPattern || (mInStealthMode && mPatternDisplayMode != DisplayMode.Wrong)
-                || (mPatternDisplayMode == DisplayMode.Wrong && !mShowErrorPath)
-                || mPatternInProgress) {
+        if (!partOfPattern || mInStealthMode || mPatternInProgress) {
             // unselected circle
             return mRegularColor;
         } else if (mPatternDisplayMode == DisplayMode.Wrong) {
@@ -1306,9 +1239,9 @@ public class LockPatternView extends View {
     protected Parcelable onSaveInstanceState() {
         Parcelable superState = super.onSaveInstanceState();
         return new SavedState(superState,
-                LockPatternUtils.patternToString(mPattern, mPatternSize),
-                mPatternDisplayMode.ordinal(), mPatternSize,
-                mInputEnabled, mInStealthMode, mEnableHapticFeedback, mVisibleDots, mShowErrorPath);
+                LockPatternUtils.patternToString(mPattern),
+                mPatternDisplayMode.ordinal(),
+                mInputEnabled, mInStealthMode, mEnableHapticFeedback);
     }
 
     @Override
@@ -1317,14 +1250,11 @@ public class LockPatternView extends View {
         super.onRestoreInstanceState(ss.getSuperState());
         setPattern(
                 DisplayMode.Correct,
-                LockPatternUtils.stringToPattern(ss.getSerializedPattern(), ss.getPatternSize()));
+                LockPatternUtils.stringToPattern(ss.getSerializedPattern()));
         mPatternDisplayMode = DisplayMode.values()[ss.getDisplayMode()];
-        mPatternSize = ss.getPatternSize();
         mInputEnabled = ss.isInputEnabled();
         mInStealthMode = ss.isInStealthMode();
         mEnableHapticFeedback = ss.isTactileFeedbackEnabled();
-        mVisibleDots = ss.isVisibleDots();
-        mShowErrorPath = ss.isShowErrorPath();
     }
 
     /**
@@ -1334,28 +1264,21 @@ public class LockPatternView extends View {
 
         private final String mSerializedPattern;
         private final int mDisplayMode;
-        private final byte mPatternSize;
         private final boolean mInputEnabled;
         private final boolean mInStealthMode;
         private final boolean mTactileFeedbackEnabled;
-        private final boolean mVisibleDots;
-        private final boolean mShowErrorPath;
 
         /**
          * Constructor called from {@link LockPatternView#onSaveInstanceState()}
          */
         private SavedState(Parcelable superState, String serializedPattern, int displayMode,
-                byte patternSize, boolean inputEnabled, boolean inStealthMode,
-                boolean tactileFeedbackEnabled, boolean visibleDots, boolean showErrorPath) {
+                boolean inputEnabled, boolean inStealthMode, boolean tactileFeedbackEnabled) {
             super(superState);
             mSerializedPattern = serializedPattern;
             mDisplayMode = displayMode;
-            mPatternSize = patternSize;
             mInputEnabled = inputEnabled;
             mInStealthMode = inStealthMode;
             mTactileFeedbackEnabled = tactileFeedbackEnabled;
-            mVisibleDots = visibleDots;
-            mShowErrorPath = showErrorPath;
         }
 
         /**
@@ -1365,12 +1288,9 @@ public class LockPatternView extends View {
             super(in);
             mSerializedPattern = in.readString();
             mDisplayMode = in.readInt();
-            mPatternSize = (byte) in.readByte();
             mInputEnabled = (Boolean) in.readValue(null);
             mInStealthMode = (Boolean) in.readValue(null);
             mTactileFeedbackEnabled = (Boolean) in.readValue(null);
-            mVisibleDots = (Boolean) in.readValue(null);
-            mShowErrorPath = (Boolean) in.readValue(null);
         }
 
         public String getSerializedPattern() {
@@ -1379,10 +1299,6 @@ public class LockPatternView extends View {
 
         public int getDisplayMode() {
             return mDisplayMode;
-        }
-
-        public byte getPatternSize() {
-            return mPatternSize;
         }
 
         public boolean isInputEnabled() {
@@ -1397,25 +1313,14 @@ public class LockPatternView extends View {
             return mTactileFeedbackEnabled;
         }
 
-        public boolean isVisibleDots() {
-            return mVisibleDots;
-        }
-
-        public boolean isShowErrorPath() {
-            return mShowErrorPath;
-        }
-
         @Override
         public void writeToParcel(Parcel dest, int flags) {
             super.writeToParcel(dest, flags);
             dest.writeString(mSerializedPattern);
             dest.writeInt(mDisplayMode);
-            dest.writeByte(mPatternSize);
             dest.writeValue(mInputEnabled);
             dest.writeValue(mInStealthMode);
             dest.writeValue(mTactileFeedbackEnabled);
-            dest.writeValue(mVisibleDots);
-            dest.writeValue(mShowErrorPath);
         }
 
         @SuppressWarnings({ "unused", "hiding" }) // Found using reflection
@@ -1435,8 +1340,7 @@ public class LockPatternView extends View {
 
     private final class PatternExploreByTouchHelper extends ExploreByTouchHelper {
         private Rect mTempRect = new Rect();
-        private HashMap<Integer, VirtualViewContainer> mItems = new HashMap<Integer,
-                VirtualViewContainer>();
+        private final SparseArray<VirtualViewContainer> mItems = new SparseArray<>();
 
         class VirtualViewContainer {
             public VirtualViewContainer(CharSequence description) {
@@ -1447,6 +1351,9 @@ public class LockPatternView extends View {
 
         public PatternExploreByTouchHelper(View forView) {
             super(forView);
+            for (int i = VIRTUAL_BASE_VIEW_ID; i < VIRTUAL_BASE_VIEW_ID + 9; i++) {
+                mItems.put(i, new VirtualViewContainer(getTextForVirtualView(i)));
+            }
         }
 
         @Override
@@ -1464,10 +1371,6 @@ public class LockPatternView extends View {
                 return;
             }
             for (int i = VIRTUAL_BASE_VIEW_ID; i < VIRTUAL_BASE_VIEW_ID + 9; i++) {
-                if (!mItems.containsKey(i)) {
-                    VirtualViewContainer item = new VirtualViewContainer(getTextForVirtualView(i));
-                    mItems.put(i, item);
-                }
                 // Add all views. As views are added to the pattern, we remove them
                 // from notification by making them non-clickable below.
                 virtualViewIds.add(i);
@@ -1478,9 +1381,9 @@ public class LockPatternView extends View {
         protected void onPopulateEventForVirtualView(int virtualViewId, AccessibilityEvent event) {
             if (DEBUG_A11Y) Log.v(TAG, "onPopulateEventForVirtualView(" + virtualViewId + ")");
             // Announce this view
-            if (mItems.containsKey(virtualViewId)) {
-                CharSequence contentDescription = mItems.get(virtualViewId).description;
-                event.getText().add(contentDescription);
+            VirtualViewContainer container = mItems.get(virtualViewId);
+            if (container != null) {
+                event.getText().add(container.description);
             }
         }
 
@@ -1582,21 +1485,10 @@ public class LockPatternView extends View {
             return bounds;
         }
 
-        private boolean shouldSpeakPassword() {
-            final boolean speakPassword = Settings.Secure.getIntForUser(
-                    mContext.getContentResolver(), Settings.Secure.ACCESSIBILITY_SPEAK_PASSWORD, 0,
-                    UserHandle.USER_CURRENT_OR_SELF) != 0;
-            final boolean hasHeadphones = mAudioManager != null ?
-                    (mAudioManager.isWiredHeadsetOn() || mAudioManager.isBluetoothA2dpOn())
-                    : false;
-            return speakPassword || hasHeadphones;
-        }
-
         private CharSequence getTextForVirtualView(int virtualViewId) {
             final Resources res = getResources();
-            return shouldSpeakPassword() ? res.getString(
-                R.string.lockscreen_access_pattern_cell_added_verbose, virtualViewId)
-                : res.getString(R.string.lockscreen_access_pattern_cell_added);
+            return res.getString(R.string.lockscreen_access_pattern_cell_added_verbose,
+                    virtualViewId);
         }
 
         /**

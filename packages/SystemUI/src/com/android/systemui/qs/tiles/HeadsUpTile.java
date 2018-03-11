@@ -16,26 +16,26 @@
 
 package com.android.systemui.qs.tiles;
 
-import android.content.Context;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.provider.Settings;
 import android.provider.Settings.Global;
+import android.service.quicksettings.Tile;
 
 import com.android.systemui.qs.GlobalSetting;
-import com.android.systemui.qs.QSTile;
+import com.android.systemui.qs.QSHost;
+import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.R;
 
-import org.cyanogenmod.internal.logging.CMMetricsLogger;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 
 /** Quick settings tile: Heads up **/
-public class HeadsUpTile extends QSTile<QSTile.BooleanState> {
-
-    private static final Intent NOTIFICATION_SETTINGS =
-            new Intent("android.settings.NOTIFICATION_MANAGER");
+public class HeadsUpTile extends QSTileImpl<BooleanState> {
 
     private final GlobalSetting mSetting;
 
-    public HeadsUpTile(Host host) {
+    public HeadsUpTile(QSHost host) {
         super(host);
 
         mSetting = new GlobalSetting(mContext, mHandler, Global.HEADS_UP_NOTIFICATIONS_ENABLED) {
@@ -52,18 +52,20 @@ public class HeadsUpTile extends QSTile<QSTile.BooleanState> {
     }
 
     @Override
-    protected void handleClick() {
+    public void handleClick() {
         setEnabled(!mState.value);
         refreshState();
     }
 
     @Override
-    protected void handleLongClick() {
+    public Intent getLongClickIntent() {
+        return new Intent().setComponent(new ComponentName(
+            "com.android.settings", "com.android.settings.Settings$HeadsUpSettingsActivity"));
     }
 
     @Override
-    public Intent getLongClickIntent() {
-        return null;
+    public CharSequence getTileLabel() {
+        return mContext.getString(R.string.quick_settings_heads_up_label);
     }
 
     private void setEnabled(boolean enabled) {
@@ -82,34 +84,33 @@ public class HeadsUpTile extends QSTile<QSTile.BooleanState> {
             state.icon = ResourceIcon.get(R.drawable.ic_qs_heads_up_on);
             state.contentDescription =  mContext.getString(
                     R.string.accessibility_quick_settings_heads_up_on);
+            state.state = Tile.STATE_ACTIVE;
         } else {
             state.icon = ResourceIcon.get(R.drawable.ic_qs_heads_up_off);
             state.contentDescription =  mContext.getString(
                     R.string.accessibility_quick_settings_heads_up_off);
+            state.state = Tile.STATE_INACTIVE;
         }
-    }
-
-    @Override
-    public CharSequence getTileLabel() {
-        return mContext.getString(R.string.quick_settings_heads_up_label);
     }
 
     @Override
     protected String composeChangeAnnouncement() {
         if (mState.value) {
-            return mContext.getString(R.string.accessibility_quick_settings_heads_up_changed_on);
+            return mContext.getString(
+                    R.string.accessibility_quick_settings_heads_up_changed_on);
         } else {
-            return mContext.getString(R.string.accessibility_quick_settings_heads_up_changed_off);
+            return mContext.getString(
+                    R.string.accessibility_quick_settings_heads_up_changed_off);
         }
     }
 
     @Override
     public int getMetricsCategory() {
-        return CMMetricsLogger.TILE_HEADS_UP;
+        return MetricsEvent.CUSTOM_QUICK_TILES;
     }
 
     @Override
-    public void setListening(boolean listening) {
+    public void handleSetListening(boolean listening) {
         // Do nothing
     }
 }
