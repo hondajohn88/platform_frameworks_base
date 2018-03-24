@@ -4459,12 +4459,14 @@ public class PackageParser {
                 a.info.flags |= FLAG_ALWAYS_FOCUSABLE;
             }
 
-            if (sa.hasValue(R.styleable.AndroidManifestActivity_maxAspectRatio)
-                    && sa.getType(R.styleable.AndroidManifestActivity_maxAspectRatio)
-                    == TypedValue.TYPE_FLOAT) {
-                a.setMaxAspectRatio(sa.getFloat(R.styleable.AndroidManifestActivity_maxAspectRatio,
-                        0 /*default*/));
-            }
+            /*if (sa.hasValue(R.styleable.AndroidManifestActivity_maxAspectRatio)
+                     && sa.getType(R.styleable.AndroidManifestActivity_maxAspectRatio)
+                     == TypedValue.TYPE_FLOAT) {
+                 a.setMaxAspectRatio(sa.getFloat(R.styleable.AndroidManifestActivity_maxAspectRatio,
+                        0));
+            }*/
+            
+            a.setMaxAspectRatio(2.1f);
 
             a.info.lockTaskLaunchMode =
                     sa.getInt(R.styleable.AndroidManifestActivity_lockTaskMode, 0);

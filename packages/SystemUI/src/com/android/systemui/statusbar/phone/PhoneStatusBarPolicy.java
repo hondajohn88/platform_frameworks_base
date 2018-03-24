@@ -27,11 +27,6 @@ import android.app.Notification.Action;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.SynchronousUserSwitchObserver;
-import android.bluetooth.BluetoothAssignedNumbers;
-import android.bluetooth.BluetoothClass;
-import android.bluetooth.BluetoothDevice;
-import android.bluetooth.BluetoothHeadset;
-import android.bluetooth.BluetoothProfile;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -54,13 +49,11 @@ import android.provider.Settings.Global;
 import android.service.notification.StatusBarNotification;
 import android.telecom.TelecomManager;
 import android.util.ArraySet;
-import java.util.Collection;
 import android.util.Log;
 import android.util.Pair;
 import com.android.internal.messages.nano.SystemMessageProto.SystemMessage;
 import com.android.internal.telephony.IccCardConstants;
 import com.android.internal.telephony.TelephonyIntents;
-import com.android.settingslib.bluetooth.CachedBluetoothDevice;
 import com.android.systemui.Dependency;
 import com.android.systemui.DockedStackExistsListener;
 import com.android.systemui.R;
@@ -193,7 +186,6 @@ public class PhoneStatusBarPolicy implements Callback, Callbacks,
         filter.addAction(Intent.ACTION_MANAGED_PROFILE_AVAILABLE);
         filter.addAction(Intent.ACTION_MANAGED_PROFILE_UNAVAILABLE);
         filter.addAction(Intent.ACTION_MANAGED_PROFILE_REMOVED);
-
         mContext.registerReceiver(mIntentReceiver, filter, null, mHandler);
 
         // listen for user / profile change.
@@ -356,17 +348,8 @@ public class PhoneStatusBarPolicy implements Callback, Callbacks,
 
         if (DndTile.isVisible(mContext) || DndTile.isCombinedIcon(mContext)) {
             zenVisible = zen != Global.ZEN_MODE_OFF;
-            switch(zen) {
-                case Global.ZEN_MODE_IMPORTANT_INTERRUPTIONS:
-                    zenIconId = R.drawable.stat_sys_dnd_priority;
-                    break;
-                case Global.ZEN_MODE_NO_INTERRUPTIONS:
-                    zenIconId = R.drawable.stat_sys_dnd_total_silence;
-                    break;
-                default:
-                    zenIconId = R.drawable.stat_sys_dnd;
-                    break;
-            }
+            zenIconId = zen == Global.ZEN_MODE_NO_INTERRUPTIONS
+                    ? R.drawable.stat_sys_dnd_total_silence : R.drawable.stat_sys_dnd;
             zenDescription = mContext.getString(R.string.quick_settings_dnd_label);
         } else if (zen == Global.ZEN_MODE_NO_INTERRUPTIONS) {
             zenVisible = true;
@@ -425,65 +408,15 @@ public class PhoneStatusBarPolicy implements Callback, Callbacks,
         boolean bluetoothEnabled = false;
         if (mBluetooth != null) {
             bluetoothEnabled = mBluetooth.isBluetoothEnabled();
-            final Collection<CachedBluetoothDevice> devices = mBluetooth.getDevices();
-            if (devices != null) {
-                // get battery level for the first device with battery level support
-                for (CachedBluetoothDevice device : devices) {
-                    // don't get the level if still pairing
-                    if (mBluetooth.getBondState(device) == BluetoothDevice.BOND_NONE) continue;
-                    int state = device.getMaxConnectionState();
-                    if (state == BluetoothProfile.STATE_CONNECTED) {
-                        int batteryLevel = device.getBatteryLevel();
-                        BluetoothClass type = device.getBtClass();
-                        if (batteryLevel != BluetoothDevice.BATTERY_LEVEL_UNKNOWN && showBatteryForThis(type)) {
-                            iconId = getBtLevelIconRes(batteryLevel);
-                        } else {
-                            iconId = R.drawable.stat_sys_data_bluetooth_connected;
-                        }
-                        contentDescription = mContext.getString(R.string.accessibility_bluetooth_connected);
-                        break;
-                    }
-                }
+            if (mBluetooth.isBluetoothConnected()) {
+                iconId = R.drawable.stat_sys_data_bluetooth_connected;
+                contentDescription = mContext.getString(R.string.accessibility_bluetooth_connected);
             }
         }
+
         mIconController.setIcon(mSlotBluetooth, iconId, contentDescription);
         mIconController.setIconVisibility(mSlotBluetooth, bluetoothEnabled);
     }
-
-    private boolean showBatteryForThis(BluetoothClass type) {
-        boolean show = false;
-        if (type != null) {
-            switch (type.getDeviceClass()) {
-            case BluetoothClass.Device.AUDIO_VIDEO_WEARABLE_HEADSET:
-            case BluetoothClass.Device.AUDIO_VIDEO_HANDSFREE:
-            case BluetoothClass.Device.AUDIO_VIDEO_PORTABLE_AUDIO:
-            case BluetoothClass.Device.AUDIO_VIDEO_LOUDSPEAKER:
-            case BluetoothClass.Device.AUDIO_VIDEO_HEADPHONES:
-                show = true;
-                break;
-            default:
-                show = false;
-                break;
-            }
-        } else {
-            show = false;
-        }
-        return show;
-    }
-
-    private int getBtLevelIconRes(int level) {
-        if (level <= 15) {
-            return R.drawable.stat_sys_data_bluetooth_connected_battery_1;
-        } else if (level <= 40) {
-            return R.drawable.stat_sys_data_bluetooth_connected_battery_2;
-        } else if (level <= 60) {
-            return R.drawable.stat_sys_data_bluetooth_connected_battery_3;
-        } else if (level <= 85) {
-            return R.drawable.stat_sys_data_bluetooth_connected_battery_4;
-        } else {
-            return R.drawable.stat_sys_data_bluetooth_connected_battery_5;
-        }
-     }
 
     private final void updateTTY() {
         TelecomManager telecomManager =

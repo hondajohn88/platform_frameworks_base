@@ -33,13 +33,11 @@ import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.PorterDuff;
 import android.graphics.Rect;
-import android.graphics.drawable.AnimatedVectorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.CountDownTimer;
 import android.os.RemoteException;
 import android.os.UserHandle;
-import android.provider.Settings;
 import android.support.v4.graphics.ColorUtils;
 import android.util.AttributeSet;
 import android.view.Gravity;
@@ -61,6 +59,7 @@ import com.android.systemui.recents.Recents;
 import com.android.systemui.recents.events.EventBus;
 import com.android.systemui.recents.events.activity.LaunchTaskEvent;
 import com.android.systemui.recents.events.ui.ShowApplicationInfoEvent;
+import com.android.systemui.slimrecent.icons.IconsHandler;
 import com.android.systemui.recents.misc.SystemServicesProxy;
 import com.android.systemui.recents.misc.Utilities;
 import com.android.systemui.recents.model.Task;
@@ -156,10 +155,9 @@ public class TaskViewHeader extends FrameLayout
     ImageView mMoveTaskButton;
     ImageView mDismissButton;
     ImageView mLockTaskButton;
-    ImageView mKillButton;
-    ImageView mPinButton;
     FrameLayout mAppOverlayView;
     ImageView mAppIconView;
+    ImageView mKillButton;
     ImageView mAppInfoView;
     TextView mAppTitleView;
     ProgressBar mFocusTimerIndicator;
@@ -175,20 +173,18 @@ public class TaskViewHeader extends FrameLayout
     float mDimAlpha;
     Drawable mLightDismissDrawable;
     Drawable mDarkDismissDrawable;
-    Drawable mLightKillDrawable;
-    Drawable mDarkKillDrawable;
-    Drawable mLightPinDrawable;
-    Drawable mDarkPinDrawable;
-    Drawable mLightFreeformIcon;
-    Drawable mDarkFreeformIcon;
-    Drawable mLightFullscreenIcon;
-    Drawable mDarkFullscreenIcon;
-    Drawable mLightInfoIcon;
-    Drawable mDarkInfoIcon;
     Drawable mLightLockedDrawable;
     Drawable mLightUnlockedDrawable;
     Drawable mDarkLockedDrawable;
     Drawable mDarkUnlockedDrawable;
+    Drawable mLightFreeformIcon;
+    Drawable mDarkFreeformIcon;
+    Drawable mLightFullscreenIcon;
+    Drawable mDarkFullscreenIcon;
+    Drawable mLightKillDrawable;
+    Drawable mDarkKillDrawable;
+    Drawable mLightInfoIcon;
+    Drawable mDarkInfoIcon;
     int mTaskBarViewLightTextColor;
     int mTaskBarViewDarkTextColor;
     int mDisabledTaskBarBackgroundColor;
@@ -233,8 +229,6 @@ public class TaskViewHeader extends FrameLayout
         mCornerRadius = Recents.getConfiguration().isGridEnabled ?
                 res.getDimensionPixelSize(R.dimen.recents_grid_task_view_rounded_corners_radius) :
                 res.getDimensionPixelSize(R.dimen.recents_task_view_rounded_corners_radius);
-        mLightPinDrawable = context.getDrawable(R.drawable.ic_pin);
-        mDarkPinDrawable = context.getDrawable(R.drawable.ic_pin_dark);
         mHighlightHeight = res.getDimensionPixelSize(R.dimen.recents_task_view_highlight);
         mTaskBarViewLightTextColor = context.getColor(R.color.recents_task_bar_light_text_color);
         mTaskBarViewDarkTextColor = context.getColor(R.color.recents_task_bar_dark_text_color);
@@ -274,11 +268,9 @@ public class TaskViewHeader extends FrameLayout
         // Initialize the icon and description views
         mIconView = findViewById(R.id.icon);
         mIconView.setOnLongClickListener(this);
-        mTitleView = (TextView) findViewById(R.id.title);
-        mDismissButton = (ImageView) findViewById(R.id.dismiss_task);
-        mLockTaskButton = (ImageView) findViewById(R.id.lock_task);
-        mKillButton = findViewById(R.id.kill_app);
-        mPinButton = findViewById(R.id.lock_to_app_fab);
+        mTitleView = findViewById(R.id.title);
+        mDismissButton = findViewById(R.id.dismiss_task);
+        mLockTaskButton = findViewById(R.id.lock_task);
         if (ssp.hasFreeformWorkspaceSupport()) {
             mMoveTaskButton = findViewById(R.id.move_task);
         }
@@ -291,8 +283,7 @@ public class TaskViewHeader extends FrameLayout
      * we can't get resources based on the current configuration, but instead need to get them
      * based on the device configuration.
      */
-    private void updateLayoutParams(View icon, View title, View secondaryButton, View thirdButton,
-            View tertiaryButton, View button) {
+    private void updateLayoutParams(View icon, View title, View fourthButton, View thirdButton, View secondaryButton, View button) {
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, mHeaderBarHeight, Gravity.TOP);
         setLayoutParams(lp);
@@ -302,31 +293,32 @@ public class TaskViewHeader extends FrameLayout
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.CENTER_VERTICAL);
         lp.setMarginStart(mHeaderBarHeight);
         lp.setMarginEnd(mMoveTaskButton != null
-                ? 3 * mHeaderBarHeight
-                : 2 *mHeaderBarHeight);
+                ? 4 * mHeaderBarHeight
+                : 3 *mHeaderBarHeight);
         title.setLayoutParams(lp);
         title.setTextDirection(View.TEXT_DIRECTION_LOCALE);
+        //unused at the moment
+        if (fourthButton != null) {
+            lp = new FrameLayout.LayoutParams(mHeaderBarHeight, mHeaderBarHeight, Gravity.END);
+            lp.setMarginEnd(3 * mHeaderBarHeight);
+            fourthButton.setLayoutParams(lp);
+            fourthButton.setPadding(mHeaderButtonPadding, mHeaderButtonPadding,
+                    mHeaderButtonPadding, mHeaderButtonPadding);
+        }
         //move task button
         if (thirdButton != null) {
             lp = new FrameLayout.LayoutParams(mHeaderBarHeight, mHeaderBarHeight, Gravity.END);
-            lp.setMarginEnd(secondaryButton != null ? 2 * mHeaderBarHeight : mHeaderBarHeight);
+            lp.setMarginEnd(2 * mHeaderBarHeight);
             thirdButton.setLayoutParams(lp);
             thirdButton.setPadding(mHeaderButtonPadding, mHeaderButtonPadding,
                     mHeaderButtonPadding, mHeaderButtonPadding);
         }
-        //kill app button
+        //lock app button
         if (secondaryButton != null) {
             lp = new FrameLayout.LayoutParams(mHeaderBarHeight, mHeaderBarHeight, Gravity.END);
             lp.setMarginEnd(mHeaderBarHeight);
             secondaryButton.setLayoutParams(lp);
             secondaryButton.setPadding(mHeaderButtonPadding, mHeaderButtonPadding,
-                    mHeaderButtonPadding, mHeaderButtonPadding);
-        }
-        if (tertiaryButton != null) {
-            lp = new FrameLayout.LayoutParams(mHeaderBarHeight, mHeaderBarHeight, Gravity.END);
-            lp.setMarginEnd(2 * mHeaderBarHeight);
-            tertiaryButton.setLayoutParams(lp);
-            tertiaryButton.setPadding(mHeaderButtonPadding, mHeaderButtonPadding,
                     mHeaderButtonPadding, mHeaderButtonPadding);
         }
         //dismiss button
@@ -362,10 +354,9 @@ public class TaskViewHeader extends FrameLayout
         if (headerBarHeight != mHeaderBarHeight || headerButtonPadding != mHeaderButtonPadding) {
             mHeaderBarHeight = headerBarHeight;
             mHeaderButtonPadding = headerButtonPadding;
-            updateLayoutParams(mIconView, mTitleView, mLockTaskButton, mMoveTaskButton, mKillButton,
-                    mDismissButton);
+            updateLayoutParams(mIconView, mTitleView, null, mMoveTaskButton, mLockTaskButton, mDismissButton);
             if (mAppOverlayView != null) {
-                updateLayoutParams(mAppIconView, mAppTitleView, null, null, null, mAppInfoView);
+                updateLayoutParams(mAppIconView, mAppTitleView, null, null, mKillButton, mAppInfoView);
             }
         }
     }
@@ -413,7 +404,6 @@ public class TaskViewHeader extends FrameLayout
         mDismissButton.setVisibility(showDismissIcon ? View.VISIBLE : View.INVISIBLE);
         mDismissButton.setTranslationX(rightInset);
         mLockTaskButton.setVisibility(showDismissIcon ? View.VISIBLE : View.INVISIBLE);
-        mKillButton.setVisibility(showDismissIcon ? View.VISIBLE : View.INVISIBLE);
 
         setLeftTopRightBottom(0, 0, width, getMeasuredHeight());
     }
@@ -510,12 +500,9 @@ public class TaskViewHeader extends FrameLayout
     }
 
     private void updateLockTaskDrawable() {
-        if (mTask != null) {
-            mLockTaskButton.setImageDrawable(mTask.useLightOnPrimaryColor ?
-                    (Recents.sLockedTasks.contains(mTask) ? mLightLockedDrawable : mLightUnlockedDrawable) :
-                    (Recents.sLockedTasks.contains(mTask) ? mDarkLockedDrawable : mDarkUnlockedDrawable));
-	            ((AnimatedVectorDrawable) mLockTaskButton.getDrawable()).start();
-       }
+        mLockTaskButton.setImageDrawable(mTask.useLightOnPrimaryColor ?
+                (Recents.sLockedTasks.contains(mTask) ? mLightLockedDrawable : mLightUnlockedDrawable) :
+                (Recents.sLockedTasks.contains(mTask) ? mDarkLockedDrawable : mDarkUnlockedDrawable));
     }
 
     /**
@@ -546,19 +533,6 @@ public class TaskViewHeader extends FrameLayout
         mLockTaskButton.setOnClickListener(this);
         mLockTaskButton.setClickable(false);
         ((RippleDrawable) mLockTaskButton.getBackground()).setForceSoftware(true);
-
-        mKillButton.setImageDrawable(t.useLightOnPrimaryColor ?
-                mLightKillDrawable : mDarkKillDrawable);
-        mKillButton.setOnClickListener(this);
-        mKillButton.setClickable(false);
-        ((RippleDrawable) mKillButton.getBackground()).setForceSoftware(true);
-
-        mPinButton.setImageDrawable(t.useLightOnPrimaryColor ?
-                mLightPinDrawable : mDarkPinDrawable);
-        mPinButton.setOnClickListener(this);
-        mPinButton.setClickable(false);
-        ((RippleDrawable) mPinButton.getBackground()).setForceSoftware(true);
-
         // When freeform workspaces are enabled, then update the move-task button depending on the
         // current task
         if (mMoveTaskButton != null) {
@@ -653,34 +627,6 @@ public class TaskViewHeader extends FrameLayout
         } else {
             mLockTaskButton.setAlpha(1f);
         }
-        mKillButton.setVisibility(View.VISIBLE);
-        mKillButton.setClickable(true);
-        if (mKillButton.getVisibility() == VISIBLE) {
-            mKillButton.animate()
-                    .alpha(1f)
-                    .setInterpolator(Interpolators.FAST_OUT_LINEAR_IN)
-                    .setDuration(duration)
-                    .start();
-        } else {
-            mKillButton.setAlpha(1f);
-        }
-        if (Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.LOCK_TO_APP_ENABLED, 0) != 0) {
-            mPinButton.setVisibility(View.VISIBLE);
-            mPinButton.setClickable(true);
-            if (mPinButton.getVisibility() == VISIBLE) {
-                mPinButton.animate()
-                    .alpha(1f)
-                    .setInterpolator(Interpolators.FAST_OUT_LINEAR_IN)
-                    .setDuration(duration)
-                    .start();
-            } else {
-                mPinButton.setAlpha(1f);
-            }
-        } else  {
-            mPinButton.setVisibility(View.GONE);
-            mPinButton.setClickable(false);
-        }
         if (mMoveTaskButton != null) {
             if (mMoveTaskButton.getVisibility() == VISIBLE) {
                 mMoveTaskButton.setVisibility(View.VISIBLE);
@@ -701,7 +647,6 @@ public class TaskViewHeader extends FrameLayout
      * time.
      */
     public void setNoUserInteractionState() {
-        //Dismiss button
         mDismissButton.setVisibility(View.VISIBLE);
         mDismissButton.animate().cancel();
         mDismissButton.setAlpha(1f);
@@ -710,21 +655,6 @@ public class TaskViewHeader extends FrameLayout
         mLockTaskButton.animate().cancel();
         mLockTaskButton.setAlpha(1f);
         mLockTaskButton.setClickable(true);
-        mKillButton.setVisibility(View.VISIBLE);
-        mKillButton.animate().cancel();
-        mKillButton.setAlpha(1f);
-        mKillButton.setClickable(true);
-        //Pin button
-        if (Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.LOCK_TO_APP_ENABLED, 0) != 0) {
-            mPinButton.setVisibility(View.VISIBLE);
-            mPinButton.animate().cancel();
-            mPinButton.setAlpha(1f);
-            mPinButton.setClickable(true);
-        } else  {
-            mPinButton.setVisibility(View.GONE);
-            mPinButton.setClickable(false);
-        }
         if (mMoveTaskButton != null) {
             mMoveTaskButton.setVisibility(View.VISIBLE);
             mMoveTaskButton.animate().cancel();
@@ -738,20 +668,12 @@ public class TaskViewHeader extends FrameLayout
      * time.
      */
     void resetNoUserInteractionState() {
-        //Dismiss button
         mDismissButton.setVisibility(View.INVISIBLE);
         mDismissButton.setAlpha(0f);
         mDismissButton.setClickable(false);
         mLockTaskButton.setVisibility(View.INVISIBLE);
         mLockTaskButton.setAlpha(0f);
         mLockTaskButton.setClickable(false);
-        mKillButton.setVisibility(View.INVISIBLE);
-        mKillButton.setAlpha(0f);
-        mKillButton.setClickable(false);
-        //Pin button
-        mPinButton.setVisibility(View.INVISIBLE);
-        mPinButton.setAlpha(0f);
-        mPinButton.setClickable(false);
         if (mMoveTaskButton != null) {
             mMoveTaskButton.setVisibility(View.INVISIBLE);
             mMoveTaskButton.setAlpha(0f);
@@ -785,9 +707,6 @@ public class TaskViewHeader extends FrameLayout
                 MetricsLogger.histogram(getContext(), "overview_task_dismissed_source",
                         Constants.Metrics.DismissSourceHeaderButton);
             }
-        } else if (v == mPinButton) {
-            TaskView tv = Utilities.findParent(this, TaskView.class);
-            tv.screenPinning();
         } else if (v == mMoveTaskButton) {
             TaskView tv = Utilities.findParent(this, TaskView.class);
             EventBus.getDefault().send(new LaunchTaskEvent(tv, mTask, null,
@@ -860,18 +779,33 @@ public class TaskViewHeader extends FrameLayout
             mAppIconView = (ImageView) mAppOverlayView.findViewById(R.id.app_icon);
             mAppIconView.setOnClickListener(this);
             mAppIconView.setOnLongClickListener(this);
+            mKillButton = (ImageView) mAppOverlayView.findViewById(R.id.kill_app);
+            mKillButton.setOnClickListener(this);
             mAppInfoView = (ImageView) mAppOverlayView.findViewById(R.id.app_info);
             mAppInfoView.setOnClickListener(this);
             mAppTitleView = (TextView) mAppOverlayView.findViewById(R.id.app_title);
-            updateLayoutParams(mAppIconView, mAppTitleView, null, null, null, mAppInfoView);
+            updateLayoutParams(mAppIconView, mAppTitleView, null, null, mKillButton, mAppInfoView);
         }
 
         // Update the overlay contents for the current app
         mAppTitleView.setText(ssp.getBadgedApplicationLabel(activityInfo.applicationInfo, userId));
         mAppTitleView.setTextColor(mTask.useLightOnPrimaryColor ?
                 mTaskBarViewLightTextColor : mTaskBarViewDarkTextColor);
-        mAppIconView.setImageDrawable(ssp.getBadgedApplicationIcon(activityInfo.applicationInfo,
-                userId));
+        Drawable icon = null;
+        if (activityInfo != null) {
+            icon = IconsHandler.getInstance(mContext).getIconFromHandler(mContext, activityInfo,
+                    /*scaleFactor*/1.0f, R.dimen.recents_task_view_header_height_tablet_land);
+        }
+        if (icon == null) {
+            icon = ssp.getBadgedApplicationIcon(activityInfo.applicationInfo, userId);
+        }
+        mAppIconView.setImageDrawable(icon);
+
+        mKillButton.setImageDrawable(mTask.useLightOnPrimaryColor
+                ? mLightKillDrawable
+                : mDarkKillDrawable);
+        mAppOverlayView.setVisibility(View.VISIBLE);
+
         mAppInfoView.setImageDrawable(mTask.useLightOnPrimaryColor
                 ? mLightInfoIcon
                 : mDarkInfoIcon);

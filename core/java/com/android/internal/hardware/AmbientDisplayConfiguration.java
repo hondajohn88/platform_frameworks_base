@@ -105,14 +105,17 @@ public class AmbientDisplayConfiguration {
     }
 
     public boolean alwaysOnEnabled(int user) {
-        return boolSettingDefaultOn(Settings.Secure.DOZE_ALWAYS_ON, user) && alwaysOnAvailable()
+        final boolean aodEnabledDefault = mContext.getResources().getBoolean(R.bool.config_dozeAlwaysOnDisplayEnabledDefault);
+        final boolean aodEnabled = Settings.Secure.getIntForUser(mContext.getContentResolver(),
+                Settings.Secure.DOZE_ALWAYS_ON, aodEnabledDefault ? 1 : 0, user) != 0;
+
+        return aodEnabled && alwaysOnAvailable()
                 && !accessibilityInversionEnabled(user);
     }
 
     public boolean alwaysOnAvailable() {
-        boolean enableDozeAlwaysOn = mContext.getResources().
-                getBoolean(com.android.internal.R.bool.config_enableDozeAlwaysOn);
-        return enableDozeAlwaysOn;
+        return (alwaysOnDisplayDebuggingEnabled() || alwaysOnDisplayAvailable())
+                && ambientDisplayAvailable();
     }
 
     public boolean alwaysOnAvailableForUser(int user) {

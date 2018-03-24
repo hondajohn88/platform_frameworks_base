@@ -35,7 +35,6 @@ import android.support.annotation.VisibleForTesting;
 import android.util.AttributeSet;
 import android.view.View;
 import android.view.View.OnClickListener;
-import android.view.View.OnLongClickListener;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -66,10 +65,10 @@ import com.android.systemui.statusbar.policy.NextAlarmController;
 import com.android.systemui.statusbar.policy.NextAlarmController.NextAlarmChangeCallback;
 import com.android.systemui.statusbar.policy.UserInfoController;
 import com.android.systemui.statusbar.policy.UserInfoController.OnUserInfoChangedListener;
-//import com.android.systemui.tuner.TunerService;
+import com.android.systemui.tuner.TunerService;
 
 public class QSFooterImpl extends FrameLayout implements QSFooter,
-        NextAlarmChangeCallback, OnClickListener, OnLongClickListener, OnUserInfoChangedListener, EmergencyListener,
+        NextAlarmChangeCallback, OnClickListener, OnUserInfoChangedListener, EmergencyListener,
         SignalCallback {
     private static final float EXPAND_INDICATOR_THRESHOLD = .93f;
 
@@ -78,6 +77,7 @@ public class QSFooterImpl extends FrameLayout implements QSFooter,
     private UserInfoController mUserInfoController;
     private SettingsButton mSettingsButton;
     protected View mSettingsContainer;
+    private View mRunningServicesButton;
 
     private TextView mAlarmStatus;
     private View mAlarmStatusCollapsed;
@@ -127,7 +127,9 @@ public class QSFooterImpl extends FrameLayout implements QSFooter,
         mSettingsButton = findViewById(R.id.settings_button);
         mSettingsContainer = findViewById(R.id.settings_button_container);
         mSettingsButton.setOnClickListener(this);
-        mSettingsButton.setOnLongClickListener(this);
+
+        mRunningServicesButton = findViewById(R.id.running_services_button);
+        mRunningServicesButton.setOnClickListener(this);
 
         mAlarmStatusCollapsed = findViewById(R.id.alarm_status_collapsed);
         mAlarmStatus = findViewById(R.id.alarm_status);
@@ -140,6 +142,7 @@ public class QSFooterImpl extends FrameLayout implements QSFooter,
         // settings), so disable it for this view
         ((RippleDrawable) mSettingsButton.getBackground()).setForceSoftware(true);
         ((RippleDrawable) mExpandIndicator.getBackground()).setForceSoftware(true);
+        ((RippleDrawable) mRunningServicesButton.getBackground()).setForceSoftware(true);
 
         updateResources();
 
@@ -162,7 +165,7 @@ public class QSFooterImpl extends FrameLayout implements QSFooter,
                 .addFloat(mSettingsButton, "rotation", -120, 0)
                 .build();
         if (mAlarmShowing) {
-            int translate = isLayoutRtl() ? mDate.getWidth() : -mDate.getWidth();
+            int translate = isLayoutRtl() ? mDate.getWidth() : -mDate.getWidth();            
             mAlarmAnimator = new Builder().addFloat(mDate, "alpha", 1, 0)
                     .addFloat(mDateTimeGroup, "translationX", 0, translate)
                     .addFloat(mAlarmStatus, "alpha", 0, 1)
@@ -227,6 +230,7 @@ public class QSFooterImpl extends FrameLayout implements QSFooter,
         return new TouchAnimator.Builder()
                 .addFloat(mEdit, "alpha", 0, 1)
                 .addFloat(mMultiUserSwitch, "alpha", 0, 1)
+                .addFloat(mRunningServicesButton, "alpha", 0, 1)
                 .build();
     }
 
@@ -311,14 +315,15 @@ public class QSFooterImpl extends FrameLayout implements QSFooter,
 
     private void updateVisibilities() {
         updateAlarmVisibilities();
-        //mSettingsContainer.findViewById(R.id.tuner_icon).setVisibility(
-        //        TunerService.isTunerEnabled(mContext) ? View.VISIBLE : View.INVISIBLE);
+        mSettingsContainer.findViewById(R.id.tuner_icon).setVisibility(View.INVISIBLE);
         final boolean isDemo = UserManager.isDeviceInDemoMode(mContext);
 
         mMultiUserSwitch.setVisibility(mExpanded && mMultiUserSwitch.hasMultipleUsers() && !isDemo
                 ? View.VISIBLE : View.INVISIBLE);
 
         mEdit.setVisibility(isDemo || !mExpanded ? View.INVISIBLE : View.VISIBLE);
+
+        mRunningServicesButton.setVisibility(!isDemo && mExpanded ? View.VISIBLE : View.INVISIBLE);
     }
 
     private void updateListeners() {
@@ -356,51 +361,47 @@ public class QSFooterImpl extends FrameLayout implements QSFooter,
             MetricsLogger.action(mContext,
                     mExpanded ? MetricsProto.MetricsEvent.ACTION_QS_EXPANDED_SETTINGS_LAUNCH
                             : MetricsProto.MetricsEvent.ACTION_QS_COLLAPSED_SETTINGS_LAUNCH);
-            //if (mSettingsButton.isTunerClick()) {
-            //    Dependency.get(ActivityStarter.class).postQSRunnableDismissingKeyguard(() -> {
-            //        if (TunerService.isTunerEnabled(mContext)) {
-            //            TunerService.showResetRequest(mContext, () -> {
-            //                // Relaunch settings so that the tuner disappears.
-            //                startSettingsActivity();
-            //            });
-            //        } else {
-            //            Toast.makeText(getContext(), R.string.tuner_toast,
-            //                    Toast.LENGTH_LONG).show();
-            //            TunerService.setTunerEnabled(mContext, true);
-            //        }
-            //        startSettingsActivity();
-            //
-            //    });
-            //} else {
-            //    startSettingsActivity();
-            //}
-            startSettingsActivity();
+            if (mSettingsButton.isTunerClick()) {
+                Dependency.get(ActivityStarter.class).postQSRunnableDismissingKeyguard(() -> {
+                    if (TunerService.isTunerEnabled(mContext)) {
+                        TunerService.showResetRequest(mContext, () -> {
+                            // Relaunch settings so that the tuner disappears.
+                            startSettingsActivity();
+                        });
+                    } else {
+                        Toast.makeText(getContext(), R.string.tuner_toast,
+                                Toast.LENGTH_LONG).show();
+                        TunerService.setTunerEnabled(mContext, true);
+                    }
+                    startSettingsActivity();
+
+                });
+            } else {
+                startSettingsActivity();
+            }
         } else if (v == mDateTimeGroup) {
             Dependency.get(MetricsLogger.class).action(ACTION_QS_DATE,
                     mNextAlarm != null);
-            if (mNextAlarm != null) {
+            if (mNextAlarm != null && mNextAlarm.getShowIntent() != null) {
                 PendingIntent showIntent = mNextAlarm.getShowIntent();
                 mActivityStarter.startPendingIntentDismissingKeyguard(showIntent);
             } else {
                 mActivityStarter.postStartActivityDismissingKeyguard(new Intent(
                         AlarmClock.ACTION_SHOW_ALARMS), 0);
             }
+        } else if (v == mRunningServicesButton) {
+            MetricsLogger.action(mContext,
+                    mExpanded ? MetricsProto.MetricsEvent.ACTION_QS_EXPANDED_SETTINGS_LAUNCH
+                            : MetricsProto.MetricsEvent.ACTION_QS_COLLAPSED_SETTINGS_LAUNCH);
+            startRunningServicesActivity();
         }
     }
 
-    @Override
-    public boolean onLongClick(View v) {
-        if (v == mSettingsButton) {
-            startAtomicActivity();
-        }
-        return false;
-    }
-
-    private void startAtomicActivity() {
-        Intent eIntent = new Intent(Intent.ACTION_MAIN);
-        eIntent.setClassName("com.android.settings",
-            "com.android.settings.Settings$AtomicSettingsActivity");
-        mActivityStarter.startActivity(eIntent, true /* dismissShade */);
+    private void startRunningServicesActivity() {
+        Intent intent = new Intent();
+        intent.setClassName("com.android.settings",
+                "com.android.settings.Settings$DevRunningServicesActivity");
+        mActivityStarter.startActivity(intent, true /* dismissShade */);
     }
 
     private void startSettingsActivity() {

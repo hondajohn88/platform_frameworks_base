@@ -159,6 +159,14 @@ public interface WindowManager extends ViewManager {
     final int TAKE_SCREENSHOT_SELECTED_REGION = 2;
 
     /**
+     * Messages for starting a screen record session
+     * @hide
+     */
+    final int SCREEN_RECORD_LOW_QUALITY = 0;
+    final int SCREEN_RECORD_MID_QUALITY = 1;
+    final int SCREEN_RECORD_HIGH_QUALITY = 2;
+
+    /**
      * @hide
      */
     public static final String PARCEL_KEY_SHORTCUTS_ARRAY = "shortcuts_array";
@@ -353,7 +361,9 @@ public interface WindowManager extends ViewManager {
                 @ViewDebug.IntToString(from = TYPE_SCREENSHOT,
                         to = "TYPE_SCREENSHOT"),
                 @ViewDebug.IntToString(from = TYPE_APPLICATION_OVERLAY,
-                        to = "TYPE_APPLICATION_OVERLAY")
+                        to = "TYPE_APPLICATION_OVERLAY"),
+                @ViewDebug.IntToString(from = TYPE_SLIM_RECENTS,
+                        to = "TYPE_SLIM_RECENTS")
         })
         public int type;
 
@@ -748,6 +758,13 @@ public interface WindowManager extends ViewManager {
          * In multi-user systems shows only on the owning user's screen.
          */
         public static final int TYPE_APPLICATION_OVERLAY = FIRST_SYSTEM_WINDOW + 38;
+
+        /**
+         * Window type: panel that slides out from the status bar
+         * In multiuser systems shows on all users' windows.
+         * @hide
+         */
+        public static final int TYPE_SLIM_RECENTS = FIRST_SYSTEM_WINDOW+39;
 
         /**
          * End of types of system windows.
@@ -1432,23 +1449,6 @@ public interface WindowManager extends ViewManager {
          */
         @RequiresPermission(permission.DEVICE_POWER)
         public static final int PRIVATE_FLAG_ACQUIRES_SLEEP_TOKEN = 0x00200000;
-
-        /**
-         * {@hide}
-         */
-        public static final int PRIVATE_FLAG_STATUS_HIDE_FORCED = 0x00900000;
-
-        /**
-         * {@hide}
-         */
-        public static final int PRIVATE_FLAG_NAV_HIDE_FORCED = 0x01000000;
-
-        /**
-         * The window had not set FULLSCREEN flag so don't handle it as fullscreen in layoutWindowLw
-         *
-         * {@hide}
-         */
-        public static final int PRIVATE_FLAG_WAS_NOT_FULLSCREEN = 0x02000000;
 
         /**
          * Window flag: Overrides default power key behavior

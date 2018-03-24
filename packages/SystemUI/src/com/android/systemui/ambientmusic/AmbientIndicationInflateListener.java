@@ -21,3 +21,4 @@ implements AutoReinflateContainer.InflateListener {
         setAmbientIndicationView(view);
     }
 }
+

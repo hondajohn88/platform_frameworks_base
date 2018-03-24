@@ -192,9 +192,9 @@ class ZygoteConnection {
             }
         }
 
-        if (parsedArgs.refreshTheme) {
-            Typeface.recreateDefaults();
-        }
+            if (parsedArgs.refreshTheme) {
+                Typeface.recreateDefaults();
+             }
 
         /**
          * In order to avoid leaking descriptors to the Zygote child,

@@ -16,7 +16,6 @@
 
 package com.android.systemui.qs.tiles;
 
-import android.content.DialogInterface;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -26,16 +25,12 @@ import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.PowerManager;
 import android.provider.Settings;
-
 import android.service.quicksettings.Tile;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
-
-import com.android.systemui.Prefs;
-import com.android.systemui.R;
-import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.QSHost;
+import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
-import com.android.systemui.statusbar.phone.SystemUIDialog;
+import com.android.systemui.R;
 
 /** Quick settings tile: Caffeine **/
 public class CaffeineTile extends QSTileImpl<BooleanState> {
@@ -65,31 +60,21 @@ public class CaffeineTile extends QSTileImpl<BooleanState> {
     }
 
     @Override
-    public void handleSetListening(boolean listening) {
+    public CharSequence getTileLabel() {
+        return mContext.getString(R.string.quick_settings_caffeine_label);
     }
 
     @Override
-    public void handleClick() {
-        if (Prefs.getBoolean(mContext, Prefs.Key.QS_CAFFEINE_DIALOG_SHOWN, false)) {
-            drinkUp();
-            return;
-        }
-        SystemUIDialog dialog = new SystemUIDialog(mContext);
-        dialog.setTitle(R.string.caffeine_info_title);
-        dialog.setMessage(R.string.caffeine_info_message);
-        dialog.setPositiveButton(com.android.internal.R.string.ok,
-                new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        drinkUp();
-                        Prefs.putBoolean(mContext, Prefs.Key.QS_CAFFEINE_DIALOG_SHOWN, true);
-                    }
-                });
-        dialog.setShowForAllUsers(true);
-        dialog.show();
+    public int getMetricsCategory() {
+        return MetricsEvent.VALIDUS;
     }
 
-    public void drinkUp() {
+    @Override
+    public void handleSetListening(boolean listening) {}
+
+    @Override
+    public void handleClick() {
+        // toggle
         if (mWakeLock.isHeld()) {
             mWakeLock.release();
         } else {
@@ -102,17 +87,6 @@ public class CaffeineTile extends QSTileImpl<BooleanState> {
     public Intent getLongClickIntent() {
         return new Intent().setComponent(new ComponentName(
             "com.android.settings", "com.android.settings.Settings$DisplaySettingsActivity"));
-    }
-
-
-    @Override
-    public CharSequence getTileLabel() {
-        return mContext.getString(R.string.quick_settings_caffeine_label);
-    }
-
-    @Override
-    public int getMetricsCategory() {
-        return MetricsEvent.CUSTOM_QUICK_TILES;
     }
 
     @Override

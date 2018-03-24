@@ -20,6 +20,7 @@ import android.app.ActivityManager;
 import com.android.internal.app.IBatteryStats;
 import com.android.server.LocalServices;
 import com.android.server.am.BatteryStatsService;
+import com.android.server.lights.LightsManager;
 
 import android.animation.Animator;
 import android.animation.ObjectAnimator;
@@ -49,6 +50,9 @@ import android.util.Spline;
 import android.util.TimeUtils;
 import android.view.Display;
 import android.view.WindowManagerPolicy;
+
+import android.os.UserHandle;
+import android.provider.Settings;
 
 import java.io.PrintWriter;
 
@@ -134,6 +138,9 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
     // Battery stats.
     private final IBatteryStats mBatteryStats;
 
+    // The lights service.
+    private final LightsManager mLights;
+
     // The sensor manager.
     private final SensorManager mSensorManager;
 
@@ -165,7 +172,7 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
     private boolean mUseSoftwareAutoBrightnessConfig;
 
     // True if should use light sensor to automatically determine doze screen brightness.
-    private final boolean mAllowAutoBrightnessWhileDozingConfig;
+    private boolean mAllowAutoBrightnessWhileDozingConfig;
 
     // Whether or not the color fade on screen on / off is enabled.
     private final boolean mColorFadeEnabled;
@@ -311,6 +318,7 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
         mCallbacks = callbacks;
 
         mBatteryStats = BatteryStatsService.getService();
+        mLights = LocalServices.getService(LightsManager.class);
         mSensorManager = sensorManager;
         mWindowManagerPolicy = LocalServices.getService(WindowManagerPolicy.class);
         mBlanker = blanker;
@@ -729,6 +737,12 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
         // Use zero brightness when screen is off.
         if (state == Display.STATE_OFF) {
             brightness = PowerManager.BRIGHTNESS_OFF;
+            mLights.getLight(LightsManager.LIGHT_ID_BUTTONS).setBrightness(brightness);
+        }
+
+        // Disable button lights when dozing
+        if (state == Display.STATE_DOZE || state == Display.STATE_DOZE_SUSPEND) {
+            mLights.getLight(LightsManager.LIGHT_ID_BUTTONS).setBrightness(PowerManager.BRIGHTNESS_OFF);
         }
 
         // Configure auto-brightness.
@@ -765,6 +779,9 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
             if (brightness >= 0) {
                 // Use current auto-brightness value and slowly adjust to changes.
                 brightness = clampScreenBrightness(brightness);
+                Settings.System.putIntForUser(mContext.getContentResolver(),
+                        Settings.System.LAST_DOZE_AUTO_BRIGHTNESS, brightness,
+                        UserHandle.USER_CURRENT);
                 if (mAppliedAutoBrightness && !autoBrightnessAdjustmentChanged) {
                     slowChange = true; // slowly adapt to auto-brightness
                 }
@@ -1455,6 +1472,10 @@ final class DisplayPowerController implements AutomaticBrightnessController.Call
 
     private static int clampAbsoluteBrightness(int value) {
         return MathUtils.constrain(value, PowerManager.BRIGHTNESS_OFF, PowerManager.BRIGHTNESS_ON);
+    }
+
+    public void enableAutoDozeBrightness(boolean enable) {
+        mAllowAutoBrightnessWhileDozingConfig = enable;
     }
 
     private final class DisplayControllerHandler extends Handler {

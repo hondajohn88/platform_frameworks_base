@@ -57,7 +57,7 @@ import java.util.function.Consumer;
  */
 public class ScrimController implements ViewTreeObserver.OnPreDrawListener,
         OnHeadsUpChangedListener, OnColorsChangedListener {
-    public static final long ANIMATION_DURATION = 200;
+    public static final long ANIMATION_DURATION = 220;
     public static final Interpolator KEYGUARD_FADE_OUT_INTERPOLATOR
             = new PathInterpolator(0f, 0, 0.7f, 1f);
     public static final Interpolator KEYGUARD_FADE_OUT_INTERPOLATOR_LOCKED
@@ -389,7 +389,7 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener,
                 setScrimInFrontAlpha(1f);
                 setScrimBehindAlpha(0f);
             }
-        } else if (!mKeyguardShowing && !mBouncerShowing && !mWakingUpFromAodStarting) {
+        } else if (!mKeyguardShowing && !mBouncerShowing) {
             updateScrimNormal();
             setScrimInFrontAlpha(0);
         } else {
@@ -425,11 +425,7 @@ public class ScrimController implements ViewTreeObserver.OnPreDrawListener,
             setScrimBehindAlpha(mScrimBehindAlpha);
         } else {
             float fraction = Math.max(0, Math.min(mFraction, 1));
-            if (mWakingUpFromAodStarting) {
-                setScrimInFrontAlpha(1f);
-            } else {
-                setScrimInFrontAlpha(0f);
-            }
+            setScrimInFrontAlpha(0f);
             setScrimBehindAlpha(fraction
                     * (mScrimBehindAlphaKeyguard - mScrimBehindAlphaUnlocking)
                     + mScrimBehindAlphaUnlocking);

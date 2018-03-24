@@ -221,7 +221,7 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
         if (holder.getItemViewType() == TYPE_EDIT) {
             ((TextView) holder.itemView.findViewById(android.R.id.title)).setText(
                     mCurrentDrag != null ? R.string.drag_to_remove_tiles
-                    : R.string.drag_or_tap_to_add_tiles);
+                    : R.string.drag_to_add_tiles);
             return;
         }
         if (holder.getItemViewType() == TYPE_ACCESSIBLE_DROP) {
@@ -271,15 +271,16 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
         holder.mTileView.setAppLabel(info.appLabel);
         holder.mTileView.setShowAppLabel(position > mEditIndex && !info.isSystem);
 
-        holder.mTileView.setOnClickListener(new OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                move(holder.getAdapterPosition(), mEditIndex, holder.mTileView);
-            }
-        });
-
+        final boolean selectable = !mAccessibilityMoving || position < mEditIndex;
+        if (!(mAccessibilityManager.isTouchExplorationEnabled() && selectable)) {
+            holder.mTileView.setOnClickListener(new OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    move(holder.getAdapterPosition(), mEditIndex, holder.mTileView);
+                }
+            });
+        }
         if (mAccessibilityManager.isTouchExplorationEnabled()) {
-            final boolean selectable = !mAccessibilityMoving || position < mEditIndex;
             holder.mTileView.setClickable(selectable);
             holder.mTileView.setFocusable(selectable);
             holder.mTileView.setImportantForAccessibility(selectable
@@ -471,13 +472,21 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
         }
     }
 
-    private final SpanSizeLookup mSizeLookup = new SpanSizeLookup() {
+    private final DynamicSpanSizeLookup mSizeLookup = new DynamicSpanSizeLookup();
+
+    private class DynamicSpanSizeLookup extends SpanSizeLookup {
+        private int mColumns = 5;
+
+        public void setColumns(int columns) {
+            mColumns = columns;
+        }
+
         @Override
         public int getSpanSize(int position) {
             final int type = getItemViewType(position);
-            return type == TYPE_EDIT || type == TYPE_DIVIDER ? 3 : 1;
+            return type == TYPE_EDIT || type == TYPE_DIVIDER ? mColumns : 1;
         }
-    };
+    }
 
     private class TileItemDecoration extends ItemDecoration {
         private final ColorDrawable mDrawable;
@@ -485,10 +494,9 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
         private TileItemDecoration(Context context) {
             TypedArray ta =
                     context.obtainStyledAttributes(new int[]{android.R.attr.colorSecondary});
-            mDrawable = new ColorDrawable(ta.getColor(0, 0));
+            mDrawable = new ColorDrawable();
             ta.recycle();
         }
-
 
         @Override
         public void onDraw(Canvas c, RecyclerView parent, State state) {
@@ -508,6 +516,9 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
                         .getLayoutParams();
                 final int top = child.getTop() + params.topMargin +
                         Math.round(ViewCompat.getTranslationY(child));
+                // Set drawable color
+                mDrawable.setColor(mContext.getResources().getColor(
+                        R.color.qs_edit_item_decoration_bg));
                 // Draw full width, in case there aren't tiles all the way across.
                 mDrawable.setBounds(0, top, width, bottom);
                 mDrawable.draw(c);
@@ -582,4 +593,8 @@ public class TileAdapter extends RecyclerView.Adapter<Holder> implements TileSta
         public void onSwiped(ViewHolder viewHolder, int direction) {
         }
     };
+
+    public void setColumns(int columns) {
+        mSizeLookup.setColumns(columns);
+    }
 }

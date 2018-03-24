@@ -2570,10 +2570,10 @@ public class PackageManagerService extends IPackageManager.Stub
             File frameworkDir = new File(Environment.getRootDirectory(), "framework");
 
             final VersionInfo ver = mSettings.getInternalVersion();
-            mIsUpgrade = !Build.DATE.equals(ver.fingerprint);
+            mIsUpgrade = !Build.FINGERPRINT.equals(ver.fingerprint);
             if (mIsUpgrade) {
                 logCriticalInfo(Log.INFO,
-                        "Upgrading from " + ver.fingerprint + " to " + Build.DATE);
+                        "Upgrading from " + ver.fingerprint + " to " + Build.FINGERPRINT);
             }
 
             // when upgrading from pre-M, promote system app permissions from install to runtime
@@ -3041,7 +3041,7 @@ public class PackageManagerService extends IPackageManager.Stub
                                         | Installer.FLAG_CLEAR_CODE_CACHE_ONLY);
                     }
                 }
-                ver.fingerprint = Build.DATE;
+                ver.fingerprint = Build.FINGERPRINT;
             }
 
             checkDefaultBrowser();
@@ -3885,9 +3885,23 @@ public class PackageManagerService extends IPackageManager.Stub
                 ? Collections.<String>emptySet() : permissionsState.getPermissions(userId);
         final PackageUserState state = ps.readUserState(userId);
 
-        return mayFakeSignature(p, PackageParser.generatePackageInfo(p, gids, flags,
-                ps.firstInstallTime, ps.lastUpdateTime, permissions, state, userId),
-                permissions);
+        if ((flags & MATCH_UNINSTALLED_PACKAGES) != 0
+                && ps.isSystem()) {
+            flags |= MATCH_ANY_USER;
+        }
+
+        PackageInfo packageInfo = mayFakeSignature(p, PackageParser
+                .generatePackageInfo(p, gids, flags, ps.firstInstallTime,
+                ps.lastUpdateTime, permissions, state, userId), permissions);
+
+        if (packageInfo == null) {
+            return null;
+        }
+
+        packageInfo.packageName = packageInfo.applicationInfo.packageName =
+                resolveExternalPackageNameLPr(p);
+
+        return packageInfo;
     }
 
     private PackageInfo mayFakeSignature(PackageParser.Package p, PackageInfo pi,
@@ -6189,11 +6203,7 @@ public class PackageManagerService extends IPackageManager.Stub
                 if (actionName.startsWith("android.net.netmon.lingerExpired")
                         || actionName.startsWith("com.android.server.sip.SipWakeupTimer")
                         || actionName.startsWith("com.android.internal.telephony.data-reconnect")
-                        || actionName.startsWith("android.net.netmon.launchCaptivePortalApp")
-                        || actionName.startsWith("eu.chainfire.supersu.NativeAccess")
-                        || actionName.startsWith("qualcomm.intent.action.ACTION_AUDIO_STATE_CHANGED")
-                        || actionName.startsWith("com.qualcomm.intent.action.ACTION_UNSOL_RESPONSE_OEM_HOOK_RAW")
-                        || actionName.startsWith("com.caf.fmradio.action.AUDIO_BECOMING_NOISY")) {
+                        || actionName.startsWith("android.net.netmon.launchCaptivePortalApp")) {
                     return true;
                 }
             }
@@ -10242,6 +10252,12 @@ public class PackageManagerService extends IPackageManager.Stub
         mPackageUsage.writeNow(mPackages);
         mCompilerStats.writeNow();
         mDexManager.writePackageDexUsageNow();
+
+        // This is the last chance to write out pending restriction settings.
+        if (mHandler.hasMessages(WRITE_PACKAGE_RESTRICTIONS)) {
+            mHandler.removeMessages(WRITE_PACKAGE_RESTRICTIONS);
+            mHandler.sendEmptyMessage(WRITE_PACKAGE_RESTRICTIONS);
+        }
     }
 
     @Override
@@ -16552,10 +16568,10 @@ public class PackageManagerService extends IPackageManager.Stub
                         }
                     }
 
-                    final ComponentName requiredVerifierComponent = matchComponentForVerifier(
-                            mRequiredVerifierPackage, receivers);
                     if (ret == PackageManager.INSTALL_SUCCEEDED
                             && mRequiredVerifierPackage != null) {
+                        final ComponentName requiredVerifierComponent = matchComponentForVerifier(
+                                mRequiredVerifierPackage, receivers);
                         Trace.asyncTraceBegin(
                                 TRACE_TAG_PACKAGE_MANAGER, "verification", verificationId);
                         /*
@@ -23790,7 +23806,7 @@ Slog.v(TAG, ":: stepped forward, applying functor at tag " + parser.getName());
                     Slog.w(TAG, "Failed to scan " + ps.codePath + ": " + e.getMessage());
                 }
 
-                if (!Build.DATE.equals(ver.fingerprint)) {
+                if (!Build.FINGERPRINT.equals(ver.fingerprint)) {
                     clearAppDataLIF(ps.pkg, UserHandle.USER_ALL,
                             StorageManager.FLAG_STORAGE_DE | StorageManager.FLAG_STORAGE_CE
                                     | Installer.FLAG_CLEAR_CODE_CACHE_ONLY);

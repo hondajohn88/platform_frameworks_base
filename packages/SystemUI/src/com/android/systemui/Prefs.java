@@ -42,13 +42,14 @@ public final class Prefs {
         Key.DND_NONE_SELECTED,
         Key.DND_FAVORITE_ZEN,
         Key.QS_HOTSPOT_ADDED,
-        Key.QS_CAFFEINE_DIALOG_SHOWN,
         Key.QS_DATA_SAVER_ADDED,
         Key.QS_DATA_SAVER_DIALOG_SHOWN,
         Key.QS_INVERT_COLORS_ADDED,
         Key.QS_WORK_ADDED,
         Key.QS_NIGHTDISPLAY_ADDED,
         Key.SEEN_MULTI_USER,
+        Key.QS_AMBIENT_DOZE,
+        Key.QS_AMBIENT_PICKUP,
     })
     public @interface Key {
         @Deprecated
@@ -64,7 +65,6 @@ public final class Prefs {
         String DND_FAVORITE_BUCKET_INDEX = "DndCountdownMinuteIndex";
         String DND_NONE_SELECTED = "DndNoneSelected";
         String DND_FAVORITE_ZEN = "DndFavoriteZen";
-        String QS_CAFFEINE_DIALOG_SHOWN = "QsCaffeineDialogShown";
         String QS_DATA_SAVER_DIALOG_SHOWN = "QsDataSaverDialogShown";
         @Deprecated
         String QS_HOTSPOT_ADDED = "QsHotspotAdded";
@@ -77,6 +77,8 @@ public final class Prefs {
         @Deprecated
         String QS_NIGHTDISPLAY_ADDED = "QsNightDisplayAdded";
         String SEEN_MULTI_USER = "HasSeenMultiUser";
+        String QS_AMBIENT_DOZE = "QsAmbientDoze";
+        String QS_AMBIENT_PICKUP = "QsAmbientPickup";
     }
 
     public static boolean getBoolean(Context context, @Key String key, boolean defaultValue) {

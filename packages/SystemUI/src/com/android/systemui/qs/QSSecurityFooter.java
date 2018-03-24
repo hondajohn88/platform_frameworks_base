@@ -70,12 +70,10 @@ public class QSSecurityFooter implements OnClickListener, DialogInterface.OnClic
     protected H mHandler;
 
     private boolean mIsVisible;
+    private boolean mShowWarnings;
     private CharSequence mFooterTextContent = null;
     private int mFooterTextId;
     private int mFooterIconId;
-
-    // QS footer warnings
-    private boolean mShowWarnings;
 
     public QSSecurityFooter(QSPanel qsPanel, Context context) {
         mRootView = LayoutInflater.from(context)

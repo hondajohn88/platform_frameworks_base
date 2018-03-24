@@ -459,8 +459,8 @@ class TaskStackViewTouchHandler implements SwipeHelper.Callback {
         // Disallow dismissing an already dismissed task
         TaskView tv = (TaskView) v;
         Task task = tv.getTask();
-        return !mSwipeHelperAnimations.containsKey(v) && 
-                (mSv.getStack().indexOfStackTask(task) != -1);
+        return !mSwipeHelperAnimations.containsKey(v) && !Recents.sLockedTasks.contains(task)
+                && (mSv.getStack().indexOfStackTask(task) != -1);
     }
 
     /**
@@ -660,7 +660,10 @@ class TaskStackViewTouchHandler implements SwipeHelper.Callback {
             }
 
             int taskIndex = mCurrentTasks.indexOf(task);
-            if (taskIndex == -1) {
+            if (taskIndex == -1 || mCurrentTaskTransforms.size() == 0
+                    || mFinalTaskTransforms.size() == 0
+                    || taskIndex >= mCurrentTaskTransforms.size()
+                    || taskIndex >= mFinalTaskTransforms.size()) {
                 // If a task was added to the stack view after the start of the dismiss gesture,
                 // just ignore it
                 continue;

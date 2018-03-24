@@ -508,7 +508,7 @@ public class ActivityManagerService extends IActivityManager.Stub
 
     // Amount of time after a call to stopAppSwitches() during which we will
     // prevent further untrusted switches from happening.
-    static final long APP_SWITCH_DELAY_TIME = 1*1000;
+    static final long APP_SWITCH_DELAY_TIME = 5*1000;
 
     // How long we wait for a launched process to attach to the activity manager
     // before we decide it's never going to come up for real.
@@ -1703,6 +1703,8 @@ public class ActivityManagerService extends IActivityManager.Stub
     static ServiceThread sKillThread = null;
     static KillHandler sKillHandler = null;
 
+    static final int UPDATE_OOMADJ_MSG = 99999;
+
     CompatModeDialog mCompatModeDialog;
     UnsupportedDisplaySizeDialog mUnsupportedDisplaySizeDialog;
     long mLastMemUsageReportTime = 0;
@@ -2444,6 +2446,11 @@ public class ActivityManagerService extends IActivityManager.Stub
                             }
                         }
                     }
+                }
+            } break;
+            case UPDATE_OOMADJ_MSG: {
+                synchronized (ActivityManagerService.this) {
+                    updateOomAdjLocked();
                 }
             } break;
             }
@@ -3672,6 +3679,9 @@ public class ActivityManagerService extends IActivityManager.Stub
             String abiOverride, String entryPoint, String[] entryPointArgs, Runnable crashHandler) {
         long startTime = SystemClock.elapsedRealtime();
         ProcessRecord app;
+        if(!isAutoStartAllowed(info.uid, info.packageName) && ("service".equals(hostingType) || "content provider".equals(hostingType))){
+           return null;
+        }
         if (!isolated) {
             app = getProcessRecordLocked(processName, info.uid, keepIfLarge);
             checkTime(startTime, "startProcess: after getProcessRecord");
@@ -5485,7 +5495,8 @@ public class ActivityManagerService extends IActivityManager.Stub
             handleAppDiedLocked(app, false, true);
 
             if (doOomAdj) {
-                updateOomAdjLocked();
+                mHandler.removeMessages(UPDATE_OOMADJ_MSG);
+                mHandler.sendEmptyMessage(UPDATE_OOMADJ_MSG);
             }
             if (doLowMem) {
                 doLowMemReportIfNeededLocked(app);
@@ -8686,6 +8697,16 @@ public class ActivityManagerService extends IActivityManager.Stub
         return Arrays.binarySearch(mDeviceIdleWhitelist, appId) >= 0
                 || Arrays.binarySearch(mDeviceIdleTempWhitelist, appId) >= 0
                 || mPendingTempWhitelist.indexOfKey(uid) >= 0;
+    }
+
+    boolean isAutoStartAllowed(int uid, String packageName){
+        UidRecord uidRec = mActiveUids.get(uid);
+        if(uidRec == null) {
+            if (mAppOpsService.noteOperation(AppOpsManager.OP_AUTO_START, uid, packageName) != AppOpsManager.MODE_ALLOWED) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private ProviderInfo getProviderInfoLocked(String authority, int userHandle, int pmFlags) {

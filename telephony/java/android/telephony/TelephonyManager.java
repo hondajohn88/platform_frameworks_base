@@ -1492,15 +1492,6 @@ public class TelephonyManager {
         return retVal;
     }
 
-    /**
-     * Return if the current radio is LTE on GSM
-     * @hide
-     */
-    public static int getLteOnGsmModeStatic() {
-        return SystemProperties.getInt(TelephonyProperties.PROPERTY_LTE_ON_GSM_DEVICE,
-                    0);
-    }
-
     //
     //
     // Current Network
@@ -2325,21 +2316,6 @@ public class TelephonyManager {
         } catch (NullPointerException ex) {
             // This could happen before phone restarts due to crashing
             return PhoneConstants.LTE_ON_CDMA_UNKNOWN;
-        }
-    }
-
-    /**
-     * Return if the current radio is LTE on GSM
-     * @hide
-     */
-    public int getLteOnGsmMode() {
-        try {
-            return getITelephony().getLteOnGsmMode();
-        } catch (RemoteException ex) {
-            return 0;
-        } catch (NullPointerException ex) {
-            // This could happen before phone restarts due to crashing
-            return 0;
         }
     }
 
@@ -5869,6 +5845,24 @@ public class TelephonyManager {
        }
    }
 
+   /**
+    * Returns the IMS Registration Status
+    * using subId
+    * @hide
+    */
+   public boolean isImsRegisteredForSubscriber(int subId) {
+       try {
+           ITelephony telephony = getITelephony();
+           if (telephony == null)
+               return false;
+           return telephony.isImsRegisteredForSubscriber(subId);
+       } catch (RemoteException ex) {
+           return false;
+       } catch (NullPointerException ex) {
+           return false;
+       }
+   }
+
     /**
      * Returns the Status of Volte
      * @hide
@@ -6091,12 +6085,6 @@ public class TelephonyManager {
         if (SubscriptionManager.isValidPhoneId(phoneId)) {
             String prop = TelephonyProperties.PROPERTY_BASEBAND_VERSION +
                     ((phoneId == 0) ? "" : Integer.toString(phoneId));
-            if (version != null && version.length() > SystemProperties.PROP_VALUE_MAX) {
-                Log.e(TAG, "setBasebandVersionForPhone(): version string '" + version +
-                        "' too long! (" + version.length() +
-                        " > " + SystemProperties.PROP_VALUE_MAX + ")");
-                version = version.substring(0, SystemProperties.PROP_VALUE_MAX);
-            }
             SystemProperties.set(prop, version);
         }
     }

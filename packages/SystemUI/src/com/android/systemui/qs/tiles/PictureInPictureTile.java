@@ -15,14 +15,14 @@
 
 package com.android.systemui.qs.tiles;
 
+import android.content.pm.ActivityInfo;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.os.UserHandle;
-import android.provider.Settings;
 import android.service.quicksettings.Tile;
+import android.widget.Toast;
 
-import com.android.internal.util.aos.aosUtils;
+import com.android.internal.util.validus.ValidusUtils;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
@@ -38,7 +38,7 @@ public class PictureInPictureTile extends QSTileImpl<BooleanState> {
 
     @Override
     public int getMetricsCategory() {
-        return MetricsEvent.CUSTOM_QUICK_TILES;
+        return MetricsEvent.VALIDUS;
     }
 
     @Override
@@ -47,19 +47,24 @@ public class PictureInPictureTile extends QSTileImpl<BooleanState> {
     }
 
     @Override
-    public void handleSetListening(boolean listening) {
-    }
+    public void handleSetListening(boolean listening) {}
 
     @Override
     public void handleClick() {
         mHost.collapsePanels();
-        aosUtils.sendKeycode(171);
+        ActivityInfo ai = ValidusUtils.getRunningActivityInfo(mContext);
+        if (ai != null && !ai.supportsPictureInPicture()) {
+            Toast.makeText(mContext, mContext.getString(
+                    R.string.quick_settings_pip_tile_app_na), Toast.LENGTH_LONG).show();
+            return;
+        }
+        ValidusUtils.sendKeycode(171);
     }
 
     @Override
     public Intent getLongClickIntent() {
         return new Intent().setComponent(new ComponentName(
-            "com.android.settings", "com.android.settings.Settings$PictureInPictureSettingsActivity"));
+                "com.android.settings", "com.android.settings.Settings$PictureInPictureSettingsActivity"));
     }
 
     @Override

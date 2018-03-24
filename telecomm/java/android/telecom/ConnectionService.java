@@ -1332,11 +1332,6 @@ public abstract class ConnectionService extends Service {
                 mAdapter.onRemoteRttRequest(id);
             }
         }
-
-        public void onCdmaConnectionTimeReset(Connection c) {
-            String id = mIdByConnection.get(c);
-            mAdapter.resetCdmaConnectionTime(id);
-        }
     };
 
     /** {@inheritDoc} */

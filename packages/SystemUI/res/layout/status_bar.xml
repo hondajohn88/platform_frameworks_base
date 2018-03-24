@@ -49,15 +49,6 @@
         android:orientation="horizontal"
         >
 
-        <com.android.systemui.aos.carrierlabel.CarrierLabel
-            android:id="@+id/statusbar_carrier_text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_vertical"
-            android:textAppearance="@style/TextAppearance.StatusBar.CarrierLabel"
-            android:visibility="gone"
-            android:singleLine="true"/>
-
         <ImageView
             android:id="@+id/status_bar_logo"
             android:layout_width="@dimen/status_bar_icon_size"
@@ -65,16 +56,6 @@
             android:src="@drawable/status_bar_logo"
             android:scaleType="centerInside"
             android:padding="2dp"
-            android:visibility="gone" />
-
-        <com.android.systemui.statusbar.policy.ClockLeft
-            android:id="@+id/left_clock"
-            android:textAppearance="@style/TextAppearance.StatusBar.Clock"
-            android:layout_width="wrap_content"
-            android:layout_height="fill_parent"
-            android:singleLine="true"
-            android:paddingEnd="@dimen/status_bar_left_clock_end_padding"
-            android:gravity="center"
             android:visibility="gone" />
 
         <!-- The alpha of this area is controlled from both PhoneStatusBarTransitions and
@@ -97,25 +78,11 @@
                 android:id="@+id/networkTraffic"
                 android:layout_width="wrap_content"
                 android:layout_height="match_parent"
+                android:layout_marginStart="2dp"
+                android:layout_marginEnd="2dp"
                 android:singleLine="false"
                 android:fontFamily="sans-serif-condensed"
                 android:gravity="right|center_vertical"/>
-
-            <com.android.systemui.aos.statusbarweather.StatusBarWeather
-                android:id="@+id/weather_temp"
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:maxLines="1"
-                android:gravity="right|center_vertical"
-                android:paddingStart="2dp"
-                android:paddingEnd="2dp" />
-
-            <com.android.systemui.aos.statusbarweather.StatusBarWeatherImage
-                android:id="@+id/weather_image"
-                android:layout_width="24dp"
-                android:layout_height="match_parent"
-                android:paddingStart="2dp"
-                android:paddingEnd="2dp" />
 
             <include layout="@layout/system_icons" />
 
@@ -132,6 +99,25 @@
         </com.android.keyguard.AlphaOptimizedLinearLayout>
     </LinearLayout>
 
+    <com.android.keyguard.AlphaOptimizedLinearLayout
+        android:id="@+id/center_clock_layout"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        >
+
+        <com.android.systemui.statusbar.policy.ClockCenter
+            android:id="@+id/center_clock"
+            android:textAppearance="@style/TextAppearance.StatusBar.Clock"
+            android:gravity="center"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:visibility="gone"
+            android:singleLine="true"
+            />
+    </com.android.keyguard.AlphaOptimizedLinearLayout>
+
     <ViewStub
         android:id="@+id/emergency_cryptkeeper_text"
         android:layout_width="wrap_content"
@@ -146,5 +132,9 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
     />
+    <com.android.systemui.statusbar.policy.BatteryBarController
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        systemui:viewLocation="1" />
 
 </com.android.systemui.statusbar.phone.PhoneStatusBarView>

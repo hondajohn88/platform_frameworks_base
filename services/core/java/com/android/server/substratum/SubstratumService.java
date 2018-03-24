@@ -62,7 +62,6 @@ import java.io.OutputStream;
 import java.lang.Throwable;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -603,17 +602,6 @@ public final class SubstratumService extends SystemService {
                 Binder.restoreCallingIdentity(ident);
             }
         }
-
-        @Override
-        public Map getAllOverlays(int uid) {
-            checkCallerAuthorization(Binder.getCallingUid());
-            try {
-                return mOm.getAllOverlays(uid);
-            } catch (RemoteException e) {
-                logE("There is an exception when trying to get all overlays", e);
-                return null;
-            }
-        }
     };
 
     private Context getAppContext(String packageName) {
@@ -742,11 +730,16 @@ public final class SubstratumService extends SystemService {
             logE("Could not delete ZIP file");
         }
 
-        // Check if theme zip included a fonts.xml. If not, get from existing file in /system
-        File srcConfig = new File("/system/etc/fonts.xml");
-        File dstConfig = new File(cacheDir, "fonts.xml");
-        if (!dstConfig.exists()) {
-            FileUtils.copyFile(srcConfig, dstConfig);
+        // Check if theme zip included a fonts.xml. If not, Substratum
+        // is kind enough to provide one for us in it's assets
+        File testConfig = new File(cacheDir, "fonts.xml");
+        if (!testConfig.exists()) {
+            AssetManager subsAm = getAppContext(SUBSTRATUM_PACKAGE).getAssets();
+            try (InputStream inputStream = subsAm.open("fonts.xml")) {
+                FileUtils.copyToFile(inputStream, testConfig);
+            } catch (Exception e) {
+                logE("There is an exception when trying to extract default fonts config", e);
+            }
         }
 
         // Prepare system theme fonts folder and copy new fonts folder from our cache

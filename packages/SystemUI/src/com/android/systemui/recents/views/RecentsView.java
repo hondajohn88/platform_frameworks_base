@@ -18,10 +18,9 @@ package com.android.systemui.recents.views;
 
 import static android.app.ActivityManager.StackId.INVALID_STACK_ID;
 
-import android.app.ActivityManager;
-import android.app.ActivityManager.MemoryInfo;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.animation.ValueAnimator.AnimatorUpdateListener;
@@ -39,25 +38,24 @@ import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
-import android.os.Bundle;
 import android.os.UserHandle;
 import android.os.Handler;
 import android.provider.Settings;
 import android.util.ArraySet;
 import android.util.AttributeSet;
-import android.util.MathUtils;
 import android.view.Gravity;
+import android.util.MathUtils;
 import android.view.AppTransitionAnimationSpec;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
+import android.view.ScaleGestureDetector;
+import android.view.ScaleGestureDetector.SimpleOnScaleGestureListener;
 import android.view.View;
-import android.view.ViewAnimationUtils;
 import android.view.ViewDebug;
 import android.view.ViewPropertyAnimator;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.widget.FrameLayout;
-import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.ImageButton;
 
@@ -74,6 +72,7 @@ import com.android.systemui.recents.RecentsActivityLaunchState;
 import com.android.systemui.recents.RecentsConfiguration;
 import com.android.systemui.recents.RecentsDebugFlags;
 import com.android.systemui.recents.events.EventBus;
+import com.android.systemui.recents.events.activity.ConfigurationChangedEvent;
 import com.android.systemui.recents.events.activity.DismissRecentsToHomeAnimationStarted;
 import com.android.systemui.recents.events.activity.DockedFirstAnimationFrameEvent;
 import com.android.systemui.recents.events.activity.EnterRecentsWindowAnimationCompletedEvent;
@@ -102,12 +101,6 @@ import com.android.systemui.stackdivider.WindowManagerProxy;
 import com.android.systemui.statusbar.FlingAnimationUtils;
 import com.android.systemui.statusbar.phone.ScrimController;
 
-import java.io.BufferedReader;
-import java.io.FileDescriptor;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
@@ -159,15 +152,14 @@ public class RecentsView extends FrameLayout {
         mMultiWindowBackgroundScrim.setAlpha(alpha);
     };
 
+    private ScaleGestureDetector mRecentListGestureDetector;
+
     private RecentsTransitionHelper mTransitionHelper;
     @ViewDebug.ExportedProperty(deepExport=true, prefix="touch_")
     private RecentsViewTouchHandler mTouchHandler;
     private final FlingAnimationUtils mFlingAnimationUtils;
 
-    TextView mMemText;
-    ProgressBar mMemBar;
-    private ActivityManager mAm;
-    private int mTotalMem;
+    private int mDisplayOrientation = Configuration.ORIENTATION_UNDEFINED;
 
     public RecentsView(Context context) {
         this(context, null);
@@ -214,7 +206,7 @@ public class RecentsView extends FrameLayout {
             mStackButtonShadowColor = mStackActionButton.getShadowColor();
             addView(mStackActionButton);
         }
-        mAm = (ActivityManager) mContext.getSystemService(Context.ACTIVITY_SERVICE);
+
         reevaluateStyles();
     }
 
@@ -300,8 +292,14 @@ public class RecentsView extends FrameLayout {
         // Update the top level view's visibilities
         if (stack.getTaskCount() > 0) {
             hideEmptyView();
+            if (mFloatingButton != null) {
+                mFloatingButton.setVisibility(View.VISIBLE);
+            }
         } else {
             showEmptyView(R.string.recents_empty_message);
+            if (mFloatingButton != null) {
+                mFloatingButton.setVisibility(View.GONE);
+            }
         }
     }
 
@@ -427,9 +425,6 @@ public class RecentsView extends FrameLayout {
         if (RecentsDebugFlags.Static.EnableStackActionButton) {
             mStackActionButton.bringToFront();
         }
-        if (mFloatingButton != null) {
-            mFloatingButton.setVisibility(View.GONE);
-        }
     }
 
     /**
@@ -442,9 +437,11 @@ public class RecentsView extends FrameLayout {
         if (RecentsDebugFlags.Static.EnableStackActionButton) {
             mStackActionButton.bringToFront();
         }
-        if (mFloatingButton != null) {
-            mFloatingButton.setVisibility(View.VISIBLE);
-        }
+        // Prepare gesture detector.
+        mTaskStackView.setOnTouchListener((View v, MotionEvent event) -> {
+            mRecentListGestureDetector.onTouchEvent(event);
+            return false;
+        });
     }
 
     /**
@@ -460,34 +457,14 @@ public class RecentsView extends FrameLayout {
         mMultiWindowBackgroundScrim.setAlpha(alpha);
     }
 
-    public void startFABanimation() {
-        RecentsConfiguration config = Recents.getConfiguration();
-        // Animate the action button in
-        mFloatingButton = ((View)getParent()).findViewById(R.id.floating_action_button);
-        mFloatingButton.animate().alpha(1f)
-                .setStartDelay(config.fabEnterAnimDelay)
-                .setDuration(config.fabEnterAnimDuration)
-                .setInterpolator(Interpolators.ALPHA_IN)
-                .withLayer()
-                .start();
-    }
-
-    public void endFABanimation() {
-        RecentsConfiguration config = Recents.getConfiguration();
-        // Animate the action button away
-        mFloatingButton = ((View)getParent()).findViewById(R.id.floating_action_button);
-        mFloatingButton.animate().alpha(0f)
-                .setStartDelay(0)
-                .setDuration(config.fabExitAnimDuration)
-                .setInterpolator(Interpolators.ALPHA_OUT)
-                .withLayer()
-                .start();
-    }
-
     @Override
     protected void onAttachedToWindow() {
         EventBus.getDefault().register(this, RecentsActivity.EVENT_BUS_PRIORITY + 1);
         EventBus.getDefault().register(mTouchHandler, RecentsActivity.EVENT_BUS_PRIORITY + 2);
+        mRecentListGestureDetector =
+                new ScaleGestureDetector(mContext,
+                        new PinchInGesture(mEmptyView, mTaskStackView));
+        super.onAttachedToWindow();
         mSettingsObserver.observe();
         mClearRecents.setVisibility(View.VISIBLE);
         mClearRecents.setOnClickListener(new View.OnClickListener() {
@@ -495,9 +472,6 @@ public class RecentsView extends FrameLayout {
             EventBus.getDefault().send(new DismissAllTaskViewsEvent());
             }
         });
-        mMemText = (TextView) ((View)getParent()).findViewById(R.id.recents_memory_text);
-        mMemBar = (ProgressBar) ((View)getParent()).findViewById(R.id.recents_memory_bar);
-        super.onAttachedToWindow();
     }
 
     @Override
@@ -508,18 +482,22 @@ public class RecentsView extends FrameLayout {
         mSettingsObserver.unobserve();
     }
 
+    public final void onBusEvent(ConfigurationChangedEvent event) {
+        if (event.fromDeviceOrientationChange) {
+            mDisplayOrientation = Utilities.getAppConfiguration(mContext).orientation;
+        }
+    }
+
     /**
      * This is called with the full size of the window since we are handling our own insets.
      */
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        final ContentResolver resolver = mContext.getContentResolver();
         int width = MeasureSpec.getSize(widthMeasureSpec);
         int height = MeasureSpec.getSize(heightMeasureSpec);
 
         if (mTaskStackView.getVisibility() != GONE) {
             mTaskStackView.measure(widthMeasureSpec, heightMeasureSpec);
-        showMemDisplay();
         }
 
         // Measure the empty view to the full size of the screen
@@ -553,6 +531,7 @@ public class RecentsView extends FrameLayout {
                 params.topMargin = 2*(mContext.getResources().
                     getDimensionPixelSize(com.android.internal.R.dimen.status_bar_height));
             }
+
             switch (clearRecentsLocation) {
                 case 0:
                     params.gravity = Gravity.TOP | Gravity.RIGHT;
@@ -581,42 +560,6 @@ public class RecentsView extends FrameLayout {
         LayoutInflater inflater = LayoutInflater.from(mContext);
         float cornerRadius = mContext.getResources().getDimensionPixelSize(
                     R.dimen.recents_task_view_rounded_corners_radius);
-    }
-
-    private boolean showMemDisplay() {
-        boolean enableMemDisplay = Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.SYSTEMUI_RECENTS_MEM_DISPLAY, 0) == 1;
-
-        if (!enableMemDisplay) {
-            mMemText.setVisibility(View.GONE);
-            mMemBar.setVisibility(View.GONE);
-            return false;
-        }
-        mMemText.setVisibility(View.VISIBLE);
-        mMemBar.setVisibility(View.VISIBLE);
-
-        updateMemoryStatus();
-        return true;
-    }
-
-    private void updateMemoryStatus() {
-        if (mMemText.getVisibility() == View.GONE
-                || mMemBar.getVisibility() == View.GONE) return;
-
-        MemoryInfo memInfo = new MemoryInfo();
-        mAm.getMemoryInfo(memInfo);
-            int available = (int)(memInfo.availMem / 1048576L);
-            int max = (int)(getTotalMemory() / 1048576L);
-            mMemText.setText("Free RAM: " + String.valueOf(available) + "MB");
-            mMemBar.setMax(max);
-            mMemBar.setProgress(available);
-    }
-
-    public long getTotalMemory() {
-        MemoryInfo memInfo = new MemoryInfo();
-        mAm.getMemoryInfo(memInfo);
-        long totalMem = memInfo.totalMem;
-        return totalMem;
     }
 
     /**
@@ -902,7 +845,6 @@ public class RecentsView extends FrameLayout {
             // Animate the background away only if we are dismissing Recents to home
             animateBackgroundScrim(0f, DEFAULT_UPDATE_SCRIM_DURATION);
         }
-        updateMemoryStatus();
     }
 
     public final void onBusEvent(ShowStackActionButtonEvent event) {
@@ -936,9 +878,11 @@ public class RecentsView extends FrameLayout {
         if (!RecentsDebugFlags.Static.EnableStackActionButton) {
             return;
         }
+
         if (showClearAllRecents) {
             return;
         }
+
         final ReferenceCountedTrigger postAnimationTrigger = new ReferenceCountedTrigger();
         if (mStackActionButton.getVisibility() == View.INVISIBLE) {
             mStackActionButton.setVisibility(View.VISIBLE);
@@ -1154,6 +1098,124 @@ public class RecentsView extends FrameLayout {
         }
     }
 
+    /**
+    * Extended SimpleOnScaleGestureListener to take
+    * care of a pinch to zoom out gesture. This class
+    * takes as well care on a bunch of animations which are needed
+    * to control the final action.
+    */
+    private class PinchInGesture extends SimpleOnScaleGestureListener {
+
+        // Constants for scaling max/min values
+        private final static float MAX_SCALING_FACTOR       = 1.0f;
+        private final static float MIN_SCALING_FACTOR       = 0.5f;
+        private final static float MIN_ALPHA_SCALING_FACTOR = 0.55f;
+        private final static float MIN_ALPHA_SCALING_FACTOR_LANDSCAPE = 0.75f;
+
+        private final static int ANIMATION_FADE_IN_DURATION  = 400;
+        private final static int ANIMATION_FADE_OUT_DURATION = 300;
+
+        private float mScalingFactor = MAX_SCALING_FACTOR;
+        private boolean mActionDetected;
+
+        // Views we need and are passed trough the constructor.
+        private TextView mEmptyRecentView;
+        private View mRecentTasksView;
+
+        public PinchInGesture(TextView emptyView, View taskStackView) {
+            mEmptyRecentView = emptyView;
+            mRecentTasksView = taskStackView;
+        }
+
+        @Override
+        public boolean onScale(ScaleGestureDetector detector) {
+            // Get gesture scaling factor and calculate the values we need
+            mScalingFactor *= detector.getScaleFactor();
+            mScalingFactor = Math.max(MIN_SCALING_FACTOR,
+                    Math.min(mScalingFactor, MAX_SCALING_FACTOR));
+            final float alphaValue = Math.max(MIN_ALPHA_SCALING_FACTOR,
+                    Math.min(mScalingFactor, MAX_SCALING_FACTOR));
+
+            // Reset detection value.
+            mActionDetected = false;
+
+            // Set alpha value for content.
+            mRecentTasksView.setAlpha(alphaValue);
+
+            // Check if we are under MIN_ALPHA_SCALING_FACTOR
+            boolean isLandscape =
+                    mDisplayOrientation == Configuration.ORIENTATION_LANDSCAPE;
+            // Make the gesture easier to trigger on landscape where we have smaller space
+            if (mScalingFactor < (!isLandscape ? MIN_ALPHA_SCALING_FACTOR
+                    : MIN_ALPHA_SCALING_FACTOR_LANDSCAPE)) {
+                mActionDetected = true;
+            }
+            return true;
+        }
+
+        @Override
+        public boolean onScaleBegin(ScaleGestureDetector detector) {
+            return true;
+        }
+
+        @Override
+        public void onScaleEnd(ScaleGestureDetector detector) {
+            super.onScaleEnd(detector);
+            // Reset to default scaling factor to prepare for next gesture.
+            mScalingFactor = MAX_SCALING_FACTOR;
+
+            final float currentAlpha = mRecentTasksView.getAlpha();
+
+            // Gesture was detected and activated. Prepare and play the animations
+            if (mActionDetected) {
+
+                // Setup additional fade out final animation for tasks view.
+                // Quickly restore alpha then go to 0 to create a flash effect
+                ValueAnimator animation1 = ValueAnimator.ofFloat(1.0f, 0.0f);
+                animation1.setDuration(ANIMATION_FADE_OUT_DURATION);
+                animation1.addUpdateListener((ValueAnimator animation) -> {
+                    mRecentTasksView.setAlpha((Float) animation.getAnimatedValue());
+                });
+
+                // Setup animation fade in animation for empty recents view
+                mEmptyRecentView.setText(R.string.notification_done);
+                mEmptyRecentView.setAlpha(0.0f);
+                mEmptyRecentView.setVisibility(View.VISIBLE);
+                ValueAnimator animation2 = ValueAnimator.ofFloat(0.0f, 1.0f);
+                animation2.setDuration(ANIMATION_FADE_IN_DURATION);
+                animation2.addUpdateListener((ValueAnimator animation) -> {
+                    mEmptyRecentView.setAlpha((Float) animation.getAnimatedValue());
+                });
+
+                // Start all ValueAnimator animations
+                // and listen onAnimationEnd to prepare the views for the next call
+                AnimatorSet animationSet = new AnimatorSet();
+                animationSet.playTogether(animation1, animation2);
+                animationSet.addListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        // Animation is finished. Prepare tasks view for next recent call
+                        mRecentTasksView.setVisibility(View.GONE);
+                        mRecentTasksView.setAlpha(1.0f);
+                        // Remove all tasks now
+                        EventBus.getDefault().send(new DismissAllTaskViewsEvent());
+                    }
+                });
+                animationSet.start();
+
+            } else if (currentAlpha < 1.0f) {
+                // No gesture action was detected but we may have a lower alpha
+                // value for the tasks view. Animate back to full opacitiy
+                ValueAnimator restoreAlpha = ValueAnimator.ofFloat(currentAlpha, 1.0f);
+                restoreAlpha.setDuration(100);
+                restoreAlpha.addUpdateListener((ValueAnimator animation) -> {
+                    mRecentTasksView.setAlpha((Float) animation.getAnimatedValue());
+                });
+                restoreAlpha.start();
+            }
+        }
+    }
+
     class SettingsObserver extends ContentObserver {
          SettingsObserver(Handler handler) {
              super(handler);
@@ -1176,11 +1238,11 @@ public class RecentsView extends FrameLayout {
              update();
          }
 
-         public void update() {
-             mFloatingButton = ((View)getParent()).findViewById(R.id.floating_action_button);
-             mClearRecents = (ImageButton) ((View)getParent()).findViewById(R.id.clear_recents);
-             showClearAllRecents = Settings.System.getIntForUser(mContext.getContentResolver(),
-                     Settings.System.SHOW_CLEAR_ALL_RECENTS, 0, UserHandle.USER_CURRENT) != 0;
+   public void update() {
+        mFloatingButton = ((View)getParent()).findViewById(R.id.floating_action_button);
+        mClearRecents = (ImageButton) ((View)getParent()).findViewById(R.id.clear_recents);
+        showClearAllRecents = Settings.System.getIntForUser(mContext.getContentResolver(),
+                Settings.System.SHOW_CLEAR_ALL_RECENTS, 1, UserHandle.USER_CURRENT) != 0;
          }
-     }
+    }
 }

@@ -57,11 +57,6 @@ public class Build {
     /** The name of the underlying board, like "goldfish". */
     public static final String BOARD = getString("ro.product.board");
 
-    /** The build date
-     * @hide
-     */
-    public static final String DATE = getString("ro.build.date");
-
     /**
      * The name of the instruction set (CPU type + ABI convention) of native code.
      *
@@ -870,8 +865,20 @@ public class Build {
     }
 
     /**
-     * Verifies the the current flash of the device is consistent with what
+     * True if Treble is enabled and required for this device.
+     *
+     * @hide
+     */
+    public static final boolean IS_TREBLE_ENABLED =
+        SystemProperties.getBoolean("ro.treble.enabled", false);
+
+    /**
+     * Verifies the current flash of the device is consistent with what
      * was expected at build time.
+     *
+     * Treble devices will verify the Vendor Interface (VINTF). A device
+     * launched without Treble:
+     *
      * 1) Checks that device fingerprint is defined and that it matches across
      *    various partitions.
      * 2) Verifies radio and bootloader partitions are those expected in the build.
@@ -881,6 +888,17 @@ public class Build {
     public static boolean isBuildConsistent() {
         // Don't care on eng builds.  Incremental build may trigger false negative.
         if (IS_ENG) return true;
+
+        if (IS_TREBLE_ENABLED) {
+            int result = VintfObject.verify(new String[0]);
+
+            if (result != 0) {
+                Slog.e(TAG, "Vendor interface is incompatible, error="
+                        + String.valueOf(result));
+            }
+
+            return result == 0;
+        }
 
         final String system = SystemProperties.get("ro.build.fingerprint");
         final String vendor = SystemProperties.get("ro.vendor.build.fingerprint");
@@ -894,14 +912,14 @@ public class Build {
             Slog.e(TAG, "Required ro.build.fingerprint is empty!");
             return false;
         }
-
+        /*
         if (!TextUtils.isEmpty(vendor)) {
             if (!Objects.equals(system, vendor)) {
                 Slog.e(TAG, "Mismatched fingerprints; system reported " + system
                         + " but vendor reported " + vendor);
                 return false;
             }
-        }
+        }*/
 
         /* TODO: Figure out issue with checks failing
         if (!TextUtils.isEmpty(bootimage)) {

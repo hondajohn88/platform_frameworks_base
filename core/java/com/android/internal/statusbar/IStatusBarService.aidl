@@ -80,6 +80,10 @@ interface IStatusBarService
     void clickTile(in ComponentName tile);
     void handleSystemKey(in int key);
 
+    /**
+     * Validus
+     */
+    void toggleCameraFlash();
     // Start DU methods
     void toggleRecentApps();
     void toggleSplitScreen();
@@ -91,4 +95,5 @@ interface IStatusBarService
     void toggleFlashlight();
     void toggleNavigationEditor();
     void dispatchNavigationEditorResults(in Intent intent);
+    void setAutoRotate(boolean enabled);
 }

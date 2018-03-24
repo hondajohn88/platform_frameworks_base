@@ -814,7 +814,7 @@ public class NavigationBarFragment extends Fragment implements Callbacks, Naviga
         mNavigationBarView.dispose();
         super.onDetach();
     }
- 
+
     /**
      * Change bar implementation to the root fragment view
      */

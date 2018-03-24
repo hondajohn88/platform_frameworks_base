@@ -788,13 +788,6 @@ public class Intent implements Parcelable, Cloneable {
     @Deprecated
     public static final String EXTRA_SHORTCUT_ICON_RESOURCE =
             "android.intent.extra.shortcut.ICON_RESOURCE";
-    /**
-     * PhoneWindowManager: Take Screenshot via takeScreenshot()
-     * <p>Input: nothing
-     * <p>Output: nothing
-     * @hide
-     */
-    public static final String ACTION_SCREENSHOT = "android.intent.action.SCREENSHOT";
 
     /**
      * An activity that provides a user interface for adjusting application preferences.
@@ -2781,21 +2774,6 @@ public class Intent implements Parcelable, Cloneable {
      */
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
     public static final String ACTION_AIRPLANE_MODE_CHANGED = "android.intent.action.AIRPLANE_MODE";
-
-    /**
-     * <p>Broadcast Action: The user has changed carrier label:</p>
-     * <ul>
-     *   <li><em>state</em> - String value.</li>
-     * </ul>
-     *
-     * <p class="note">This is a protected intent that can only be sent
-     * by the system.
-     *
-     * @hide
-     */
-    //@SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
-    public static final String ACTION_CUSTOM_CARRIER_LABEL_CHANGED
-            = "android.intent.action.CUSTOM_CARRIER_LABEL";
 
     /**
      * Broadcast Action: Some content providers have parts of their namespace
@@ -9466,7 +9444,7 @@ public class Intent implements Parcelable, Cloneable {
                 for (int i=0; i<N; i++) {
                     char c = data.charAt(i);
                     if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-                            || c == '.' || c == '-') {
+                            || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '+') {
                         continue;
                     }
                     if (c == ':' && i > 0) {

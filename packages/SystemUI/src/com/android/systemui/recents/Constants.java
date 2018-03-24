@@ -30,4 +30,5 @@ public class Constants {
         @Deprecated
         public static final int DismissSourceHistorySwipeGesture = 3;
     }
+
 }

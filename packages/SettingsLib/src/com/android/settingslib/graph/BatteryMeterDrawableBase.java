@@ -50,8 +50,11 @@ public class BatteryMeterDrawableBase extends Drawable {
     public static final int BATTERY_STYLE_LANDSCAPE = 1;
     public static final int BATTERY_STYLE_CIRCLE = 2;
     public static final int BATTERY_STYLE_DOTTED_CIRCLE = 3;
-    public static final int BATTERY_STYLE_TEXT = 5;
-    public static final int BATTERY_STYLE_HIDDEN = 6;
+    public static final int BATTERY_STYLE_BIG_CIRCLE = 4;
+    public static final int BATTERY_STYLE_BIG_DOTTED_CIRCLE = 5;
+    public static final int BATTERY_STYLE_SQUARE = 6;
+    public static final int BATTERY_STYLE_TEXT = 7;
+    public static final int BATTERY_STYLE_HIDDEN = 8;
 
     protected final Context mContext;
     protected final Paint mFramePaint;
@@ -89,13 +92,14 @@ public class BatteryMeterDrawableBase extends Drawable {
     private String mWarningString;
     private final int mCriticalLevel;
     private int mChargeColor;
-    private float[] mBoltPoints;
+    private final float[] mBoltPoints;
     private final Path mBoltPath = new Path();
     private final float[] mPlusPoints;
     private final Path mPlusPath = new Path();
 
     private final Rect mPadding = new Rect();
     private final RectF mFrame = new RectF();
+    private final RectF mSquareFrame = new RectF();
     private final RectF mButtonFrame = new RectF();
     private final RectF mBoltFrame = new RectF();
     private final RectF mPlusFrame = new RectF();
@@ -105,6 +109,8 @@ public class BatteryMeterDrawableBase extends Drawable {
     private final Path mTextPath = new Path();
 
     private DashPathEffect mPathEffect;
+
+    private boolean mCircleShowPercentInside;
 
     public BatteryMeterDrawableBase(Context context, int frameColor) {
         mContext = context;
@@ -224,6 +230,10 @@ public class BatteryMeterDrawableBase extends Drawable {
         scheduleSelf(this::invalidateSelf, 0);
     }
 
+    public void refresh() {
+        postInvalidate();
+    }
+
     private static float[] loadPoints(Resources res, int pointArrayRes) {
         final int[] pts = res.getIntArray(pointArrayRes);
         int maxX = 0, maxY = 0;
@@ -248,18 +258,19 @@ public class BatteryMeterDrawableBase extends Drawable {
     private void updateSize() {
         final Rect bounds = getBounds();
 
-        mHeight = (bounds.bottom - mPadding.bottom) - (bounds.top + mPadding.top);
-        mWidth = (bounds.right - mPadding.right) - (bounds.left + mPadding.left);
-        mWarningTextPaint.setTextSize(mHeight * 0.75f);
-        mWarningTextHeight = -mWarningTextPaint.getFontMetrics().ascent;
+        if (mMeterStyle != BATTERY_STYLE_LANDSCAPE) {
+            mHeight = (bounds.bottom - mPadding.bottom) - (bounds.top + mPadding.top);
+            mWidth = (bounds.right - mPadding.right) - (bounds.left + mPadding.left);
+        } else {
+            mHeight = (bounds.right - mPadding.right) - (bounds.left + mPadding.left);
+            mWidth = (bounds.bottom - mPadding.bottom) - (bounds.top + mPadding.top);
+        }
 
         switch (mMeterStyle) {
             case BATTERY_STYLE_PORTRAIT:
+            case BATTERY_STYLE_LANDSCAPE:
                 mIntrinsicWidth = mContext.getResources().getDimensionPixelSize(R.dimen.battery_width);
                 mIntrinsicHeight = mContext.getResources().getDimensionPixelSize(R.dimen.battery_height);
-            case BATTERY_STYLE_LANDSCAPE:
-                mIntrinsicWidth = mContext.getResources().getDimensionPixelSize(R.dimen.battery_height);
-                mIntrinsicHeight = mContext.getResources().getDimensionPixelSize(R.dimen.battery_width);
             default:
                 mIntrinsicWidth = mContext.getResources().getDimensionPixelSize(R.dimen.battery_height);
                 mIntrinsicHeight = mContext.getResources().getDimensionPixelSize(R.dimen.battery_height);
@@ -326,55 +337,50 @@ public class BatteryMeterDrawableBase extends Drawable {
     @Override
     public void draw(Canvas c) {
         switch (mMeterStyle) {
+            case BATTERY_STYLE_PORTRAIT:
+                drawRectangle(c, false);
+                break;
+            case BATTERY_STYLE_LANDSCAPE:
+                drawRectangle(c, true);
+                break;
             case BATTERY_STYLE_CIRCLE:
             case BATTERY_STYLE_DOTTED_CIRCLE:
-                drawCircle(c);
+                drawCircle(c, false);
                 break;
-            case BATTERY_STYLE_PORTRAIT:
-            case BATTERY_STYLE_LANDSCAPE:
+            case BATTERY_STYLE_BIG_CIRCLE:
+            case BATTERY_STYLE_BIG_DOTTED_CIRCLE:
+                drawCircle(c, true);
+                break;
+            case BATTERY_STYLE_SQUARE:
+                drawSquare(c);
+                break;
             default:
-                drawRectangle(c);
+                drawRectangle(c, false);
                 break;
         }
     }
 
-    private void drawRectangle(Canvas c) {
+    private void drawRectangle(Canvas c, boolean horizontal) {
         final int level = mLevel;
         final Rect bounds = getBounds();
 
         if (level == -1) return;
 
-        final boolean horizontal = mMeterStyle == BATTERY_STYLE_LANDSCAPE;
-
-        mBoltPoints = loadPoints(mContext.getResources(), horizontal ?
-                        R.array.batterymeter_inverted_bolt_points : R.array.batterymeter_bolt_points);
-
         float drawFrac = (float) level / 100f;
-        final int height;
-        final int width;
-        final int top;
-        if (horizontal) {
-            top = mPadding.top + (horizontal ? (int)(mHeight * 0.12f) : 0);
-            height = mHeight - top - (mPadding.bottom + (horizontal ? (int)(mHeight * 0.08f) : 0));
-            width = mWidth - mPadding.left - mPadding.right;
-
-            mFrame.set(0, 0, width, height);
-            mFrame.offset(mPadding.left, top);
-        } else {
-            height = mHeight;
-            width = (int) (getAspectRatio() * mHeight);
-            top = bounds.bottom - mPadding.bottom - height;
-
-            final int left = mPadding.left + bounds.left;
-            mFrame.set(left, top, width + left, height + top);
-            mFrame.offset(((mWidth - width) / 2), 0);
-        }
+        final int height = mHeight;
+        final int width = (int) (getAspectRatio() * mHeight);
+        final int px = (mWidth - width) / 2;
         final int buttonHeight = Math.round((horizontal ? width : height) * mButtonHeightFraction);
+        final int left = mPadding.left + bounds.left;
+        final int top = bounds.bottom - mPadding.bottom - height;
 
         mFramePaint.setStrokeWidth(0);
         mFramePaint.setStyle(Paint.Style.FILL_AND_STROKE);
         mBatteryPaint.setStrokeWidth(0);
         mBatteryPaint.setStyle(Paint.Style.FILL_AND_STROKE);
+
+        mFrame.set(left, top, width + left, height + top);
+        mFrame.offset(px, 0);
 
         // button-frame: area above the battery body
         if (horizontal) {
@@ -432,11 +438,10 @@ public class BatteryMeterDrawableBase extends Drawable {
         if (mCharging) {
             // define the bolt shape
             // Shift right by 1px for maximal bolt-goodness
-            final float bl = mFrame.left + (mFrame.width() / (horizontal ? 9f : 4f)) + (horizontal ? 0 : 1);
-            final float bt = mFrame.top + (mFrame.height() /  (horizontal ? 4f : 6f)) + (horizontal ? 1 : 0);
-            final float br = mFrame.right - (mFrame.width() / (horizontal ? 6f : 4f)) + (horizontal ? 0 : 1);
-            final float bb = mFrame.bottom - (mFrame.height() / (horizontal ? 7f : 10f));
-
+            final float bl = mFrame.left + mFrame.width() / (horizontal ? 9f : (4f + 1));
+            final float bt = mFrame.top + mFrame.height() / (horizontal ? (4f + 1) : 6f);
+            final float br = mFrame.right - mFrame.width() / (horizontal ? 6f : (4f + 1));
+            final float bb = mFrame.bottom - mFrame.height() / (horizontal ? 7f : 10f);
             if (mBoltFrame.left != bl || mBoltFrame.top != bt
                     || mBoltFrame.right != br || mBoltFrame.bottom != bb) {
                 mBoltFrame.set(bl, bt, br, bb);
@@ -454,9 +459,7 @@ public class BatteryMeterDrawableBase extends Drawable {
                         mBoltFrame.top + mBoltPoints[1] * mBoltFrame.height());
             }
 
-            float boltPct = horizontal ?
-                        (mBoltFrame.left - levelTop) / (mBoltFrame.left - mBoltFrame.right) :
-                        (mBoltFrame.bottom - levelTop) / (mBoltFrame.bottom - mBoltFrame.top);
+            float boltPct = (mBoltFrame.bottom - levelTop) / (mBoltFrame.bottom - mBoltFrame.top);
             boltPct = Math.min(Math.max(boltPct, 0), 1);
             if (boltPct <= BOLT_LEVEL_THRESHOLD) {
                 // draw the bolt if opaque
@@ -489,9 +492,7 @@ public class BatteryMeterDrawableBase extends Drawable {
                         mPlusFrame.top + mPlusPoints[1] * mPlusFrame.height());
             }
 
-            float boltPct = horizontal ?
-                        (mPlusFrame.left - levelTop) / (mPlusFrame.left - mPlusFrame.right) :
-                        (mPlusFrame.bottom - levelTop) / (mPlusFrame.bottom - mPlusFrame.top);
+            float boltPct = (mPlusFrame.bottom - levelTop) / (mPlusFrame.bottom - mPlusFrame.top);
             boltPct = Math.min(Math.max(boltPct, 0), 1);
             if (boltPct <= BOLT_LEVEL_THRESHOLD) {
                 // draw the bolt if opaque
@@ -515,7 +516,7 @@ public class BatteryMeterDrawableBase extends Drawable {
                     (SINGLE_DIGIT_PERCENT ? single
                             : (mLevel == 100 ? full : nofull)));
             mTextHeight = -mTextPaint.getFontMetrics().ascent;
-            pctText = String.valueOf(SINGLE_DIGIT_PERCENT ? (level / 10) : (level != 100 ? level : ""));
+            pctText = String.valueOf(SINGLE_DIGIT_PERCENT ? (level / 10) : level != 100 ? level : "");
             pctX = mWidth * 0.5f;
             pctY = (mHeight + mTextHeight) * 0.47f;
             if (horizontal) {
@@ -558,44 +559,69 @@ public class BatteryMeterDrawableBase extends Drawable {
         }
     }
 
-    private void drawCircle(Canvas c) {
+    private void drawSquare(Canvas c) {
         final int level = mLevel;
-        final Rect bounds = getBounds();
+        final int height = mHeight;
+        final int width = (int) (getAspectRatio() * mHeight);
+        final int squareSize = Math.min(width, height);
+        float strokeWidth = squareSize / 6.5f;
+        float squareOffset = 8 * mContext.getResources().getDisplayMetrics().density + 0.5f;
 
         if (level == -1) return;
 
-        final int circleSize = Math.min(mWidth, mHeight);
-        float strokeWidth = circleSize / 6.5f;
-
-        mBoltPoints = loadPoints(mContext.getResources(), R.array.batterymeter_bolt_points);
+        // pad circle percentage to 100% once it reaches 97%
+        // for one, the circle looks odd with a too small gap,
+        // for another, some phones never reach 100% due to hardware design
+        int padLevel = level;
+        if (padLevel >= 97) {
+            padLevel = 100;
+        } else if (padLevel <= 3) {
+            // pad nearly invisible below 3% - looks odd
+            padLevel = 3;
+        }
 
         mFramePaint.setStrokeWidth(strokeWidth);
         mFramePaint.setStyle(Paint.Style.STROKE);
+
         mBatteryPaint.setStrokeWidth(strokeWidth);
         mBatteryPaint.setStyle(Paint.Style.STROKE);
-
-        if (mMeterStyle == BATTERY_STYLE_DOTTED_CIRCLE) {
-            mBatteryPaint.setPathEffect(mPathEffect);
-        } else {
-            mBatteryPaint.setPathEffect(null);
-        }
+        mBatteryPaint.setPathEffect(null);
 
         mFrame.set(
-                strokeWidth / 2.0f + mPadding.left,
-                strokeWidth / 2.0f,
-                circleSize - strokeWidth / 2.0f + mPadding.left,
-                circleSize - strokeWidth / 2.0f);
+                strokeWidth/2,
+                strokeWidth/2,
+                mWidth - strokeWidth/2,
+                mHeight - strokeWidth/2);
+
+        mSquareFrame.set(
+                -squareOffset,
+                -squareOffset,
+                mWidth + squareOffset,
+                mHeight + squareOffset);
 
         // set the battery charging color
         mBatteryPaint.setColor(batteryColorForLevel(level));
 
-        // draw thin gray ring first
-        c.drawArc(mFrame, 270, 360, false, mFramePaint);
+        // define the battery shape
+        mShapePath.reset();
+        final float radius = getRadiusRatio() * mHeight;
+        mShapePath.addRoundRect(mFrame, radius, radius, Direction.CW);
 
-        // draw colored arc representing charge level
-        if (level > 0) {
-            c.drawArc(mFrame, 270, 3.6f * level, false, mBatteryPaint);
+        // draw the battery shape background
+        c.drawPath(mShapePath, mFramePaint);
+
+        // draw the battery shape, clipped to charging level
+        mClipPath.reset();
+        if (padLevel == 100) {
+            mClipPath.addArc(mSquareFrame, 270, 360);
+        } else {
+            mClipPath.arcTo(mSquareFrame, 270, 3.6f * padLevel);
+            mClipPath.lineTo(mWidth/2, mHeight/2);
+            mClipPath.close();
         }
+
+        mShapePath.op(mClipPath, Path.Op.REVERSE_DIFFERENCE);
+        c.drawPath(mShapePath, mBatteryPaint);
 
         if (mCharging) {
             // define the bolt shape
@@ -621,8 +647,6 @@ public class BatteryMeterDrawableBase extends Drawable {
                         mBoltFrame.top + mBoltPoints[1] * mBoltFrame.height());
             }
 
-            // draw the bolt
-            c.drawPath(mBoltPath, mBoltPaint);
         } else if (mPowerSaveEnabled) {
             // define the plus shape
             final float pw = mFrame.width() * 2 / 3;
@@ -646,39 +670,134 @@ public class BatteryMeterDrawableBase extends Drawable {
                         mPlusFrame.left + mPlusPoints[0] * mPlusFrame.width(),
                         mPlusFrame.top + mPlusPoints[1] * mPlusFrame.height());
             }
-
-            // draw the plus
-            c.drawPath(mPlusPath, mPlusPaint);
         }
 
+        // calculate Y position for text
+        Rect bounds = new Rect();
+        mTextPaint.setTextSize(squareSize / 2f);
+        mWarningTextPaint.setTextSize(squareSize / 2f);
+        int px = (mWidth - width) / 2;
+        mTextPaint.getTextBounds("99", 0, "99".length(), bounds);
+        float x = squareSize / 2.0f + px;
+        float y = squareSize / 2.0f + (bounds.bottom - bounds.top) / 2.0f
+                - strokeWidth / 2.0f + mContext.getResources().getDisplayMetrics().density;
+        String pctText = null;
+
+        if (mCharging) {
+            c.drawPath(mBoltPath, mBoltPaint);
+        } else if (mPowerSaveEnabled) {
+            c.drawPath(mPlusPath, mPlusPaint);
+        } else {
+            // draw the percentage text
+            if (!mCharging && !mPowerSaveEnabled && level > mCriticalLevel
+                    && (mShowPercent && !(mLevel == 100))) {
+                mTextPaint.setColor(mBatteryPaint.getColor());
+                pctText = String.valueOf(SINGLE_DIGIT_PERCENT ? (level/10) : level);
+                c.drawText(pctText, x, y, mTextPaint);
+            } else if (!mCharging && !mPowerSaveEnabled) {
+                if (level <= mCriticalLevel) {
+                    // draw the warning text
+                    c.drawText(mWarningString, x, y, mWarningTextPaint);
+                }
+            }
+        }
+    }
+
+    private void drawCircle(Canvas c, boolean bigCircle) {
+        final int level = mLevel;
+        final Rect bounds = getBounds();
+
+        if (level == -1) return;
+
+        final int circleSize = Math.min(mWidth, mHeight);
+        float strokeWidth = circleSize / 6.5f;
+
+        mFramePaint.setStrokeWidth(strokeWidth);
+        mFramePaint.setStyle(Paint.Style.STROKE);
+
+        mBatteryPaint.setStrokeWidth(strokeWidth);
+        mBatteryPaint.setStyle(Paint.Style.STROKE);
+
+        if (mMeterStyle == BATTERY_STYLE_DOTTED_CIRCLE
+                || mMeterStyle == BATTERY_STYLE_BIG_DOTTED_CIRCLE) {
+            mBatteryPaint.setPathEffect(mPathEffect);
+        } else {
+            mBatteryPaint.setPathEffect(null);
+        }
+
+        mFrame.set(
+                strokeWidth / 2.0f + mPadding.left,
+                strokeWidth / 2.0f,
+                circleSize - strokeWidth / 2.0f + mPadding.left,
+                circleSize - strokeWidth / 2.0f);
+
+        // set the battery charging color
+        mBatteryPaint.setColor(batteryColorForLevel(level));
+
+        if (mCharging) {
+            // define the bolt shape
+            // Shift right by 1px for maximal bolt-goodness
+            final float bl = mFrame.left + mFrame.width() / 3.0f;
+            final float bt = mFrame.top + mFrame.height() / 3.4f;
+            final float br = mFrame.right - mFrame.width() / 4.0f;
+            final float bb = mFrame.bottom - mFrame.height() / 5.6f;
+            if (mBoltFrame.left != bl || mBoltFrame.top != bt
+                    || mBoltFrame.right != br || mBoltFrame.bottom != bb) {
+                mBoltFrame.set(bl, bt, br, bb);
+                mBoltPath.reset();
+                mBoltPath.moveTo(
+                        mBoltFrame.left + mBoltPoints[0] * mBoltFrame.width(),
+                        mBoltFrame.top + mBoltPoints[1] * mBoltFrame.height());
+                for (int i = 2; i < mBoltPoints.length; i += 2) {
+                    mBoltPath.lineTo(
+                            mBoltFrame.left + mBoltPoints[i] * mBoltFrame.width(),
+                            mBoltFrame.top + mBoltPoints[i + 1] * mBoltFrame.height());
+                }
+                mBoltPath.lineTo(
+                        mBoltFrame.left + mBoltPoints[0] * mBoltFrame.width(),
+                        mBoltFrame.top + mBoltPoints[1] * mBoltFrame.height());
+            }
+            c.drawPath(mBoltPath, mBoltPaint);
+        }
+
+        // draw thin gray ring first
+        c.drawArc(mFrame, 270, 360, false, mFramePaint);
+
+        // draw colored arc representing charge level
+        if (level > 0) {
+            c.drawArc(mFrame, 270, 3.6f * level, false, mBatteryPaint);
+        }
+
+        final int height = mHeight;
+        final int width = (int) (getAspectRatio() * mHeight);
+        // compute percentage text
         float pctX = 0, pctY = 0;
         String pctText = null;
-        if (!mCharging && !mPowerSaveEnabled && level > mCriticalLevel && mShowPercent) {
-            mTextPaint.setColor(mBoltPaint.getColor());
-            mTextPaint.setTextSize(mHeight *
-                    (SINGLE_DIGIT_PERCENT ? 0.38f
-                            : (mLevel == 100 ? 0.75f : 0.5f)));
+        if (!mCharging) {
+            mTextPaint.setColor(getColorForLevel(level));
+            final float full = 0.30f;
+            final float nofull =  0.48f;
+            final float single =  0.86f;
+            mTextPaint.setTextSize(height *
+                    (SINGLE_DIGIT_PERCENT ? single
+                            : (mLevel == 100 ? full : nofull)));
             mTextHeight = -mTextPaint.getFontMetrics().ascent;
-            pctText = String.valueOf(SINGLE_DIGIT_PERCENT ? (level / 10) :  (level != 100 ? level : ""));
+            pctText = level > mCriticalLevel ? (String.valueOf(SINGLE_DIGIT_PERCENT ? (level / 10) : (level != 100 && mCircleShowPercentInside ? level : "")))
+                    : mWarningString;
             pctX = mWidth * 0.5f;
             pctY = (mHeight + mTextHeight) * 0.47f;
-            c.drawText(pctText, pctX, pctY, mTextPaint);
-        }
 
-        if (!mCharging && !mPowerSaveEnabled) {
-            if (level <= mCriticalLevel) {
-                // draw the warning text
-               float x = circleSize / 2.0f + mPadding.left;
-               float y = circleSize / 2.0f + (bounds.bottom - bounds.top) / 2.0f
-                    - strokeWidth / 2.0f + mContext.getResources().getDisplayMetrics().density;
-                c.drawText(mWarningString, x, y, mWarningTextPaint);
-            }
+            c.drawText(pctText, pctX, pctY, mTextPaint);
         }
     }
 
     // Some stuff required by Drawable.
     @Override
     public void setAlpha(int alpha) {
+    }
+
+    public void showPercentInsideCircle(boolean show) {
+        mCircleShowPercentInside = show;
     }
 
     @Override

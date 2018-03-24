@@ -49,6 +49,7 @@ import static android.view.WindowManager.LayoutParams.TYPE_QS_DIALOG;
 import static android.view.WindowManager.LayoutParams.TYPE_SCREENSHOT;
 import static android.view.WindowManager.LayoutParams.TYPE_SEARCH_BAR;
 import static android.view.WindowManager.LayoutParams.TYPE_SECURE_SYSTEM_OVERLAY;
+import static android.view.WindowManager.LayoutParams.TYPE_SLIM_RECENTS;
 import static android.view.WindowManager.LayoutParams.TYPE_STATUS_BAR;
 import static android.view.WindowManager.LayoutParams.TYPE_STATUS_BAR_PANEL;
 import static android.view.WindowManager.LayoutParams.TYPE_STATUS_BAR_SUB_PANEL;
@@ -617,8 +618,6 @@ public interface WindowManagerPolicy {
          * @param listener callback to call when display can be turned off
          */
         void screenTurningOff(ScreenOffListener listener);
-
-        void addSystemUIVisibilityFlag(int flags);
     }
 
     public interface PointerEventListener {
@@ -852,8 +851,10 @@ public interface WindowManagerPolicy {
                 // changes the device volume
                 return  21;
             case TYPE_SYSTEM_OVERLAY:
+            case TYPE_SLIM_RECENTS:
                 // the on-screen volume indicator and controller shown when the user
                 // changes the device volume
+                // slim recents panel, navbar shows atop this to keep visible buttons
                 return  canAddInternalSystemWindow ? 22 : 11;
             case TYPE_NAVIGATION_BAR:
                 // the navigation bar, if available, shows atop most things
@@ -1750,4 +1751,9 @@ public interface WindowManagerPolicy {
      * @return true if ready; false otherwise.
      */
     boolean canDismissBootAnimation();
+
+    /**
+     * Call screen record from WindowManager.
+     */
+    public void screenRecordAction(int mode);
 }

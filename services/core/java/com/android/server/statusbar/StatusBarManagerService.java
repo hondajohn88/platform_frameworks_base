@@ -578,6 +578,16 @@ public class StatusBarManagerService extends IStatusBarService.Stub {
     }
 
     @Override
+    public void toggleCameraFlash() {
+        if (mBar != null) {
+            try {
+                mBar.toggleCameraFlash();
+            } catch (RemoteException ex) {
+            }
+        }
+    }
+
+    @Override
     public void disable(int what, IBinder token, String pkg) {
         disableForUser(what, token, pkg, mCurrentUserId);
     }
@@ -1108,6 +1118,15 @@ public class StatusBarManagerService extends IStatusBarService.Stub {
 
     public String[] getStatusBarIcons() {
         return mContext.getResources().getStringArray(R.array.config_statusBarIcons);
+    }
+
+    @Override
+    public void setAutoRotate(boolean enabled) {
+        if (mBar != null) {
+            try {
+                mBar.setAutoRotate(enabled);
+            } catch (RemoteException ex) {}
+        }
     }
 
     // ================================================================================

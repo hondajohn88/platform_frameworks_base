@@ -1543,4 +1543,28 @@ public final class PowerManager {
             };
         }
     }
+
+    /**
+     * @hide
+     */
+    public String getSeenWakeLocks() {
+        try {
+            if (mService != null) {
+                return mService.getSeenWakeLocks();
+            }
+        } catch (RemoteException e) {
+        }
+        return null;
+    }
+
+    /**
+     *  powerHint used by some Nvidia devices
+     *  Ignores any bytes of data beyond the first
+     *  @hide
+     */
+    public void powerHint(int hintId, int[] data) {
+        try {
+            mService.powerHint(hintId, data.length > 0 ? data[0] : 0);
+        } catch (RemoteException dummy) {}
+    }
 }

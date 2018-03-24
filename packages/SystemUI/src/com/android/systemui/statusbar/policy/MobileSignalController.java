@@ -15,16 +15,12 @@
  */
 package com.android.systemui.statusbar.policy;
 
-import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.database.ContentObserver;
 import android.net.NetworkCapabilities;
-import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.UserHandle;
-import android.provider.Settings;
 import android.provider.Settings.Global;
 import android.telephony.PhoneStateListener;
 import android.telephony.ServiceState;
@@ -49,7 +45,7 @@ import com.android.systemui.statusbar.policy.NetworkControllerImpl.SubscriptionD
 import java.io.PrintWriter;
 import java.util.BitSet;
 import java.util.Objects;
-
+import java.util.List;
 
 public class MobileSignalController extends SignalController<
         MobileSignalController.MobileState, MobileSignalController.MobileIconGroup> {
@@ -75,9 +71,6 @@ public class MobileSignalController extends SignalController<
     private SignalStrength mSignalStrength;
     private MobileIconGroup mDefaultIcons;
     private Config mConfig;
-
-    // show lte/4g switch
-    private boolean mShowLteFourGee;
 
     // TODO: Reduce number of vars passed in, if we have the NetworkController, probably don't
     // need listener lists anymore.
@@ -115,45 +108,6 @@ public class MobileSignalController extends SignalController<
                 updateTelephony();
             }
         };
-
-        Handler mHandler = new Handler();
-        SettingsObserver settingsObserver = new SettingsObserver(mHandler);
-        settingsObserver.observe();
-    }
-
-    protected class SettingsObserver extends ContentObserver {
-        SettingsObserver(Handler handler) {
-            super(handler);
-        }
-
-        void observe() {
-           ContentResolver resolver = mContext.getContentResolver();
-           resolver.registerContentObserver(Settings.System.getUriFor(
-                  Settings.System.SHOW_LTE_FOURGEE),
-                  false, this, UserHandle.USER_ALL);
-           updateSettings();
-        }
-
-        @Override
-        public void onChange(boolean selfChange, Uri uri) {
-            super.onChange(selfChange, uri);
-            if (uri.equals(Settings.System.getUriFor(
-                    Settings.System.SHOW_LTE_FOURGEE))) {
-                    mShowLteFourGee = Settings.System.getIntForUser(
-                            mContext.getContentResolver(),
-                            Settings.System.SHOW_LTE_FOURGEE,
-                            0, UserHandle.USER_CURRENT) == 1;
-                    mapIconSets();
-                    updateTelephony();
-            }
-            updateSettings();
-        }
-    }
-
-    private void updateSettings() {
-        ContentResolver resolver = mContext.getContentResolver();
-        boolean mShowLteFourGee = Settings.System.getIntForUser(resolver,
-                Settings.System.SHOW_LTE_FOURGEE, 0, UserHandle.USER_CURRENT) == 1;
     }
 
     public void setConfiguration(Config config) {
@@ -261,8 +215,7 @@ public class MobileSignalController extends SignalController<
         }
         mNetworkToIconLookup.put(TelephonyManager.NETWORK_TYPE_HSPAP, hGroup);
 
-        if (Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.SHOW_LTE_FOURGEE, 0) == 1) {
+        if (mConfig.show4gForLte) {
             mNetworkToIconLookup.put(TelephonyManager.NETWORK_TYPE_LTE, TelephonyIcons.FOUR_G);
             if (mConfig.hideLtePlus) {
                 mNetworkToIconLookup.put(TelephonyManager.NETWORK_TYPE_LTE_CA,
@@ -352,8 +305,26 @@ public class MobileSignalController extends SignalController<
         int typeIcon = showDataIcon ? icons.mDataType : 0;
         callback.setMobileDataIndicators(statusIcon, qsIcon, typeIcon, qsTypeIcon,
                 activityIn, activityOut, dataContentDescription, description, icons.mIsWide,
-                mSubscriptionInfo.getSubscriptionId(), mCurrentState.roaming);
+                mSubscriptionInfo.getSubscriptionId(), mCurrentState.roaming, isMobileIms());
     }
+
+    private boolean isMobileIms() {
+
+        List<SubscriptionInfo> subInfos = SubscriptionManager.from(mContext)
+                        .getActiveSubscriptionInfoList();
+        if (subInfos != null) {
+            for (SubscriptionInfo subInfo: subInfos) {
+                int subId = subInfo.getSubscriptionId();
+                if (mPhone != null
+                        && mPhone.isImsRegisteredForSubscriber(subId)) {
+                    return true;
+                }
+            }
+        } else {
+            Log.e(mTag, "Invalid SubscriptionInfo");
+        }
+        return false;
+      }
 
     @Override
     protected MobileState cleanState() {

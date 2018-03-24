@@ -4567,17 +4567,13 @@ message MetricsEvent {
     // OS: O MR
     COLOR_MODE_SETTINGS = 1143;
 
-    // Quick setting tiles
-    CUSTOM_QUICK_TILES = 1144;
-
-    // Atomic-OS Laboratory
-    LABORATORY = 1145;
-    OMNI_QS_WEATHER = 1151;
-    OMNI_QS_WEATHER_DETAILS = 1152;
-
     // ---- End O-MR1 Constants, all O-MR1 constants go above this line ----
 
     // Add new aosp constants above this line.
     // END OF AOSP CONSTANTS
+
+    // Validus constants
+    VALIDUS = 1500;
+    WOLVESDEN = 1501;
   }
 }

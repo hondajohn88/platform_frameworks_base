@@ -99,6 +99,9 @@ public class PowerUI extends SystemUI {
         resolver.registerContentObserver(Settings.Global.getUriFor(
                 Settings.Global.LOW_POWER_MODE_TRIGGER_LEVEL),
                 false, obs, UserHandle.USER_ALL);
+        resolver.registerContentObserver(Settings.System.getUriFor(
+                Settings.System.ALERT_ON_CHARGED_LEVEL),
+                false, obs, UserHandle.USER_ALL);
         updateBatteryWarningLevels();
         mReceiver.init();
 
@@ -140,6 +143,10 @@ public class PowerUI extends SystemUI {
         mLowBatteryAlertCloseLevel = mLowBatteryReminderLevels[0]
                 + mContext.getResources().getInteger(
                         com.android.internal.R.integer.config_lowBatteryCloseWarningBump);
+
+        int level = Settings.System.getIntForUser(resolver,
+                Settings.System.ALERT_ON_CHARGED_LEVEL, -1, UserHandle.USER_CURRENT);
+        mWarnings.setChargedLevel(level);
     }
 
     /**
@@ -239,19 +246,14 @@ public class PowerUI extends SystemUI {
                 } else {
                     mWarnings.updateLowBatteryWarning();
                 }
-
-                if (plugged && !oldPlugged
+                if ((plugged && !oldPlugged
                         && (mPlugType == BatteryManager.BATTERY_PLUGGED_AC
-                            || mPlugType == BatteryManager.BATTERY_PLUGGED_USB)) {
-                    // "Wireless charging started" sound is handled by
-                    // {@link com.android.server.power.Notifier#onWirelessChargingStarted()}
+                            || mPlugType == BatteryManager.BATTERY_PLUGGED_USB))
+                            || (!plugged && oldPlugged
+                            && (oldPlugType == BatteryManager.BATTERY_PLUGGED_AC
+                            || oldPlugType == BatteryManager.BATTERY_PLUGGED_USB))) {
+                    mWarnings.setPluggedState(plugged);
                     mWarnings.notifyBatteryPlugged();
-                }
-
-                if (!plugged && oldPlugged
-                        && (oldPlugType == BatteryManager.BATTERY_PLUGGED_AC
-                            || oldPlugType == BatteryManager.BATTERY_PLUGGED_USB)) {
-                    mWarnings.notifyBatteryUnplugged();
                 }
             } else if (Intent.ACTION_SCREEN_OFF.equals(action)) {
                 mScreenOffTime = SystemClock.elapsedRealtime();
@@ -419,7 +421,6 @@ public class PowerUI extends SystemUI {
         void dismissLowBatteryWarning();
         void showLowBatteryWarning(boolean playSound);
         void notifyBatteryPlugged();
-        void notifyBatteryUnplugged();
         void dismissInvalidChargerWarning();
         void showInvalidChargerWarning();
         void updateLowBatteryWarning();
@@ -429,6 +430,8 @@ public class PowerUI extends SystemUI {
         void showThermalShutdownWarning();
         void dump(PrintWriter pw);
         void userSwitched();
+        void setChargedLevel(int level);
+        void setPluggedState(boolean plugged);
     }
 }
 

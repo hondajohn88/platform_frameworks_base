@@ -97,7 +97,7 @@ public class SoundTile extends QSTileImpl<BooleanState> {
                 break;
             case AudioManager.RINGER_MODE_VIBRATE:
                 newState = AudioManager.RINGER_MODE_SILENT;
-                mZenController.setZen(Global.ZEN_MODE_ALARMS, null, TAG);
+                mZenController.setZen(Global.ZEN_MODE_NO_INTERRUPTIONS, null, TAG);
                 break;
             case AudioManager.RINGER_MODE_SILENT:
                 newState = AudioManager.RINGER_MODE_NORMAL;
@@ -142,6 +142,6 @@ public class SoundTile extends QSTileImpl<BooleanState> {
 
     @Override
     public int getMetricsCategory() {
-        return MetricsEvent.CUSTOM_QUICK_TILES;
+        return MetricsEvent.VALIDUS;
     }
 }

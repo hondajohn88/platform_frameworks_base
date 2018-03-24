@@ -1023,12 +1023,6 @@
         android:description="@string/permgroupdesc_sensors"
         android:priority="800" />
 
-    <!-- Allows an application to override the power key action
-         @hide <p>Not for use by third-party applications.
-    -->
-    <permission android:name="android.permission.PREVENT_POWER_KEY"
-        android:protectionLevel="signature|privileged" />
-
     <!-- Allows an application to access data from sensors that the user uses to
          measure what is happening inside his/her body, such as heart rate.
          <p>Protection level: dangerous -->
@@ -1175,6 +1169,11 @@
          <p>Not for use by third-party applications. -->
     <permission android:name="android.permission.MODIFY_CELL_BROADCASTS"
                 android:protectionLevel="signature|privileged" />
+
+    <!-- Allows an application to authorize outgoing SMS messages.
+         @hide -->
+    <permission android:name="com.qti.permission.AUTHORIZE_OUTGOING_SMS"
+                android:protectionLevel="signature" />
 
     <!-- =============================================================== -->
     <!-- Permissions for setting the device alarm                        -->
@@ -3581,7 +3580,12 @@
         android:label="@string/permlab_toggleNavigationEditor"
         android:description="@string/permdesc_toggleNavigationEditor"
         android:protectionLevel="signatureOrSystem" />
- 
+
+    <!-- Allows an application to override the power key action
+         @hide <p>Not for use by third-party applications. -->
+    <permission android:name="android.permission.PREVENT_POWER_KEY"
+        android:protectionLevel="signature|privileged" />
+
     <application android:process="system"
                  android:persistent="true"
                  android:hasCode="false"

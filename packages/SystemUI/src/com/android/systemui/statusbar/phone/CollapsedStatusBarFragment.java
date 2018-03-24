@@ -23,7 +23,9 @@ import android.annotation.Nullable;
 import android.app.Fragment;
 import android.app.StatusBarManager;
 import android.content.ContentResolver;
+import android.content.Context;
 import android.database.ContentObserver;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.UserHandle;
@@ -43,13 +45,19 @@ import com.android.systemui.SysUiServiceProvider;
 import com.android.systemui.statusbar.CommandQueue;
 import com.android.systemui.statusbar.SignalClusterView;
 import com.android.systemui.statusbar.phone.StatusBarIconController.DarkIconManager;
-import com.android.systemui.statusbar.phone.TickerView;
-import com.android.systemui.statusbar.policy.Clock;
 import com.android.systemui.statusbar.policy.DarkIconDispatcher;
+import com.android.systemui.statusbar.phone.TickerView;
 import com.android.systemui.statusbar.policy.EncryptionHelper;
 import com.android.systemui.statusbar.policy.KeyguardMonitor;
 import com.android.systemui.statusbar.policy.NetworkController;
 import com.android.systemui.statusbar.policy.NetworkController.SignalCallback;
+
+import android.widget.ImageView;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuff.Mode;
 
 /**
  * Contains the collapsed status bar and handles hiding/showing based on disable flags
@@ -69,27 +77,47 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
     private StatusBar mStatusBarComponent;
     private DarkIconManager mDarkIconManager;
     private SignalClusterView mSignalClusterView;
-
-    private View mClock;
-    private View mLeftClock;
-
-    // Statusbar Weather Image
-    private View mWeatherImageView;
-    private View mWeatherTextView;
-    private int mShowWeather;
+    private LinearLayout mCenterClockLayout;
 
     private int mTickerEnabled;
     private TickerObserver mTickerObserver;
     private ContentResolver mContentResolver;
     private View mTickerViewFromStub;
 
-    // Custom Carrier
-    private View mCustomCarrierLabel;
-    private int mShowCarrierLabel;
-
-    // AOS Status Logo
-    private View mAOSLogo;
+    // Validus logo
+    private ImageView mValidusLogo;
+    private int mLogoStyle;
     private boolean mShowLogo;
+    private int mLogoColor;
+    private final Handler mHandler = new Handler();
+
+    private class ValidusSettingsObserver extends ContentObserver {
+        ValidusSettingsObserver(Handler handler) {
+            super(handler);
+        }
+
+        void observe() {
+            getContext().getContentResolver().registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.STATUS_BAR_LOGO),
+                    false, this, UserHandle.USER_ALL);
+            getContext().getContentResolver().registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.STATUS_BAR_LOGO_STYLE),
+                    false, this, UserHandle.USER_ALL);
+            getContext().getContentResolver().registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.STATUS_BAR_LOGO_COLOR),
+                    false, this, UserHandle.USER_ALL);
+        }
+
+        @Override
+        public void onChange(boolean selfChange, Uri uri) {
+            if ((uri.equals(Settings.System.getUriFor(Settings.System.STATUS_BAR_LOGO))) ||
+                (uri.equals(Settings.System.getUriFor(Settings.System.STATUS_BAR_LOGO_STYLE))) ||
+                (uri.equals(Settings.System.getUriFor(Settings.System.STATUS_BAR_LOGO_COLOR)))){
+                updateSettings(true);
+            }
+        }
+    }
+    private ValidusSettingsObserver mValidusSettingsObserver = new ValidusSettingsObserver(mHandler);
 
     private SignalCallback mSignalCallback = new SignalCallback() {
         @Override
@@ -105,6 +133,7 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
         mKeyguardMonitor = Dependency.get(KeyguardMonitor.class);
         mNetworkController = Dependency.get(NetworkController.class);
         mStatusBarComponent = SysUiServiceProvider.getComponent(getContext(), StatusBar.class);
+        mValidusSettingsObserver.observe();
         mTickerObserver = new TickerObserver(new Handler());
     }
 
@@ -121,54 +150,17 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
 
         protected void observe() {
             super.observe();
-            mContentResolver.registerContentObserver(
-                    Settings.System.getUriFor(Settings.System.STATUS_BAR_SHOW_TICKER),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(
-                    Settings.System.getUriFor(Settings.System.STATUS_BAR_CARRIER),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUS_BAR_CLOCK),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUSBAR_CLOCK_STYLE),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUS_BAR_CLOCK_SECONDS),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUSBAR_CLOCK_AM_PM_STYLE),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUSBAR_CLOCK_DATE_DISPLAY),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUSBAR_CLOCK_DATE_STYLE),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUSBAR_CLOCK_DATE_FORMAT),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUSBAR_CLOCK_DATE_POSITION),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUS_BAR_SHOW_WEATHER_TEMP),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                     Settings.System.STATUS_BAR_LOGO),
-                     false, this, UserHandle.USER_ALL);
+            getContext().getContentResolver().registerContentObserver(
+                    Settings.System.getUriFor(Settings.System.STATUS_BAR_SHOW_TICKER), false, this,
+                    UserHandle.USER_ALL);
         }
 
         @Override
         protected void update() {
             mTickerEnabled = Settings.System.getIntForUser(mContentResolver,
-                    Settings.System.STATUS_BAR_SHOW_TICKER, 0,
+                    Settings.System.STATUS_BAR_SHOW_TICKER, 1,
                     UserHandle.USER_CURRENT);
             initTickerView();
-            updateSettings(true);
-            ((Clock)mClock).updateSettings();
-            ((Clock)mLeftClock).updateSettings();
-            mStatusBarComponent.updateQsbhClock();
         }
     }
 
@@ -189,13 +181,9 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
         Dependency.get(StatusBarIconController.class).addIconGroup(mDarkIconManager);
         mSystemIconArea = mStatusBar.findViewById(R.id.system_icon_area);
         mSignalClusterView = mStatusBar.findViewById(R.id.signal_cluster);
-        mClock = mStatusBar.findViewById(R.id.clock);
-        mLeftClock = mStatusBar.findViewById(R.id.left_clock);
+        mCenterClockLayout = (LinearLayout) mStatusBar.findViewById(R.id.center_clock_layout);
         Dependency.get(DarkIconDispatcher.class).addDarkReceiver(mSignalClusterView);
-        mCustomCarrierLabel = mStatusBar.findViewById(R.id.statusbar_carrier_text);
-        mWeatherTextView = mStatusBar.findViewById(R.id.weather_temp);
-        mWeatherImageView = mStatusBar.findViewById(R.id.weather_image);
-        mAOSLogo = mStatusBar.findViewById(R.id.status_bar_logo);
+        mValidusLogo = mStatusBar.findViewById(R.id.status_bar_logo);
         updateSettings(false);
         // Default to showing until we know otherwise.
         showSystemIconArea(false);
@@ -203,6 +191,7 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
 
         mTickerObserver.observe();
         mTickerObserver.update();
+
     }
 
     @Override
@@ -264,10 +253,8 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
         if ((diff1 & DISABLE_NOTIFICATION_ICONS) != 0) {
             if ((state1 & DISABLE_NOTIFICATION_ICONS) != 0) {
                 hideNotificationIconArea(animate);
-                hideCarrierName(animate);
             } else {
                 showNotificationIconArea(animate);
-                showCarrierName(animate);
             }
         }
     }
@@ -302,41 +289,27 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
 
     public void hideSystemIconArea(boolean animate) {
         animateHide(mSystemIconArea, animate, true);
+        animateHide(mCenterClockLayout, animate, true);
     }
 
     public void showSystemIconArea(boolean animate) {
         animateShow(mSystemIconArea, animate);
+        animateShow(mCenterClockLayout, animate);
     }
 
     public void hideNotificationIconArea(boolean animate) {
         animateHide(mNotificationIconAreaInner, animate, true);
         if (mShowLogo) {
-            animateHide(mAOSLogo, animate, true);
-        }
-        if (((Clock)mLeftClock).isEnabled()) {
-            animateHide(mLeftClock, animate, true);
+            animateHide(mValidusLogo, animate, true);
+        animateHide(mCenterClockLayout, animate, true);
         }
     }
 
     public void showNotificationIconArea(boolean animate) {
         animateShow(mNotificationIconAreaInner, animate);
         if (mShowLogo) {
-            animateShow(mAOSLogo, animate);
-        }
-        if (((Clock)mLeftClock).isEnabled()) {
-            animateShow(mLeftClock, animate);
-        }
-    }
-
-    public void hideCarrierName(boolean animate) {
-        if (mCustomCarrierLabel != null) {
-            animateHide(mCustomCarrierLabel, animate, false);
-        }
-    }
-
-    public void showCarrierName(boolean animate) {
-        if (mCustomCarrierLabel != null) {
-            setCarrierLabel(animate);
+            animateShow(mValidusLogo, animate);
+        animateShow(mCenterClockLayout, animate);
         }
     }
 
@@ -414,36 +387,75 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
                     mTickerEnabled, getContext(), mStatusBar, tickerView, tickerIcon, mTickerViewFromStub);
         } else {
             mStatusBarComponent.disableTicker();
-            }
-        }
-
-    public void updateSettings(boolean animate) {
-        mShowCarrierLabel = Settings.System.getIntForUser(
-                getContext().getContentResolver(), Settings.System.STATUS_BAR_CARRIER, 1,
-                UserHandle.USER_CURRENT);
-        setCarrierLabel(animate);
-        mShowWeather = Settings.System.getIntForUser(
-                getContext().getContentResolver(), Settings.System.STATUS_BAR_SHOW_WEATHER_TEMP, 0,
-                UserHandle.USER_CURRENT);
-        mShowLogo = Settings.System.getIntForUser(
-                getContext().getContentResolver(), Settings.System.STATUS_BAR_LOGO, 0,
-                UserHandle.USER_CURRENT) == 1;
-        if (mNotificationIconAreaInner != null) {
-            if (mShowLogo) {
-                if (mNotificationIconAreaInner.getVisibility() == View.VISIBLE) {
-                    animateShow(mAOSLogo, animate);
-                }
-            } else {
-                animateHide(mAOSLogo, animate, false);
-            }
         }
     }
 
-    private void setCarrierLabel(boolean animate) {
-        if (mShowCarrierLabel == 2 || mShowCarrierLabel == 3) {
-            animateShow(mCustomCarrierLabel, animate);
-        } else {
-            animateHide(mCustomCarrierLabel, animate, false);
+    public void updateSettings(boolean animate) {
+        Drawable logo = null;
+
+        if (mStatusBar == null) return;
+
+        if (getContext() == null) {
+            return;
+        }
+
+        mShowLogo = Settings.System.getIntForUser(
+                getContext().getContentResolver(), Settings.System.STATUS_BAR_LOGO, 0,
+                UserHandle.USER_CURRENT) == 1;
+        mLogoColor = Settings.System.getIntForUser(
+                getContext().getContentResolver(), Settings.System.STATUS_BAR_LOGO_COLOR, 0xff009688,
+                UserHandle.USER_CURRENT);
+        mLogoStyle = Settings.System.getIntForUser(
+                getContext().getContentResolver(), Settings.System.STATUS_BAR_LOGO_STYLE, 0,
+                UserHandle.USER_CURRENT);
+
+        switch(mLogoStyle) {
+                // GZR Skull
+            case 1:
+                logo = getContext().getDrawable(R.drawable.status_bar_gzr_skull_logo);
+                break;
+                // GZR Circle
+            case 2:
+                logo = getContext().getDrawable(R.drawable.status_bar_gzr_circle_logo);
+                break;
+                // GZR Clown
+            case 3:
+                logo = getContext().getDrawable(R.drawable.status_bar_clown_logo);
+                break;
+                // Running Wolf
+            case 4:
+                logo = getContext().getDrawable(R.drawable.status_bar_running_wolf_logo);
+                break;
+                // Oreo Wolf
+            case 5:
+                logo = getContext().getDrawable(R.drawable.status_bar_oreo_wolf_logo);
+                break;
+                // Default
+            case 0:
+            default:
+                logo = getContext().getDrawable(R.drawable.status_bar_logo);
+                break;
+        }
+
+        if (mValidusLogo != null) {
+            if (logo == null) {
+                // Something wrong. Do not show anything
+                mValidusLogo.setImageDrawable(logo);
+                return;
+            }
+
+            mValidusLogo.setImageDrawable(logo);
+            mValidusLogo.setColorFilter(mLogoColor, PorterDuff.Mode.MULTIPLY);
+        }
+
+        if (mNotificationIconAreaInner != null) {
+            if (mShowLogo) {
+                if (mNotificationIconAreaInner.getVisibility() == View.VISIBLE) {
+                    animateShow(mValidusLogo, animate);
+                }
+            } else {
+                animateHide(mValidusLogo, animate, false);
+            }
         }
     }
 }
