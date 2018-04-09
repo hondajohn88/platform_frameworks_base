@@ -167,6 +167,17 @@ public class TelecomManager {
             "android.telecom.action.DEFAULT_DIALER_CHANGED";
 
     /**
+     *@hide Broadcast intent action indicating the call type(CS call or Non-CS call).
+     * The string extra {@link #EXTRA_CALL_TYPE_CS} will contain the
+     * boolean value true if call is CS call else false.
+     *
+     * @see #EXTRA_CALL_TYPE_CS
+     */
+    public static final String ACTION_CALL_TYPE =
+            "codeaurora.telecom.action.CALL_TYPE";
+
+
+    /**
      * Extra value used to provide the package name for {@link #ACTION_CHANGE_DEFAULT_DIALER}.
      */
     public static final String EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME =
@@ -304,6 +315,13 @@ public class TelecomManager {
      */
     public static final String EXTRA_CALL_TECHNOLOGY_TYPE =
             "android.telecom.extra.CALL_TECHNOLOGY_TYPE";
+
+    /**
+     *@hide  Extra value used to provide the call type for {@link #ACTION_CALL_TYPE}.
+     */
+    public static final String EXTRA_CALL_TYPE_CS =
+            "codeaurora.telecom.extra.CALL_TYPE_CS";
+
 
     /**
      * An optional {@link android.content.Intent#ACTION_CALL} intent extra denoting the
@@ -580,6 +598,14 @@ public class TelecomManager {
     @SystemApi
     public static final String EXTRA_CALL_BACK_INTENT =
             "android.telecom.extra.CALL_BACK_INTENT";
+
+    /**
+     * The boolean indicated by this extra controls whether or not a call is eligible to undergo
+     * assisted dialing. This extra is stored under {@link #EXTRA_OUTGOING_CALL_EXTRAS}.
+     * @hide
+     */
+    public static final String EXTRA_USE_ASSISTED_DIALING =
+            "android.telecom.extra.USE_ASSISTED_DIALING";
 
     /**
      * The following 4 constants define how properties such as phone numbers and names are

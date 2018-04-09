@@ -74,7 +74,6 @@ import com.android.server.dreams.DreamManagerService;
 import com.android.server.emergency.EmergencyAffordanceService;
 import com.android.server.fingerprint.FingerprintService;
 import com.android.server.hdmi.HdmiControlService;
-import com.android.server.gesture.GestureService;
 import com.android.server.input.InputManagerService;
 import com.android.server.job.JobSchedulerService;
 import com.android.server.lights.LightsService;
@@ -206,6 +205,8 @@ public final class SystemServer {
             "com.android.server.autofill.AutofillManagerService";
     private static final String TIME_ZONE_RULES_MANAGER_SERVICE_CLASS =
             "com.android.server.timezone.RulesManagerService$Lifecycle";
+    private static final String FONT_SERVICE_CLASS =
+            "com.android.server.FontService$Lifecycle";
 
     private static final String PERSISTENT_DATA_BLOCK_PROP = "ro.frp.pst";
 
@@ -639,6 +640,11 @@ public final class SystemServer {
 
         traceEnd();
 
+        // Manages fonts
+        traceBeginAndSlog("StartFontService");
+        mSystemServiceManager.startService(FONT_SERVICE_CLASS);
+        traceEnd();
+
         // The sensor service needs access to package manager service, app ops
         // service, and permissions service, therefore we start it after them.
         // Start sensor service in a separate thread. Completion should be checked
@@ -898,7 +904,6 @@ public final class SystemServer {
         CountryDetectorService countryDetector = null;
         ILockSettings lockSettings = null;
         MediaRouterService mediaRouter = null;
-        GestureService gestureService = null;
 
         // Bring up services needed for UI.
         if (mFactoryTestMode != FactoryTest.FACTORY_TEST_LOW_LEVEL) {
@@ -1075,38 +1080,35 @@ public final class SystemServer {
                 }
                 traceEnd();
 
+                // Wifi Service must be started first for wifi-related services.
+                traceBeginAndSlog("StartWifi");
+                mSystemServiceManager.startService(WIFI_SERVICE_CLASS);
+                traceEnd();
+                traceBeginAndSlog("StartWifiScanning");
+                mSystemServiceManager.startService(
+                        "com.android.server.wifi.scanner.WifiScanningService");
+                traceEnd();
+
+                if (!disableRtt) {
+                    traceBeginAndSlog("StartWifiRtt");
+                    mSystemServiceManager.startService("com.android.server.wifi.RttService");
+                    traceEnd();
+                }
+
                 if (context.getPackageManager().hasSystemFeature(
-                        PackageManager.FEATURE_WIFI)) {
-                    // Wifi Service must be started first for wifi-related services.
-                    traceBeginAndSlog("StartWifi");
-                    mSystemServiceManager.startService(WIFI_SERVICE_CLASS);
+                        PackageManager.FEATURE_WIFI_AWARE)) {
+                    traceBeginAndSlog("StartWifiAware");
+                    mSystemServiceManager.startService(WIFI_AWARE_SERVICE_CLASS);
                     traceEnd();
-                    traceBeginAndSlog("StartWifiScanning");
-                    mSystemServiceManager.startService(
-                            "com.android.server.wifi.scanner.WifiScanningService");
+                } else {
+                    Slog.i(TAG, "No Wi-Fi Aware Service (Aware support Not Present)");
+                }
+
+                if (context.getPackageManager().hasSystemFeature(
+                        PackageManager.FEATURE_WIFI_DIRECT)) {
+                    traceBeginAndSlog("StartWifiP2P");
+                    mSystemServiceManager.startService(WIFI_P2P_SERVICE_CLASS);
                     traceEnd();
-
-                    if (!disableRtt) {
-                        traceBeginAndSlog("StartWifiRtt");
-                        mSystemServiceManager.startService("com.android.server.wifi.RttService");
-                        traceEnd();
-                    }
-
-                    if (context.getPackageManager().hasSystemFeature(
-                            PackageManager.FEATURE_WIFI_AWARE)) {
-                        traceBeginAndSlog("StartWifiAware");
-                        mSystemServiceManager.startService(WIFI_AWARE_SERVICE_CLASS);
-                        traceEnd();
-                    } else {
-                        Slog.i(TAG, "No Wi-Fi Aware Service (Aware support Not Present)");
-                    }
-
-                    if (context.getPackageManager().hasSystemFeature(
-                            PackageManager.FEATURE_WIFI_DIRECT)) {
-                        traceBeginAndSlog("StartWifiP2P");
-                        mSystemServiceManager.startService(WIFI_P2P_SERVICE_CLASS);
-                        traceEnd();
-                    }
                 }
 
                 if (context.getPackageManager().hasSystemFeature(
@@ -1430,17 +1432,6 @@ public final class SystemServer {
                 traceEnd();
             }
 
-            if (context.getResources().getBoolean(
-                    com.android.internal.R.bool.config_enableGestureService)) {
-                try {
-                    Slog.i(TAG, "Gesture Sensor Service");
-                    gestureService = new GestureService(context, inputManager);
-                    ServiceManager.addService("gesture", gestureService);
-                } catch (Throwable e) {
-                    Slog.e(TAG, "Failure starting Gesture Sensor Service", e);
-                }
-            }
-
             if (mPackageManager.hasSystemFeature(PackageManager.FEATURE_PRINTING)) {
                 traceBeginAndSlog("StartPrintManager");
                 mSystemServiceManager.startService(PRINT_MANAGER_SERVICE_CLASS);
@@ -1675,14 +1666,6 @@ public final class SystemServer {
         traceEnd();
 
         mSystemServiceManager.setSafeMode(safeMode);
-
-        if (gestureService != null) {
-            try {
-                gestureService.systemReady();
-            } catch (Throwable e) {
-                reportWtf("making Gesture Sensor Service ready", e);
-            }
-        }
 
         // These are needed to propagate to the runnable below.
         final NetworkManagementService networkManagementF = networkManagement;

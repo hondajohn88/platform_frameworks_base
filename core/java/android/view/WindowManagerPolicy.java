@@ -575,6 +575,12 @@ public interface WindowManagerPolicy {
         public void reboot(boolean confirm);
         public void rebootSafeMode(boolean confirm);
 
+        /** @hide */
+        void reboot(String reason, boolean confirm);
+
+        /** @hide */
+        void rebootCustom(String reason, boolean confirm);
+
         /**
          * Return the window manager lock needed to correctly call "Lw" methods.
          */
@@ -617,8 +623,6 @@ public interface WindowManagerPolicy {
          * @param listener callback to call when display can be turned off
          */
         void screenTurningOff(ScreenOffListener listener);
-
-        void addSystemUIVisibilityFlag(int flags);
     }
 
     public interface PointerEventListener {
@@ -1750,4 +1754,9 @@ public interface WindowManagerPolicy {
      * @return true if ready; false otherwise.
      */
     boolean canDismissBootAnimation();
+
+    /**
+     * Call screen record from WindowManager.
+     */
+    void screenRecordAction(int mode);
 }

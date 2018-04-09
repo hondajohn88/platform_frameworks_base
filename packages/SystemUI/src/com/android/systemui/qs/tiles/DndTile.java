@@ -97,6 +97,11 @@ public class DndTile extends QSTileImpl<BooleanState> {
         }
     }
 
+    @Override
+    public boolean isDualTarget() {
+        return true;
+    }
+
     public static void setVisible(Context context, boolean visible) {
         Prefs.putBoolean(context, Prefs.Key.DND_TILE_VISIBLE, visible);
     }
@@ -235,7 +240,6 @@ public class DndTile extends QSTileImpl<BooleanState> {
     public void handleSetListening(boolean listening) {
         if (mListening == listening) return;
         mListening = listening;
-        if (mController == null) return;
         if (mListening) {
             mController.addCallback(mZenCallback);
             Prefs.registerListener(mContext, mPrefListener);

@@ -30,12 +30,12 @@ import static android.view.WindowManager.LayoutParams.TYPE_KEYGUARD_DIALOG;
 
 import java.util.ArrayList;
 
-import com.android.internal.utils.du.ActionConstants;
-import com.android.internal.utils.du.ActionHandler;
-import com.android.internal.utils.du.DUActionUtils;
-import com.android.internal.utils.du.Config;
-import com.android.internal.utils.du.Config.ActionConfig;
-import com.android.internal.utils.du.Config.ButtonConfig;
+import com.android.internal.util.hwkeys.ActionConstants;
+import com.android.internal.util.hwkeys.ActionHandler;
+import com.android.internal.util.hwkeys.ActionUtils;
+import com.android.internal.util.hwkeys.Config;
+import com.android.internal.util.hwkeys.Config.ActionConfig;
+import com.android.internal.util.hwkeys.Config.ButtonConfig;
 
 import android.content.ContentResolver;
 import android.content.Context;
@@ -113,8 +113,8 @@ public class HardkeyActionHandler {
         mHandler = handler;
 //        mPm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
 
-        mDeviceHardwareKeys = DUActionUtils.getInt(context, "config_deviceHardwareKeys",
-                DUActionUtils.PACKAGE_ANDROID);
+        mDeviceHardwareKeys = ActionUtils.getInt(context, "config_deviceHardwareKeys",
+                ActionUtils.PACKAGE_ANDROID);
 
         mBackButton = new HardKeyButton(mActionReceiver, handler);
         mHomeButton = new HardKeyButton(mActionReceiver, handler);

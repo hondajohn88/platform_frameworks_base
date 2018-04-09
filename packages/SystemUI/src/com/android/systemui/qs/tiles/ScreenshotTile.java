@@ -28,9 +28,9 @@ import android.os.Message;
 import android.os.Messenger;
 import android.os.RemoteException;
 import android.os.UserHandle;
+import android.provider.Settings;
 import android.view.View;
 
-import android.provider.Settings;
 import com.android.systemui.R;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.QSHost;
@@ -78,7 +78,7 @@ public class ScreenshotTile extends QSTileImpl<BooleanState> {
         mHost.collapsePanels();
         /* wait for the panel to close */
         try {
-             Thread.sleep(1000);
+             Thread.sleep(1500);
         } catch (InterruptedException ie) {
              // Do nothing
         }
@@ -112,7 +112,7 @@ public class ScreenshotTile extends QSTileImpl<BooleanState> {
 
     @Override
     public int getMetricsCategory() {
-        return MetricsEvent.CUSTOM_QUICK_TILES;
+        return MetricsEvent.QS_SCREENSHOT_TILE;
     }
 
 

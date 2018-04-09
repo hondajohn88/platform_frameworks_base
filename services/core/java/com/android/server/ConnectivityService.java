@@ -182,7 +182,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     public static final String SHORT_ARG = "--short";
     public static final String TETHERING_ARG = "tethering";
 
-    private static final boolean DBG = false;
+    private static final boolean DBG = true;
     private static final boolean VDBG = false;
 
     private static final boolean LOGD_RULES = false;
@@ -890,7 +890,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
 
     private void handleMobileDataAlwaysOn() {
         final boolean enable = toBool(Settings.Global.getInt(
-                mContext.getContentResolver(), Settings.Global.MOBILE_DATA_ALWAYS_ON, 0));
+                mContext.getContentResolver(), Settings.Global.MOBILE_DATA_ALWAYS_ON, 1));
         final boolean isEnabled = (mNetworkRequests.get(mDefaultMobileDataRequest) != null);
         if (enable == isEnabled) {
             return;  // Nothing to do.
@@ -1341,7 +1341,8 @@ public class ConnectivityService extends IConnectivityManager.Stub
     public boolean isActiveNetworkMetered() {
         enforceAccessPermission();
 
-        final NetworkCapabilities caps = getNetworkCapabilities(getActiveNetwork());
+        final int uid = Binder.getCallingUid();
+        final NetworkCapabilities caps = getUnfilteredActiveNetworkState(uid).networkCapabilities;
         if (caps != null) {
             return !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
         } else {
@@ -3052,12 +3053,6 @@ public class ConnectivityService extends IConnectivityManager.Stub
     // becomes CONNECTED, whichever happens first.  The timer is started by the
     // first caller and not restarted by subsequent callers.
     private void ensureNetworkTransitionWakelock(String forWhom) {
-        // ensure atomic behavior of this function w.r.t. mNetTransitionWakeLockTimeout
-        int wakelockTimeout = mNetTransitionWakeLockTimeout;
-        if (wakelockTimeout <= 0) {
-            return;
-        }
-
         synchronized (this) {
             if (mNetTransitionWakeLock.isHeld()) {
                 return;
@@ -3068,7 +3063,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
         }
         mWakelockLogs.log("ACQUIRE for " + forWhom);
         Message msg = mHandler.obtainMessage(EVENT_EXPIRE_NET_TRANSITION_WAKELOCK);
-        mHandler.sendMessageDelayed(msg, wakelockTimeout);
+        mHandler.sendMessageDelayed(msg, mNetTransitionWakeLockTimeout);
     }
 
     // Called when we gain a new default network to release the network transition wakelock in a

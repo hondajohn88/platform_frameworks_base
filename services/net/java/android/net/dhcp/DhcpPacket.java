@@ -254,11 +254,6 @@ public abstract class DhcpPacket {
     protected static final byte DHCP_CLIENT_IDENTIFIER = 61;
 
     /**
-     * DHCP zero-length option code: rapid commit
-     */
-    protected static final byte DHCP_OPTION_RAPID_COMMIT = 80;
-
-    /**
      * DHCP zero-length option code: pad
      */
     protected static final byte DHCP_OPTION_PAD = 0x00;
@@ -299,11 +294,6 @@ public abstract class DhcpPacket {
     protected final byte[] mClientMac;
 
     /**
-     * Whether the packet should be built with rapid commit option
-     */
-    protected boolean mRapidCommit;
-
-    /**
      * Asks the packet object to create a ByteBuffer serialization of
      * the packet for transmission.
      */
@@ -323,7 +313,7 @@ public abstract class DhcpPacket {
 
     protected DhcpPacket(int transId, short secs, Inet4Address clientIp, Inet4Address yourIp,
                          Inet4Address nextIp, Inet4Address relayIp,
-                         byte[] clientMac, boolean broadcast, boolean rapidCommit) {
+                         byte[] clientMac, boolean broadcast) {
         mTransId = transId;
         mSecs = secs;
         mClientIp = clientIp;
@@ -332,14 +322,6 @@ public abstract class DhcpPacket {
         mRelayIp = relayIp;
         mClientMac = clientMac;
         mBroadcast = broadcast;
-        mRapidCommit = rapidCommit;
-    }
-
-    protected DhcpPacket(int transId, short secs, Inet4Address clientIp, Inet4Address yourIp,
-                         Inet4Address nextIp, Inet4Address relayIp,
-                         byte[] clientMac, boolean broadcast) {
-        this(transId, secs, clientIp, yourIp, nextIp,
-                        relayIp, clientMac, broadcast, false);
     }
 
     /**
@@ -536,14 +518,6 @@ public abstract class DhcpPacket {
         sum = ((sum + ((sum >> 16) & 0xFFFF)) & 0xFFFF);
         int negated = ~sum;
         return intAbs((short) negated);
-    }
-
-    /**
-     * Adds an optional parameter not containing any payload.
-     */
-    protected static void addTlv(ByteBuffer buf, byte type) {
-        buf.put(type);
-        buf.put((byte) 0);
     }
 
     /**
@@ -1199,14 +1173,8 @@ public abstract class DhcpPacket {
      */
     public static ByteBuffer buildDiscoverPacket(int encap, int transactionId,
         short secs, byte[] clientMac, boolean broadcast, byte[] expectedParams) {
-        return buildDiscoverPacket(encap, transactionId, secs, clientMac,
-                                   broadcast, expectedParams, false);
-    }
-    public static ByteBuffer buildDiscoverPacket(int encap, int transactionId,
-        short secs, byte[] clientMac, boolean broadcast, byte[] expectedParams,
-        boolean rapidCommit) {
         DhcpPacket pkt = new DhcpDiscoverPacket(
-            transactionId, secs, clientMac, broadcast, rapidCommit);
+            transactionId, secs, clientMac, broadcast);
         pkt.mRequestedParams = expectedParams;
         return pkt.buildPacket(encap, DHCP_SERVER, DHCP_CLIENT);
     }

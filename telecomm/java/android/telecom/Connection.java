@@ -327,8 +327,16 @@ public abstract class Connection extends Conferenceable {
      */
     public static final int CAPABILITY_CAN_PULL_CALL = 0x01000000;
 
+    /**
+     * Add participant in an active or conference call option
+     *
+     * @hide
+     */
+    public static final int CAPABILITY_ADD_PARTICIPANT = 0x02000000;
+
+
     //**********************************************************************************************
-    // Next CAPABILITY value: 0x02000000
+    // Next CAPABILITY value: 0x04000000
     //**********************************************************************************************
 
     /**
@@ -401,8 +409,14 @@ public abstract class Connection extends Conferenceable {
     @TestApi
     public static final int PROPERTY_IS_RTT = 1 << 8;
 
+    /**
+     * Set by the framework to indicate that a connection is using assisted dialing.
+     * @hide
+     */
+    public static final int PROPERTY_ASSISTED_DIALING_USED = 1 << 9;
+
     //**********************************************************************************************
-    // Next PROPERTY value: 1<<9
+    // Next PROPERTY value: 1<<10
     //**********************************************************************************************
 
     /**

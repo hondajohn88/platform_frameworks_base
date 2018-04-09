@@ -39,8 +39,8 @@ import com.android.systemui.qs.tileimpl.QSTileImpl;
 public class NfcTile extends QSTileImpl<BooleanState> {
 
     private NfcAdapter mAdapter;
-
     private boolean mListening;
+    private final Icon mIcon = ResourceIcon.get(R.drawable.ic_qs_nfc_enabled);
 
     public NfcTile(QSHost host) {
         super(host);
@@ -97,18 +97,14 @@ public class NfcTile extends QSTileImpl<BooleanState> {
 
     @Override
     protected void handleUpdateState(BooleanState state, Object arg) {
-        final Drawable mEnable = mContext.getDrawable(R.drawable.ic_qs_nfc_enabled);
-        final Drawable mDisable = mContext.getDrawable(R.drawable.ic_qs_nfc_disabled);
-        if (getAdapter() == null) return;
-        state.value = getAdapter().isEnabled();
-        state.label = mContext.getString(R.string.quick_settings_nfc_label);
-        if (state.value) {
-            state.icon = new DrawableIcon(mEnable);
-            state.state = Tile.STATE_ACTIVE;
-        } else {
-            state.icon = new DrawableIcon(mDisable);
-            state.state = Tile.STATE_INACTIVE;
+        if (state.slash == null) {
+            state.slash = new SlashState();
         }
+        state.icon = mIcon;
+        state.value = getAdapter().isEnabled();
+        state.slash.isSlashed = !state.value;
+        state.state = state.value ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE;
+        state.label = mContext.getString(R.string.quick_settings_nfc_label);
         state.expandedAccessibilityClassName = Switch.class.getName();
         state.contentDescription = state.label;
     }

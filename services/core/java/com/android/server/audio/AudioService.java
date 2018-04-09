@@ -41,7 +41,6 @@ import android.bluetooth.BluetoothClass;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothHeadset;
 import android.bluetooth.BluetoothProfile;
-import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.ContentResolver;
@@ -288,13 +287,13 @@ public class AudioService extends IAudioService.Stub
         5,  // STREAM_VOICE_CALL
         7,  // STREAM_SYSTEM
         7,  // STREAM_RING
-        30, // STREAM_MUSIC
+        15, // STREAM_MUSIC
         7,  // STREAM_ALARM
         7,  // STREAM_NOTIFICATION
-        30, // STREAM_BLUETOOTH_SCO
+        15, // STREAM_BLUETOOTH_SCO
         7,  // STREAM_SYSTEM_ENFORCED
-        30, // STREAM_DTMF
-        30, // STREAM_TTS
+        15, // STREAM_DTMF
+        15, // STREAM_TTS
         15  // STREAM_ACCESSIBILITY
     };
 
@@ -595,7 +594,6 @@ public class AudioService extends IAudioService.Stub
     private AudioManagerInternal.RingerModeDelegate mRingerModeDelegate;
     private VolumePolicy mVolumePolicy = VolumePolicy.DEFAULT;
     private long mLoweredFromNormalToVibrateTime;
-    private boolean mVolumeKeysControlMediaStream;
 
     // Array of Uids of valid accessibility services to check if caller is one of them
     private int[] mAccessibilityServiceUids;
@@ -662,16 +660,7 @@ public class AudioService extends IAudioService.Stub
         }
     };
 
-    // only these packages are allowed to override Pulse visualizer lock
-    private static final String[] VISUALIZER_WHITELIST = new String[] {
-            "android",
-            "com.android.systemui",
-            "com.android.keyguard",
-            "com.google.android.googlequicksearchbox"
-    };
-
-    private boolean mVisualizerLocked;
-    private int mLaunchPlayer;
+    private boolean mLinkNotificationWithVolume;
 
     ///////////////////////////////////////////////////////////////////////////
     // Construction
@@ -695,9 +684,6 @@ public class AudioService extends IAudioService.Stub
 
         Vibrator vibrator = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
         mHasVibrator = vibrator == null ? false : vibrator.hasVibrator();
-
-        mLaunchPlayer = Settings.System.getIntForUser(mContext.getContentResolver(),
-                Settings.System.HEADSET_CONNECT_PLAYER, 0, UserHandle.USER_CURRENT);
 
         // Initialize volume
         int maxCallVolume = SystemProperties.getInt("ro.config.vc_call_vol_steps", -1);
@@ -756,6 +742,9 @@ public class AudioService extends IAudioService.Stub
 
         mUseFixedVolume = mContext.getResources().getBoolean(
                 com.android.internal.R.bool.config_useFixedVolume);
+
+        mLinkNotificationWithVolume = Settings.System.getIntForUser(mContentResolver,
+                Settings.System.VOLUME_LINK_NOTIFICATION, 1, UserHandle.USER_CURRENT) == 1;
 
         // must be called before readPersistedSettings() which needs a valid mStreamVolumeAlias[]
         // array initialized by updateStreamVolumeAlias()
@@ -1138,6 +1127,12 @@ public class AudioService extends IAudioService.Stub
             }
         }
 
+        if (mLinkNotificationWithVolume) {
+            mStreamVolumeAlias[AudioSystem.STREAM_NOTIFICATION] = AudioSystem.STREAM_RING;
+        } else {
+            mStreamVolumeAlias[AudioSystem.STREAM_NOTIFICATION] = AudioSystem.STREAM_NOTIFICATION;
+        }
+
         mStreamVolumeAlias[AudioSystem.STREAM_DTMF] = dtmfStreamAlias;
         mStreamVolumeAlias[AudioSystem.STREAM_ACCESSIBILITY] = a11yStreamAlias;
 
@@ -1279,8 +1274,6 @@ public class AudioService extends IAudioService.Stub
             updateRingerModeAffectedStreams();
             readDockAudioSettings(cr);
             sendEncodedSurroundMode(cr, "readPersistedSettings");
-
-            setVolumeKeysControlMediaStream();
         }
 
         mMuteAffectedStreams = System.getIntForUser(cr,
@@ -3394,24 +3387,6 @@ public class AudioService extends IAudioService.Stub
         synchronized (mScoClients) {
             if (connected) {
                 mBluetoothHeadsetDevice = btDevice;
-                switch (mLaunchPlayer) {
-                    case 0:
-                    case 1:
-                        //do nothing
-                        break;
-                    case 2:
-                    case 4:
-                        //launch the player if bt headset is not a carkit
-                        if (outDevice != AudioSystem.DEVICE_OUT_BLUETOOTH_SCO_CARKIT) {
-                            startMusicPlayer();
-                        }
-                        break;
-                    case 3:
-                    case 5:
-                        //launch the player for all bt headsets
-                        startMusicPlayer();
-                        break;
-                }
             } else {
                 mBluetoothHeadsetDevice = null;
                 resetBluetoothSco();
@@ -3877,25 +3852,6 @@ public class AudioService extends IAudioService.Stub
         return (mMuteAffectedStreams & (1 << streamType)) != 0;
     }
 
-    /** @hide */
-    public boolean isVisualizerLocked(String callingPackage) {
-        boolean isSystem = false;
-        for (int i = 0; i < VISUALIZER_WHITELIST.length; i++) {
-            if (TextUtils.equals(callingPackage, VISUALIZER_WHITELIST[i])) {
-                isSystem = true;
-                break;
-            }
-        }
-        return !isSystem && mVisualizerLocked;
-    }
-
-    /** @hide */
-    public void setVisualizerLocked(boolean doLock) {
-        if (mVisualizerLocked != doLock) {
-            mVisualizerLocked = doLock;
-        }
-    }
-
     private void ensureValidDirection(int direction) {
         switch (direction) {
             case AudioManager.ADJUST_LOWER:
@@ -3967,16 +3923,10 @@ public class AudioService extends IAudioService.Stub
                     if (DEBUG_VOL)
                         Log.v(TAG, "getActiveStreamType: Forcing STREAM_MUSIC stream active");
                     return AudioSystem.STREAM_MUSIC;
-                } else {
-                    if (mVolumeKeysControlMediaStream) {
-                        if (DEBUG_VOL)
-                            Log.v(TAG, "getActiveStreamType: Forcing STREAM_MUSIC b/c user selected");
-                        return AudioSystem.STREAM_MUSIC;
                     } else {
                         if (DEBUG_VOL)
                             Log.v(TAG, "getActiveStreamType: Forcing STREAM_RING b/c default");
                         return AudioSystem.STREAM_RING;
-                    }
                 }
             } else if (isAfMusicActiveRecently(0)) {
                 if (DEBUG_VOL)
@@ -4005,15 +3955,9 @@ public class AudioService extends IAudioService.Stub
                     if (DEBUG_VOL) Log.v(TAG, "getActiveStreamType: forcing STREAM_MUSIC");
                     return AudioSystem.STREAM_MUSIC;
                 } else {
-                    if (mVolumeKeysControlMediaStream) {
-                        if (DEBUG_VOL)
-                            Log.v(TAG, "getActiveStreamType: Forcing STREAM_MUSIC b/c user selected");
-                        return AudioSystem.STREAM_MUSIC;
-                    } else {
-                        if (DEBUG_VOL) Log.v(TAG,
-                                "getActiveStreamType: using STREAM_NOTIFICATION as default");
-                        return AudioSystem.STREAM_NOTIFICATION;
-                    }
+                    if (DEBUG_VOL) Log.v(TAG,
+                            "getActiveStreamType: using STREAM_NOTIFICATION as default");
+                    return AudioSystem.STREAM_NOTIFICATION;
                 }
             }
             break;
@@ -5201,9 +5145,7 @@ public class AudioService extends IAudioService.Stub
             mContentResolver.registerContentObserver(Settings.Global.getUriFor(
                     Settings.Global.ENCODED_SURROUND_OUTPUT), false, this);
             mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.VOLUME_KEYS_CONTROL_MEDIA_STREAM), false, this);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.HEADSET_CONNECT_PLAYER), false, this);
+                    Settings.System.VOLUME_LINK_NOTIFICATION), false, this);
         }
 
         @Override
@@ -5225,10 +5167,14 @@ public class AudioService extends IAudioService.Stub
                 updateMasterMono(mContentResolver);
                 updateEncodedSurroundOutput();
 
-                setVolumeKeysControlMediaStream();
+                mLinkNotificationWithVolume = Settings.System.getIntForUser(mContentResolver,
+                        Settings.System.VOLUME_LINK_NOTIFICATION, 1, UserHandle.USER_CURRENT) == 1;
+                if (mLinkNotificationWithVolume) {
+                    mStreamVolumeAlias[AudioSystem.STREAM_NOTIFICATION] = AudioSystem.STREAM_RING;
+                } else {
+                    mStreamVolumeAlias[AudioSystem.STREAM_NOTIFICATION] = AudioSystem.STREAM_NOTIFICATION;
+                }
             }
-            mLaunchPlayer = Settings.System.getIntForUser(mContext.getContentResolver(),
-                    Settings.System.HEADSET_CONNECT_PLAYER, 0, UserHandle.USER_CURRENT);
         }
 
         private void updateEncodedSurroundOutput() {
@@ -5256,12 +5202,6 @@ public class AudioService extends IAudioService.Stub
                 mEncodedSurroundMode = newSurroundMode;
             }
         }
-    }
-
-    private void setVolumeKeysControlMediaStream() {
-        mVolumeKeysControlMediaStream = Settings.System.getIntForUser(mContentResolver,
-                Settings.System.VOLUME_KEYS_CONTROL_MEDIA_STREAM, 0,
-                UserHandle.USER_CURRENT) == 1;
     }
 
     // must be called synchronized on mConnectedDevices
@@ -5630,18 +5570,10 @@ public class AudioService extends IAudioService.Stub
         if (device == AudioSystem.DEVICE_OUT_WIRED_HEADSET) {
             intent.setAction(Intent.ACTION_HEADSET_PLUG);
             intent.putExtra("microphone", 1);
-            if ((mLaunchPlayer == 1 || mLaunchPlayer == 4 || mLaunchPlayer == 5)
-                    && state ==1) {
-                startMusicPlayer();
-            }
         } else if (device == AudioSystem.DEVICE_OUT_WIRED_HEADPHONE ||
                    device == AudioSystem.DEVICE_OUT_LINE) {
             intent.setAction(Intent.ACTION_HEADSET_PLUG);
             intent.putExtra("microphone",  0);
-            if ((mLaunchPlayer == 1 || mLaunchPlayer == 4 || mLaunchPlayer == 5)
-                    && state ==1) {
-                startMusicPlayer();
-            }
         } else if (device == AudioSystem.DEVICE_OUT_USB_HEADSET) {
             intent.setAction(Intent.ACTION_HEADSET_PLUG);
             intent.putExtra("microphone",
@@ -5683,20 +5615,6 @@ public class AudioService extends IAudioService.Stub
             AudioSystem.DEVICE_OUT_WIRED_HEADSET | AudioSystem.DEVICE_OUT_WIRED_HEADPHONE |
             AudioSystem.DEVICE_OUT_LINE |
             AudioSystem.DEVICE_OUT_ALL_USB;
-
-    private void startMusicPlayer() {
-        TelecomManager tm = (TelecomManager) mContext.getSystemService(Context.TELECOM_SERVICE);
-        if (!tm.isInCall()) {
-            try {
-                Intent playerIntent = new Intent(Intent.ACTION_MAIN);
-                playerIntent.addCategory(Intent.CATEGORY_APP_MUSIC);
-                playerIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                mContext.startActivity(playerIntent);
-            } catch (ActivityNotFoundException | IllegalArgumentException e) {
-                Log.w(TAG, "No music player Activity could be found");
-            }
-        }
-    }
 
     private void onSetWiredDeviceConnectionState(int device, int state, String address,
             String deviceName, String caller) {

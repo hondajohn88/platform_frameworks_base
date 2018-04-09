@@ -103,11 +103,7 @@ public class NumPadKey extends ViewGroup {
         mKlondikeText = (TextView) findViewById(R.id.klondike_text);
 
         updateText();
-        a = context.obtainStyledAttributes(attrs, android.R.styleable.View);
-        if (!a.hasValueOrEmpty(android.R.styleable.View_background)) {
-            setBackground(mContext.getDrawable(R.drawable.ripple_drawable));
-        }
-        a.recycle();
+        setBackground(mContext.getDrawable(R.drawable.ripple_drawable));
         setContentDescription(mDigitText.getText().toString());
     }
 
@@ -119,6 +115,7 @@ public class NumPadKey extends ViewGroup {
     private void updateText() {
         boolean scramblePin = (Settings.System.getInt(getContext().getContentResolver(),
                 Settings.System.LOCKSCREEN_PIN_SCRAMBLE_LAYOUT, 0) == 1);
+
         if (mDigit >= 0) {
             mDigitText.setText(Integer.toString(mDigit));
             if (sKlondike == null) {
@@ -127,7 +124,7 @@ public class NumPadKey extends ViewGroup {
             if (sKlondike != null && sKlondike.length > mDigit) {
                 String klondike = sKlondike[mDigit];
                 final int len = klondike.length();
-                if (len > 0  || scramblePin) {
+                if (len > 0 || scramblePin) {
                     mKlondikeText.setText(klondike);
                 } else {
                     mKlondikeText.setVisibility(View.INVISIBLE);

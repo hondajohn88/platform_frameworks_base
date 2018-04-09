@@ -23,7 +23,7 @@ import android.annotation.Nullable;
 import android.app.Fragment;
 import android.app.StatusBarManager;
 import android.content.ContentResolver;
-import android.database.ContentObserver;
+import android.content.Context;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.UserHandle;
@@ -35,7 +35,7 @@ import android.view.ViewStub;
 import android.widget.ImageSwitcher;
 import android.widget.LinearLayout;
 
-import com.android.internal.utils.du.UserContentObserver;
+import com.android.internal.utils.cr.UserContentObserver;
 import com.android.systemui.Dependency;
 import com.android.systemui.Interpolators;
 import com.android.systemui.R;
@@ -73,23 +73,12 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
     private View mClock;
     private View mLeftClock;
 
-    // Statusbar Weather Image
-    private View mWeatherImageView;
-    private View mWeatherTextView;
-    private int mShowWeather;
-
-    private int mTickerEnabled;
+    private int mNotificationStyle;
+    private boolean mHeadsUpEnabled;
+    private boolean mTickerEnabled;
     private TickerObserver mTickerObserver;
     private ContentResolver mContentResolver;
     private View mTickerViewFromStub;
-
-    // Custom Carrier
-    private View mCustomCarrierLabel;
-    private int mShowCarrierLabel;
-
-    // AOS Status Logo
-    private View mAOSLogo;
-    private boolean mShowLogo;
 
     private SignalCallback mSignalCallback = new SignalCallback() {
         @Override
@@ -121,11 +110,8 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
 
         protected void observe() {
             super.observe();
-            mContentResolver.registerContentObserver(
-                    Settings.System.getUriFor(Settings.System.STATUS_BAR_SHOW_TICKER),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(
-                    Settings.System.getUriFor(Settings.System.STATUS_BAR_CARRIER),
+            mContentResolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.STATUS_BAR_NOTIFICATION_STYLE),
                     false, this, UserHandle.USER_ALL);
             mContentResolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.STATUS_BAR_CLOCK),
@@ -151,24 +137,17 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
             mContentResolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.STATUSBAR_CLOCK_DATE_POSITION),
                     false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUS_BAR_SHOW_WEATHER_TEMP),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                     Settings.System.STATUS_BAR_LOGO),
-                     false, this, UserHandle.USER_ALL);
         }
 
         @Override
         protected void update() {
-            mTickerEnabled = Settings.System.getIntForUser(mContentResolver,
-                    Settings.System.STATUS_BAR_SHOW_TICKER, 0,
+            mNotificationStyle = Settings.System.getIntForUser(mContentResolver,
+                    Settings.System.STATUS_BAR_NOTIFICATION_STYLE, 1,
                     UserHandle.USER_CURRENT);
             initTickerView();
-            updateSettings(true);
+            initHeadsUpView();
             ((Clock)mClock).updateSettings();
             ((Clock)mLeftClock).updateSettings();
-            mStatusBarComponent.updateQsbhClock();
         }
     }
 
@@ -192,17 +171,13 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
         mClock = mStatusBar.findViewById(R.id.clock);
         mLeftClock = mStatusBar.findViewById(R.id.left_clock);
         Dependency.get(DarkIconDispatcher.class).addDarkReceiver(mSignalClusterView);
-        mCustomCarrierLabel = mStatusBar.findViewById(R.id.statusbar_carrier_text);
-        mWeatherTextView = mStatusBar.findViewById(R.id.weather_temp);
-        mWeatherImageView = mStatusBar.findViewById(R.id.weather_image);
-        mAOSLogo = mStatusBar.findViewById(R.id.status_bar_logo);
-        updateSettings(false);
         // Default to showing until we know otherwise.
         showSystemIconArea(false);
         initEmergencyCryptkeeperText();
 
         mTickerObserver.observe();
         mTickerObserver.update();
+
     }
 
     @Override
@@ -264,10 +239,8 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
         if ((diff1 & DISABLE_NOTIFICATION_ICONS) != 0) {
             if ((state1 & DISABLE_NOTIFICATION_ICONS) != 0) {
                 hideNotificationIconArea(animate);
-                hideCarrierName(animate);
             } else {
                 showNotificationIconArea(animate);
-                showCarrierName(animate);
             }
         }
     }
@@ -301,7 +274,7 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
     }
 
     public void hideSystemIconArea(boolean animate) {
-        animateHide(mSystemIconArea, animate, true);
+        animateHide(mSystemIconArea, animate);
     }
 
     public void showSystemIconArea(boolean animate) {
@@ -309,45 +282,27 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
     }
 
     public void hideNotificationIconArea(boolean animate) {
-        animateHide(mNotificationIconAreaInner, animate, true);
-        if (mShowLogo) {
-            animateHide(mAOSLogo, animate, true);
-        }
+        animateHide(mNotificationIconAreaInner, animate);
         if (((Clock)mLeftClock).isEnabled()) {
-            animateHide(mLeftClock, animate, true);
+            animateHide(mLeftClock, animate);
         }
     }
 
     public void showNotificationIconArea(boolean animate) {
         animateShow(mNotificationIconAreaInner, animate);
-        if (mShowLogo) {
-            animateShow(mAOSLogo, animate);
-        }
         if (((Clock)mLeftClock).isEnabled()) {
             animateShow(mLeftClock, animate);
-        }
-    }
-
-    public void hideCarrierName(boolean animate) {
-        if (mCustomCarrierLabel != null) {
-            animateHide(mCustomCarrierLabel, animate, false);
-        }
-    }
-
-    public void showCarrierName(boolean animate) {
-        if (mCustomCarrierLabel != null) {
-            setCarrierLabel(animate);
         }
     }
 
     /**
      * Hides a view.
      */
-    private void animateHide(final View v, boolean animate, final boolean invisible) {
+    private void animateHide(final View v, boolean animate) {
         v.animate().cancel();
         if (!animate) {
             v.setAlpha(0f);
-            v.setVisibility(invisible ? View.INVISIBLE : View.GONE);
+            v.setVisibility(View.INVISIBLE);
             return;
         }
         v.animate()
@@ -355,7 +310,7 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
                 .setDuration(160)
                 .setStartDelay(0)
                 .setInterpolator(Interpolators.ALPHA_OUT)
-                .withEndAction(() -> v.setVisibility(invisible ? View.INVISIBLE : View.GONE));
+                .withEndAction(() -> v.setVisibility(View.INVISIBLE));
     }
 
     /**
@@ -403,7 +358,8 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
     }
 
     private void initTickerView() {
-        if (mTickerEnabled != 0) {
+        mTickerEnabled = mNotificationStyle == 2 || mNotificationStyle == 3;
+        if (mTickerEnabled) {
             View tickerStub = mStatusBar.findViewById(R.id.ticker_stub);
             if (mTickerViewFromStub == null && tickerStub != null) {
                 mTickerViewFromStub = ((ViewStub) tickerStub).inflate();
@@ -414,36 +370,11 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
                     mTickerEnabled, getContext(), mStatusBar, tickerView, tickerIcon, mTickerViewFromStub);
         } else {
             mStatusBarComponent.disableTicker();
-            }
-        }
-
-    public void updateSettings(boolean animate) {
-        mShowCarrierLabel = Settings.System.getIntForUser(
-                getContext().getContentResolver(), Settings.System.STATUS_BAR_CARRIER, 1,
-                UserHandle.USER_CURRENT);
-        setCarrierLabel(animate);
-        mShowWeather = Settings.System.getIntForUser(
-                getContext().getContentResolver(), Settings.System.STATUS_BAR_SHOW_WEATHER_TEMP, 0,
-                UserHandle.USER_CURRENT);
-        mShowLogo = Settings.System.getIntForUser(
-                getContext().getContentResolver(), Settings.System.STATUS_BAR_LOGO, 0,
-                UserHandle.USER_CURRENT) == 1;
-        if (mNotificationIconAreaInner != null) {
-            if (mShowLogo) {
-                if (mNotificationIconAreaInner.getVisibility() == View.VISIBLE) {
-                    animateShow(mAOSLogo, animate);
-                }
-            } else {
-                animateHide(mAOSLogo, animate, false);
-            }
         }
     }
 
-    private void setCarrierLabel(boolean animate) {
-        if (mShowCarrierLabel == 2 || mShowCarrierLabel == 3) {
-            animateShow(mCustomCarrierLabel, animate);
-        } else {
-            animateHide(mCustomCarrierLabel, animate, false);
-        }
+    private void initHeadsUpView() {
+        mHeadsUpEnabled = mNotificationStyle == 1 || mNotificationStyle == 3;
+        mStatusBarComponent.toggleHeadsUp(mHeadsUpEnabled);
     }
 }

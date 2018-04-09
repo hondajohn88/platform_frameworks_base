@@ -17,7 +17,6 @@
 package com.android.systemui.statusbar;
 
 import android.content.ComponentName;
-import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Bundle;
 import android.os.Handler;
@@ -84,10 +83,8 @@ public class CommandQueue extends IStatusBar.Stub {
     private static final int MSG_SHOW_SHUTDOWN_UI              = 36 << MSG_SHIFT;
     private static final int MSG_SET_TOP_APP_HIDES_STATUS_BAR  = 37 << MSG_SHIFT;
     private static final int MSG_SCREEN_PINNING_STATE_CHANGED  = 38 << MSG_SHIFT;
-    private static final int MSG_LEFT_IN_LANDSCAPE_STATE_CHANGED  = 39 << MSG_SHIFT;
-    private static final int MSG_TOGGLE_FLASHLIGHT             = 40 << MSG_SHIFT;
-    private static final int MSG_TOGGLE_NAVIGATION_EDITOR      = 41 << MSG_SHIFT;
-    private static final int MSG_DISPATCH_NAVIGATION_EDITOR_RESULTS = 42 << MSG_SHIFT;
+    private static final int MSG_TOGGLE_FLASHLIGHT             = 39 << MSG_SHIFT;
+    private static final int MSG_TOGGLE_NAVIGATION_BAR         = 40 << MSG_SHIFT;
 
     public static final int FLAG_EXCLUDE_NONE = 0;
     public static final int FLAG_EXCLUDE_SEARCH_PANEL = 1 << 0;
@@ -148,11 +145,10 @@ public class CommandQueue extends IStatusBar.Stub {
         default void handleSystemKey(int arg1) { }
         default void handleShowGlobalActionsMenu() { }
         default void handleShowShutdownUi(boolean isReboot, String reason) { }
+        default void handleShowShutdownUi(boolean isReboot, String reason, boolean rebootCustom) { }
         default void screenPinningStateChanged(boolean enabled) {}
-        default void leftInLandscapeChanged(boolean isLeft) {}
         default void toggleFlashlight() {}
-        default void toggleNavigationEditor() {}
-        default void dispatchNavigationEditorResults(Intent intent) {}
+        default void toggleNavigationBar(boolean enable) { }
     }
 
     @VisibleForTesting
@@ -168,34 +164,10 @@ public class CommandQueue extends IStatusBar.Stub {
         mCallbacks.remove(callbacks);
     }
 
-    public void dispatchNavigationEditorResults(Intent intent) {
-        synchronized (mLock) {
-            // don't coalesce these
-            // this command can't come in fast enough to make a difference
-            // but for the sake of principle...
-            mHandler.obtainMessage(MSG_DISPATCH_NAVIGATION_EDITOR_RESULTS, intent).sendToTarget();
-        }
-    }
-
-    public void toggleNavigationEditor() {
-        synchronized (mLock) {
-            mHandler.removeMessages(MSG_TOGGLE_NAVIGATION_EDITOR);
-            mHandler.sendEmptyMessage(MSG_TOGGLE_NAVIGATION_EDITOR);
-        }
-    }
-
     public void toggleFlashlight() {
         synchronized (mLock) {
             mHandler.removeMessages(MSG_TOGGLE_FLASHLIGHT);
             mHandler.sendEmptyMessage(MSG_TOGGLE_FLASHLIGHT);
-        }
-    }
-
-    public void leftInLandscapeChanged(boolean isLeft) {
-        synchronized (mLock) {
-            mHandler.removeMessages(MSG_LEFT_IN_LANDSCAPE_STATE_CHANGED);
-            mHandler.obtainMessage(MSG_LEFT_IN_LANDSCAPE_STATE_CHANGED,
-                    isLeft ? 1 : 0, 0, null).sendToTarget();
         }
     }
 
@@ -500,11 +472,18 @@ public class CommandQueue extends IStatusBar.Stub {
     }
 
     @Override
-    public void showShutdownUi(boolean isReboot, String reason) {
+    public void showShutdownUi(boolean isReboot, String reason, boolean rebootCustom) {
         synchronized (mLock) {
             mHandler.removeMessages(MSG_SHOW_SHUTDOWN_UI);
-            mHandler.obtainMessage(MSG_SHOW_SHUTDOWN_UI, isReboot ? 1 : 0, 0, reason)
+            mHandler.obtainMessage(MSG_SHOW_SHUTDOWN_UI, isReboot ? 1 : 0, rebootCustom ? 1 : 0, reason)
                     .sendToTarget();
+        }
+    }
+
+    public void toggleNavigationBar(boolean enable) {
+        synchronized (mLock) {
+            mHandler.removeMessages(MSG_TOGGLE_NAVIGATION_BAR);
+            mHandler.obtainMessage(MSG_TOGGLE_NAVIGATION_BAR, enable ? 1 : 0, 0, null).sendToTarget();
         }
     }
 
@@ -696,7 +675,7 @@ public class CommandQueue extends IStatusBar.Stub {
                     break;
                 case MSG_SHOW_SHUTDOWN_UI:
                     for (int i = 0; i < mCallbacks.size(); i++) {
-                        mCallbacks.get(i).handleShowShutdownUi(msg.arg1 != 0, (String) msg.obj);
+                        mCallbacks.get(i).handleShowShutdownUi(msg.arg1 != 0, (String) msg.obj, msg.arg2 != 0);
                     }
                     break;
                 case MSG_SET_TOP_APP_HIDES_STATUS_BAR:
@@ -709,25 +688,14 @@ public class CommandQueue extends IStatusBar.Stub {
                         mCallbacks.get(i).screenPinningStateChanged(msg.arg1 != 0);
                     }
                     break;
-                case MSG_LEFT_IN_LANDSCAPE_STATE_CHANGED:
-                    for (int i = 0; i < mCallbacks.size(); i++) {
-                        mCallbacks.get(i).leftInLandscapeChanged(msg.arg1 != 0);
-                    }
-                    break;
                 case MSG_TOGGLE_FLASHLIGHT:
                     for (int i = 0; i < mCallbacks.size(); i++) {
                         mCallbacks.get(i).toggleFlashlight();
                     }
                     break;
-                case MSG_TOGGLE_NAVIGATION_EDITOR:
+                case MSG_TOGGLE_NAVIGATION_BAR:
                     for (int i = 0; i < mCallbacks.size(); i++) {
-                        mCallbacks.get(i).toggleNavigationEditor();
-                    }
-                    break;
-                case MSG_DISPATCH_NAVIGATION_EDITOR_RESULTS:
-                    Intent intent = (Intent) msg.obj;
-                    for (int i = 0; i < mCallbacks.size(); i++) {
-                        mCallbacks.get(i).dispatchNavigationEditorResults(intent);
+                        mCallbacks.get(i).toggleNavigationBar(msg.arg1 != 0);
                     }
                     break;
             }

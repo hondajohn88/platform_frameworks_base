@@ -88,11 +88,6 @@ public interface TelephonyProperties
      */
     static final String PROPERTY_LTE_ON_CDMA_DEVICE = "telephony.lteOnCdmaDevice";
 
-    /**
-     * {@see BaseCommands#getLteOnGsmMode()}
-     */
-    static final String PROPERTY_LTE_ON_GSM_DEVICE = "telephony.lteOnGsmDevice";
-
     static final String CURRENT_ACTIVE_PHONE = "gsm.current.phone-type";
 
     //****** SIM Card
@@ -223,4 +218,34 @@ public interface TelephonyProperties
      */
     static final String PROPERTY_VIDEOCALL_AUDIO_OUTPUT = "persist.radio.call.audio.output";
 
+    /**
+     * Used when Presence app sends Dial intent with specific schema
+     * If true: skip schema parsing and use Tel schema
+     * If false: parse schema
+     */
+    static final String EXTRA_SKIP_SCHEMA_PARSING =
+            "org.codeaurora.extra.SKIP_SCHEMA_PARSING";
+
+    /**
+     * For Group Conference Calling
+     * If true: isConferenceUri in Dial is set to true,
+     *          which indicates that Dial is for Conference Calling
+     * If false: above is set to false
+     */
+    static final String EXTRAS_IS_CONFERENCE_URI = "isConferenceUri";
+
+    /**
+     * For Group Conference Dialing Feature
+     * If true: Dial intent triggered from Group Conference Calling screen
+     * if false: normal dial
+     */
+    static final String EXTRA_DIAL_CONFERENCE_URI =
+            "org.codeaurora.extra.DIAL_CONFERENCE_URI";
+
+    /**
+     * For Add Participant Feature
+     * If true: Dial intent triggered from Dialpad is for AddParticipant
+     * if false: normal dial
+     */
+    static final String ADD_PARTICIPANT_KEY = "add_participant";
 }

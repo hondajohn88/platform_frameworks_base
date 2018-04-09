@@ -688,7 +688,9 @@ public class RankingHelper implements RankingConfig {
         if (r == null) {
             return;
         }
-        for (String key : r.channels.keySet()) {
+        int N = r.channels.size() - 1;
+        for (int i = N; i >= 0; i--) {
+            String key = r.channels.keyAt(i);
             if (!NotificationChannel.DEFAULT_CHANNEL_ID.equals(key)) {
                 r.channels.remove(key);
             }
@@ -712,7 +714,9 @@ public class RankingHelper implements RankingConfig {
             return ParceledListSlice.emptyList();
         }
         NotificationChannelGroup nonGrouped = new NotificationChannelGroup(null, null);
-        for (NotificationChannel nc : r.channels.values()) {
+        int N = r.channels.size();
+        for (int i = 0; i < N; i++) {
+            final NotificationChannel nc = r.channels.valueAt(i);
             if (includeDeleted || !nc.isDeleted()) {
                 if (nc.getGroup() != null) {
                     if (r.groups.get(nc.getGroup()) != null) {
@@ -745,7 +749,9 @@ public class RankingHelper implements RankingConfig {
 
         r.groups.remove(groupId);
 
-        for (NotificationChannel nc : r.channels.values()) {
+        int N = r.channels.size();
+        for (int i = 0; i < N; i++) {
+            final NotificationChannel nc = r.channels.valueAt(i);
             if (groupId.equals(nc.getGroup())) {
                 nc.setDeleted(true);
                 deletedChannels.add(nc);
@@ -773,7 +779,9 @@ public class RankingHelper implements RankingConfig {
         if (r == null) {
             return ParceledListSlice.emptyList();
         }
-        for(NotificationChannel nc : r.channels.values()) {
+        int N = r.channels.size();
+        for (int i = 0; i < N; i++) {
+            final NotificationChannel nc = r.channels.valueAt(i);
             if (includeDeleted || !nc.isDeleted()) {
                 channels.add(nc);
             }
@@ -803,7 +811,9 @@ public class RankingHelper implements RankingConfig {
         if (r == null) {
             return deletedCount;
         }
-        for (NotificationChannel nc : r.channels.values()) {
+        int N = r.channels.size();
+        for (int i = 0; i < N; i++) {
+            final NotificationChannel nc = r.channels.valueAt(i);
             if (nc.isDeleted()) {
                 deletedCount++;
             }
@@ -1051,8 +1061,8 @@ public class RankingHelper implements RankingConfig {
             for (int i = 0; i < mRecords.size(); i++) {
                 final Record r = mRecords.valueAt(i);
                 int channelCount = 0;
-                for (NotificationChannel nc : r.channels.values()) {
-                    if (!nc.isDeleted()) {
+                for (int j = 0; j < r.channels.size(); j++) {
+                    if (!r.channels.valueAt(j).isDeleted()) {
                         channelCount++;
                     }
                 }
@@ -1204,7 +1214,7 @@ public class RankingHelper implements RankingConfig {
         int visibility = DEFAULT_VISIBILITY;
         boolean showBadge = DEFAULT_SHOW_BADGE;
 
-        Map<String, NotificationChannel> channels = new ConcurrentHashMap<>();
+        ArrayMap<String, NotificationChannel> channels = new ArrayMap<>();
         Map<String, NotificationChannelGroup> groups = new ConcurrentHashMap<>();
    }
 }

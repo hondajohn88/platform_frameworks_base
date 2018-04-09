@@ -23,7 +23,6 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Point;
 import android.os.RemoteException;
-import android.os.SystemProperties;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
 import android.util.SparseArray;
@@ -220,7 +219,7 @@ public class ViewConfiguration {
     /**
      * The coefficient of friction applied to flings/scrolls.
      */
-    private static final float SCROLL_FRICTION = 0.007f;
+    private static final float SCROLL_FRICTION = 0.012f;
 
     /**
      * Max distance in dips to overscroll for edge effects
@@ -409,48 +408,10 @@ public class ViewConfiguration {
 
         mDoubleTapTouchSlop = mTouchSlop;
 
-        String minFlingVeloProp = "ro.min.fling_velocity"; // Min fling prop
-        String maxFlingVeloProp = "ro.max.fling_velocity"; // Max fling prop
-
-        // Get the properties
-        String minFlingVeloSysProp = SystemProperties.get(minFlingVeloProp);
-        String maxFlingVeloSysProp = SystemProperties.get(maxFlingVeloProp);
-        boolean isMaxFlingVeloPredefined = false;
-        boolean isMinFlingVeloPredefined = false;
-        int minFlingVeloTmp = 0;
-        int maxFlingVeloTmp = 0;
-
-        // Check whether the property values are valid
-        if(minFlingVeloSysProp != null && (!minFlingVeloSysProp.isEmpty()) &&
-            isNumeric(minFlingVeloSysProp)) {
-            minFlingVeloTmp = Integer.parseInt(minFlingVeloSysProp);
-            isMinFlingVeloPredefined = true;
-        }
-
-        if(maxFlingVeloSysProp != null && (!maxFlingVeloSysProp.isEmpty()) &&
-            isNumeric(maxFlingVeloSysProp)) {
-            maxFlingVeloTmp = Integer.parseInt(maxFlingVeloSysProp);
-            isMaxFlingVeloPredefined = true;
-        }
-
-        // Use config values if no prop available or invalid
-        if(!isMinFlingVeloPredefined && minFlingVeloTmp == 0)
-            minFlingVeloTmp = res.getDimensionPixelSize(
-                    com.android.internal.R.dimen.config_viewMinFlingVelocity);
-        if(!isMaxFlingVeloPredefined && maxFlingVeloTmp == 0)
-            maxFlingVeloTmp = res.getDimensionPixelSize(
-                    com.android.internal.R.dimen.config_viewMaxFlingVelocity);
-
-        // Check again for availability, otherwise use default values
-        if(minFlingVeloTmp * maxFlingVeloTmp == 0) {
-            minFlingVeloTmp = MINIMUM_FLING_VELOCITY;
-            maxFlingVeloTmp = MAXIMUM_FLING_VELOCITY;
-        }
-
-        // Assign the final variables
-        mMinimumFlingVelocity = minFlingVeloTmp;
-        mMaximumFlingVelocity = maxFlingVeloTmp;
-
+        mMinimumFlingVelocity = res.getDimensionPixelSize(
+                com.android.internal.R.dimen.config_viewMinFlingVelocity);
+        mMaximumFlingVelocity = res.getDimensionPixelSize(
+                com.android.internal.R.dimen.config_viewMaxFlingVelocity);
         mGlobalActionsKeyTimeout = res.getInteger(
                 com.android.internal.R.integer.config_globalActionsKeyTimeout);
 
@@ -458,15 +419,6 @@ public class ViewConfiguration {
                 com.android.internal.R.dimen.config_horizontalScrollFactor);
         mVerticalScrollFactor = res.getDimensionPixelSize(
                 com.android.internal.R.dimen.config_verticalScrollFactor);
-    }
-
-    public static boolean isNumeric(String string) {
-        try {
-            Integer.parseInt(string);
-        } catch(NumberFormatException e) {
-            return false;
-        }
-        return true;
     }
 
     /**

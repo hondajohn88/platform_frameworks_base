@@ -73,7 +73,7 @@ public class Clock extends TextView implements DemoMode, CommandQueue.Callbacks,
     protected String mClockFormatString;
     protected SimpleDateFormat mClockFormat;
     private SimpleDateFormat mContentDescriptionFormat;
-    protected Locale mLocale;
+    private Locale mLocale;
     private boolean mScreenOn = true;
 
     public static final int AM_PM_STYLE_GONE    = 0;
@@ -107,8 +107,6 @@ public class Clock extends TextView implements DemoMode, CommandQueue.Callbacks,
     private boolean mShowSeconds;
     private Handler mSecondsHandler;
 
-    private boolean mQuickStatusBarHeader;
-
     public Clock(Context context) {
         this(context, null);
     }
@@ -129,7 +127,6 @@ public class Clock extends TextView implements DemoMode, CommandQueue.Callbacks,
         } finally {
             a.recycle();
         }
-        updateSettings();
     }
 
     @Override
@@ -227,11 +224,6 @@ public class Clock extends TextView implements DemoMode, CommandQueue.Callbacks,
         setVisibility(visible ? View.VISIBLE : View.GONE);
     }
 
-    public boolean isEnabled() {
-        return mClockStyle == STYLE_CLOCK_RIGHT && mShowClock
-                && mClockVisibleByPolicy && mClockVisibleByUser;
-    }
-
     final void updateClock() {
         if (mDemoMode) return;
         mCalendar.setTimeInMillis(System.currentTimeMillis());
@@ -245,6 +237,11 @@ public class Clock extends TextView implements DemoMode, CommandQueue.Callbacks,
         if (clockVisibleByPolicy != mClockVisibleByPolicy) {
             setClockVisibilityByPolicy(clockVisibleByPolicy);
         }
+    }
+
+    public boolean isEnabled() {
+        return mClockStyle == STYLE_CLOCK_RIGHT && mShowClock
+                && mClockVisibleByPolicy && mClockVisibleByUser;
     }
 
     @Override
@@ -343,11 +340,11 @@ public class Clock extends TextView implements DemoMode, CommandQueue.Callbacks,
         String timeResult = sdf.format(mCalendar.getTime());
         String dateResult = "";
 
-        if (mClockDateDisplay != CLOCK_DATE_DISPLAY_GONE && !mQuickStatusBarHeader) {
+        if (mClockDateDisplay != CLOCK_DATE_DISPLAY_GONE) {
             Date now = new Date();
 
             if (mClockDateFormat == null || mClockDateFormat.isEmpty()) {
-                // Set dateString to short uppercase Weekday (Default for AOKP) if empty
+                // Set dateString to short uppercase Weekday if empty
                 dateString = DateFormat.format("EEE", now);
             } else {
                 dateString = DateFormat.format(mClockDateFormat, now);
@@ -374,7 +371,7 @@ public class Clock extends TextView implements DemoMode, CommandQueue.Callbacks,
                 int dateStringLen = dateString.length();
                 int timeStringOffset = (mClockDatePosition == STYLE_DATE_RIGHT)
                         ? timeResult.length() + 1 : 0;
-                if (mClockDateDisplay == CLOCK_DATE_DISPLAY_GONE || mQuickStatusBarHeader) {
+                if (mClockDateDisplay == CLOCK_DATE_DISPLAY_GONE) {
                     formatted.delete(0, dateStringLen);
                 } else {
                     if (mClockDateDisplay == CLOCK_DATE_DISPLAY_SMALL) {
@@ -514,8 +511,4 @@ public class Clock extends TextView implements DemoMode, CommandQueue.Callbacks,
             mSecondsHandler.postAtTime(this, SystemClock.uptimeMillis() / 1000 * 1000 + 1000);
         }
     };
-
-    public void setIsQshb(boolean qshb) {
-        mQuickStatusBarHeader = qshb;
-    }
 }

@@ -3,7 +3,6 @@
 LOCAL_REL_DIR := core/jni
 
 LOCAL_CFLAGS += -Wall -Werror -Wno-unused-parameter
-LOCAL_CFLAGS += -fno-strict-aliasing
 
 LOCAL_SRC_FILES += \
     $(LOCAL_REL_DIR)/BroadcastRadio/JavaRef.cpp \

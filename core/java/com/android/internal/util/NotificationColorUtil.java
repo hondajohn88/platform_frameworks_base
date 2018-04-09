@@ -459,8 +459,10 @@ public class NotificationColorUtil {
      */
     public static int resolveContrastColor(Context context, int notificationColor,
             int backgroundColor) {
+        boolean isDark = context.getResources()
+                .getBoolean(R.bool.config_useDarkBgNotificationIconTextTinting);
         return NotificationColorUtil.resolveContrastColor(context, notificationColor,
-                backgroundColor, false /* isDark */);
+                backgroundColor, isDark);
     }
 
     /**
@@ -519,7 +521,7 @@ public class NotificationColorUtil {
         int color = resolvedColor;
 
         if (!context.getResources().getBoolean(R.bool.config_allowNotificationIconTextTinting)) {
-            color = context.getColor(R.color.notification_text_default_color);
+            color = context.getColor(R.color.notification_ambient_default_color);
         } else {
             color = NotificationColorUtil.ensureTextContrastOnBlack(color);
         }

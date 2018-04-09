@@ -33,7 +33,7 @@
         android:paddingEnd="12dp" />
     <TextView
         android:id="@+id/title"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_vertical|start"
         android:textSize="16sp"
@@ -44,6 +44,7 @@
         android:maxLines="1"
         android:ellipsize="marquee"
         android:fadingEdge="horizontal"
+        android:paddingEnd="40dp"
         android:forceHasOverlappingRendering="false" />
     <com.android.systemui.recents.views.FixedSizeImageView
         android:id="@+id/move_task"
@@ -66,16 +67,6 @@
         android:alpha="0"
         android:visibility="gone" />
     <com.android.systemui.recents.views.FixedSizeImageView
-        android:id="@+id/kill_app"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_vertical|end"
-        android:padding="@dimen/recents_task_view_header_button_padding"
-        android:src="@drawable/ic_kill_app_light"
-        android:background="?android:selectableItemBackground"
-        android:alpha="0"
-        android:visibility="gone" />
-    <com.android.systemui.recents.views.FixedSizeImageView
         android:id="@+id/dismiss_task"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -85,16 +76,6 @@
         android:background="?android:selectableItemBackground"
         android:alpha="0"
         android:visibility="gone" />
-    <com.android.systemui.recents.views.FixedSizeImageView
-        android:id="@+id/lock_to_app_fab"
-        android:layout_width="48.0dip"
-        android:layout_height="48.0dip"
-        android:layout_marginEnd="40.0dip"
-        android:layout_gravity="end|center"
-        android:padding="12.0dip"
-        android:background="?android:selectableItemBackground"
-        android:visibility="gone"
-        android:src="@drawable/ic_pin" />
 
     <!-- The progress indicator shows if auto-paging is enabled -->
     <ViewStub android:id="@+id/focus_timer_indicator_stub"

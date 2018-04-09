@@ -609,11 +609,6 @@ interface ITelephony {
     int getLteOnCdmaModeForSubscriber(int subId, String callingPackage);
 
     /**
-     * Return if the current radio is LTE on GSM
-     */
-    int getLteOnGsmMode();
-
-    /**
      * Returns the all observed cell information of the device.
      */
     List<CellInfo> getAllCellInfo(String callingPkg);
@@ -1387,4 +1382,15 @@ interface ITelephony {
      * @hide
      */
     SignalStrength getSignalStrength(int subId);
+
+    /**
+     * Get ATR (Answer To Reset; as per ISO/IEC 7816-4) from SIM card
+     */
+    byte[] getAtr();
+
+    /**
+     * Get ATR (Answer To Reset; as per ISO/IEC 7816-4) from SIM card
+     * for a particular subId.
+     */
+    byte[] getAtrUsingSubId(int subId);
 }

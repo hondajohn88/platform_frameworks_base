@@ -17,7 +17,6 @@
 package com.android.internal.statusbar;
 
 import android.content.ComponentName;
-import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Bundle;
 import android.service.notification.StatusBarNotification;
@@ -72,23 +71,22 @@ interface IStatusBarService
      * These methods are needed for global actions control which the UI is shown in sysui.
      */
     void shutdown();
-    void reboot(boolean safeMode);
-    void advancedReboot(String mode);
+    void reboot(boolean safeMode, String reason);
 
     void addTile(in ComponentName tile);
     void remTile(in ComponentName tile);
     void clickTile(in ComponentName tile);
     void handleSystemKey(in int key);
 
-    // Start DU methods
+   /**
+     * Custom
+     */
     void toggleRecentApps();
     void toggleSplitScreen();
     void preloadRecentApps();
     void cancelPreloadRecentApps();
     void startAssist(in Bundle args);
     void screenPinningStateChanged(boolean enabled);
-    void leftInLandscapeChanged(boolean isLeft);
     void toggleFlashlight();
-    void toggleNavigationEditor();
-    void dispatchNavigationEditorResults(in Intent intent);
+    void toggleNavigationBar(boolean enable);
 }

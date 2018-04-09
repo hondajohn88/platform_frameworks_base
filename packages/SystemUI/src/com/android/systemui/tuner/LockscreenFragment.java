@@ -90,6 +90,7 @@ public class LockscreenFragment extends PreferenceFragment {
         addPreferencesFromResource(R.xml.lockscreen_settings);
         setupGroup(LOCKSCREEN_LEFT_BUTTON, LOCKSCREEN_LEFT_UNLOCK);
         setupGroup(LOCKSCREEN_RIGHT_BUTTON, LOCKSCREEN_RIGHT_UNLOCK);
+
     }
 
     @Override
@@ -468,6 +469,7 @@ public class LockscreenFragment extends PreferenceFragment {
             return mIntent;
         }
     }
+
 
     private static BitmapDrawable getBitmapDrawable(Resources resources, Drawable image) {
         if (image instanceof BitmapDrawable) {

@@ -352,8 +352,14 @@ public final class Call {
          */
         public static final int CAPABILITY_CAN_PULL_CALL = 0x00800000;
 
+        /**
+         * Add participant in an active or conference call option
+         * @hide
+         */
+        public static final int CAPABILITY_ADD_PARTICIPANT = 0x01000000;
+
         //******************************************************************************************
-        // Next CAPABILITY value: 0x01000000
+        // Next CAPABILITY value: 0x02000000
         //******************************************************************************************
 
         /**
@@ -416,8 +422,15 @@ public final class Call {
          */
         public static final int PROPERTY_SELF_MANAGED = 0x00000100;
 
+        /**
+         * Indicates the call used Assisted Dialing.
+         * See also {@link Connection#PROPERTY_ASSISTED_DIALING_USED}
+         * @hide
+         */
+        public static final int PROPERTY_ASSISTED_DIALING_USED = 0x00000200;
+
         //******************************************************************************************
-        // Next PROPERTY value: 0x00000200
+        // Next PROPERTY value: 0x00000400
         //******************************************************************************************
 
         private final String mTelecomCallId;
@@ -522,6 +535,9 @@ public final class Call {
             if (can(capabilities, CAPABILITY_CAN_PULL_CALL)) {
                 builder.append(" CAPABILITY_CAN_PULL_CALL");
             }
+            if (can(capabilities, CAPABILITY_ADD_PARTICIPANT)) {
+                builder.append(" CAPABILITY_ADD_PARTICIPANT");
+            }
             builder.append("]");
             return builder.toString();
         }
@@ -576,6 +592,9 @@ public final class Call {
             }
             if(hasProperty(properties, PROPERTY_HAS_CDMA_VOICE_PRIVACY)) {
                 builder.append(" PROPERTY_HAS_CDMA_VOICE_PRIVACY");
+            }
+            if(hasProperty(properties, PROPERTY_ASSISTED_DIALING_USED)) {
+                builder.append(" PROPERTY_ASSISTED_DIALING_USED");
             }
             builder.append("]");
             return builder.toString();

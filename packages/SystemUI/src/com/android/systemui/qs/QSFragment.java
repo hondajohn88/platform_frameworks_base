@@ -200,10 +200,6 @@ public class QSFragment extends Fragment implements QS {
         return mQSCustomizer;
     }
 
-    public QuickStatusBarHeader getQsHeader() {
-        return mHeader;
-    }
-
     @Override
     public boolean isShowingDetail() {
         return mQSPanel.isShowingCustomize() || mQSDetail.isShowingDetail();
@@ -344,6 +340,11 @@ public class QSFragment extends Fragment implements QS {
         // Let the panel know the position changed and it needs to update where notifications
         // and whatnot are.
         mPanelView.onQsHeightChanged();
+
+        // when we come back from customize update
+        if (!mQSCustomizer.isCustomizing()) {
+            mQSPanel.updateSettings();
+        }
     }
 
     /**

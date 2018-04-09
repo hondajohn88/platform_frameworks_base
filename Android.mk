@@ -43,6 +43,7 @@ include $(LOCAL_PATH)/pathmap.mk
 # FRAMEWORKS_BASE_SUBDIRS comes from build/core/pathmap.mk
 LOCAL_SRC_FILES := \
         $(call find-other-java-files,$(FRAMEWORKS_BASE_SUBDIRS)) \
+        $(call all-java-files-under, ../hwkeys-support/java) \
         $(call all-proto-files-under, core/proto)
 
 # EventLogTags files.
@@ -149,6 +150,7 @@ LOCAL_SRC_FILES += \
 	core/java/android/bluetooth/le/IScannerCallback.aidl \
 	core/java/android/content/IClipboard.aidl \
 	core/java/android/content/IContentService.aidl \
+	core/java/android/content/IFontService.aidl \
 	core/java/android/content/IIntentReceiver.aidl \
 	core/java/android/content/IIntentSender.aidl \
 	core/java/android/content/IOnPrimaryClipChangedListener.aidl \
@@ -338,7 +340,6 @@ LOCAL_SRC_FILES += \
 	core/java/android/service/voice/IVoiceInteractionService.aidl \
 	core/java/android/service/voice/IVoiceInteractionSession.aidl \
 	core/java/android/service/voice/IVoiceInteractionSessionService.aidl \
-	core/java/android/service/gesture/IGestureService.aidl \
 	core/java/android/service/wallpaper/IWallpaperConnection.aidl \
 	core/java/android/service/wallpaper/IWallpaperEngine.aidl \
 	core/java/android/service/wallpaper/IWallpaperService.aidl \
@@ -559,6 +560,8 @@ LOCAL_SRC_FILES += \
 	packages/services/Proxy/com/android/net/IProxyPortListener.aidl \
 	core/java/android/service/quicksettings/IQSService.aidl \
 	core/java/android/service/quicksettings/IQSTileService.aidl \
+	telephony/java/com/android/internal/telephony/ISmsSecurityService.aidl \
+	telephony/java/com/android/internal/telephony/ISmsSecurityAgent.aidl \
 
 # The following are native binders that need to go with the native component
 # at system/update_engine/binder_bindings/. Use relative path to refer to them.

@@ -977,10 +977,6 @@ public final class VoiceInteractor {
             if (request.mRequestInterface != null) {
                 throw new IllegalStateException("Given " + request + " is already active");
             }
-            // Submit voice request only for non null activity context to avoid timing issue
-            if (mContext == null) {
-                return false;
-            }
             IVoiceInteractorRequest ireq = request.submit(mInteractor,
                     mContext.getOpPackageName(), mCallback);
             request.mRequestInterface = ireq;

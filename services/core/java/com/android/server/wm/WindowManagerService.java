@@ -714,9 +714,9 @@ public class WindowManagerService extends IWindowManager.Stub
     PowerManager mPowerManager;
     PowerManagerInternal mPowerManagerInternal;
 
-    private float mWindowAnimationScaleSetting = 0.7f;
-    private float mTransitionAnimationScaleSetting = 0.7f;
-    private float mAnimatorDurationScaleSetting = 0.7f;
+    private float mWindowAnimationScaleSetting = 0.8f;
+    private float mTransitionAnimationScaleSetting = 0.8f;
+    private float mAnimatorDurationScaleSetting = 0.8f;
     private boolean mAnimationsDisabled = false;
 
     final InputManagerService mInputManager;
@@ -3286,11 +3286,6 @@ public class WindowManagerService extends IWindowManager.Stub
         return mPointerEventDispatcher != null;
     }
 
-    @Override
-    public void addSystemUIVisibilityFlag(int flags) {
-        mLastStatusBarVisibility |= flags;
-    }
-
     // Called by window manager policy. Not exposed externally.
     @Override
     public int getLidState() {
@@ -3363,6 +3358,18 @@ public class WindowManagerService extends IWindowManager.Stub
         // Pass in the UI context, since ShutdownThread requires it (to show UI).
         ShutdownThread.rebootSafeMode(ActivityThread.currentActivityThread().getSystemUiContext(),
                 confirm);
+    }
+
+    // Called by window manager policy.  Not exposed externally.
+    @Override
+    public void reboot(String reason, boolean confirm) {
+        ShutdownThread.reboot(ActivityThread.currentActivityThread().getSystemUiContext(), reason, confirm);
+    }
+
+    // Called by window manager policy.  Not exposed externally.
+    @Override
+    public void rebootCustom(String reason, boolean confirm) {
+        ShutdownThread.rebootCustom(ActivityThread.currentActivityThread().getSystemUiContext(), reason, confirm);
     }
 
     public void setCurrentProfileIds(final int[] currentProfileIds) {
@@ -6414,13 +6421,13 @@ public class WindowManagerService extends IWindowManager.Stub
     }
 
     @Override
-    public void sendCustomAction(Intent intent) {
-        mPolicy.sendCustomAction(intent);
+    public boolean hasPermanentMenuKey() {
+        return mPolicy.hasPermanentMenuKey();
     }
 
     @Override
-    public boolean hasPermanentMenuKey() {
-        return mPolicy.hasPermanentMenuKey();
+    public void sendCustomAction(Intent intent) {
+        mPolicy.sendCustomAction(intent);
     }
 
     @Override
@@ -7736,5 +7743,10 @@ public class WindowManagerService extends IWindowManager.Stub
         mRoot.forAllWindows((w) -> {
             w.setForceHideNonSystemOverlayWindowIfNeeded(hideSystemAlertWindows);
         }, false /* traverseTopToBottom */);
+    }
+
+    @Override
+    public void screenRecordAction(int mode) {
+        mPolicy.screenRecordAction(mode);
     }
 }

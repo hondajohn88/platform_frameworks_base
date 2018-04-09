@@ -34,6 +34,7 @@ import android.os.UserHandle;
 import android.provider.Settings;
 import android.provider.Settings.Secure;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewTreeObserver;
@@ -127,6 +128,7 @@ public class RecentsActivity extends Activity implements ViewTreeObserver.OnPreD
     private RecentsView mRecentsView;
     private SystemBarScrimViews mScrimViews;
     private View mIncompatibleAppOverlay;
+    private View mFloatingButton;
 
     // Runnables to finish the Recents activity
     private Intent mHomeIntent;
@@ -365,6 +367,7 @@ public class RecentsActivity extends Activity implements ViewTreeObserver.OnPreD
         setContentView(R.layout.recents);
         takeKeyEvents(true);
         mRecentsView = findViewById(R.id.recents_view);
+        mFloatingButton = findViewById(R.id.floating_action_button);
         mScrimViews = new SystemBarScrimViews(this);
         getWindow().getAttributes().privateFlags |=
                 WindowManager.LayoutParams.PRIVATE_FLAG_FORCE_DECOR_VIEW_VISIBILITY;
@@ -383,6 +386,8 @@ public class RecentsActivity extends Activity implements ViewTreeObserver.OnPreD
 
         // Set the window background
         mRecentsView.updateBackgroundScrim(getWindow(), isInMultiWindowMode());
+
+        mRecentsView.setFloatingButtonView(mFloatingButton);
 
         // Create the home intent runnable
         mHomeIntent = new Intent(Intent.ACTION_MAIN, null);
@@ -421,6 +426,10 @@ public class RecentsActivity extends Activity implements ViewTreeObserver.OnPreD
         // Notify of the next draw
         mRecentsView.getViewTreeObserver().addOnPreDrawListener(mRecentsDrawnEventListener);
 
+		if (isInMultiWindowMode()) {
+            reloadTaskStack(true /* isInMultiWindowMode */, false /* sendConfigChangedEvent */);
+        }
+		
         // If Recents was restarted, then it should complete the enter animation with partially
         // reset launch state with dock, app and home set to false
         Object isRelaunching = getLastNonConfigurationInstance();
@@ -432,10 +441,6 @@ public class RecentsActivity extends Activity implements ViewTreeObserver.OnPreD
             onEnterAnimationComplete();
         }
         mRecentsStartRequested = false;
-
-        if (isInMultiWindowMode()) {
-            reloadTaskStack(true /* isInMultiWindowMode */, false /* sendConfigChangedEvent */);
-        }
     }
 
     @Override
@@ -530,6 +535,8 @@ public class RecentsActivity extends Activity implements ViewTreeObserver.OnPreD
         // Keep track of the total stack task count
         int taskCount = mRecentsView.getStack().getTaskCount();
         MetricsLogger.histogram(this, "overview_task_count", taskCount);
+
+        setImmersiveRecents();
 
         // After we have resumed, set the visible state until the next onStop() call
         mIsVisible = true;
@@ -705,6 +712,41 @@ public class RecentsActivity extends Activity implements ViewTreeObserver.OnPreD
     public void onBackPressed() {
         // Back behaves like the recents button so just trigger a toggle event
         EventBus.getDefault().send(new ToggleRecentsEvent());
+    }
+
+    private void setImmersiveRecents() {
+        boolean isPrimary = UserHandle.getCallingUserId() == UserHandle.USER_OWNER;
+        int immersiveRecents = isPrimary ? getImmersiveRecents() : 0;
+
+        switch (immersiveRecents) {
+            case 0:
+                // default AOSP action
+                break;
+            case 1:
+                // full screen action
+                getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+                break;
+            case 2:
+                // status bar action
+                getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+                break;
+            case 3:
+                // navigation bar action
+                getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+                break;
+        }
+    }
+
+    private int getImmersiveRecents() {
+        return Settings.System.getInt(getContentResolver(),
+                Settings.System.IMMERSIVE_RECENTS, 0);
     }
 
     /**** EventBus events ****/

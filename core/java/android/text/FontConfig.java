@@ -25,6 +25,7 @@ import android.graphics.fonts.FontVariationAxis;
 import android.net.Uri;
 
 import java.lang.annotation.Retention;
+import java.util.List;
 
 
 /**
@@ -32,10 +33,10 @@ import java.lang.annotation.Retention;
  * @hide
  */
 public final class FontConfig {
-    private final @NonNull Family[] mFamilies;
-    private final @NonNull Alias[] mAliases;
+    private final @NonNull List<Family> mFamilies;
+    private final @NonNull List<Alias> mAliases;
 
-    public FontConfig(@NonNull Family[] families, @NonNull Alias[] aliases) {
+    public FontConfig(@NonNull List<Family> families, @NonNull List<Alias> aliases) {
         mFamilies = families;
         mAliases = aliases;
     }
@@ -43,14 +44,14 @@ public final class FontConfig {
     /**
      * Returns the ordered list of families included in the system fonts.
      */
-    public @NonNull Family[] getFamilies() {
+    public @NonNull List<Family> getFamilies() {
         return mFamilies;
     }
 
     /**
      * Returns the list of aliases defined for the font families in the system fonts.
      */
-    public @NonNull Alias[] getAliases() {
+    public @NonNull List<Alias> getAliases() {
         return mAliases;
     }
 
@@ -167,7 +168,7 @@ public final class FontConfig {
      * Class that holds information about a Font family.
      */
     public static final class Family {
-        private final @NonNull String mName;
+        private String mName;
         private final @NonNull Font[] mFonts;
         private final @NonNull String mLanguage;
 
@@ -201,7 +202,7 @@ public final class FontConfig {
 
         // Must be same with Minikin's variant values.
         // See frameworks/minikin/include/minikin/FontFamily.h
-        public final @Variant int mVariant;
+        private final @Variant int mVariant;
 
         public Family(@NonNull String name, @NonNull Font[] fonts, @NonNull String language,
                 @Variant int variant) {
@@ -209,6 +210,10 @@ public final class FontConfig {
             mFonts = fonts;
             mLanguage = language;
             mVariant = variant;
+        }
+
+        public void clearName() {
+            mName = null;
         }
 
         /**

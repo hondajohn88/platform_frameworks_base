@@ -21,14 +21,10 @@ import android.content.Context;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
-import android.database.ContentObserver;
 import android.graphics.Color;
 import android.graphics.Rect;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
-import android.net.Uri;
-import android.os.Handler;
-import android.os.UserHandle;
-import android.provider.Settings;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.View;
@@ -64,11 +60,11 @@ import com.android.systemui.statusbar.policy.UserSwitcherController;
 public class KeyguardStatusBarView extends RelativeLayout
         implements BatteryStateChangeCallback, OnUserInfoChangedListener, ConfigurationListener {
 
+    private static final String FONT_FAMILY = "sans-serif";
+
     private boolean mBatteryCharging;
     private boolean mKeyguardUserSwitcherShowing;
     private boolean mBatteryListening;
-
-    private int mShowCarrierLabel;
 
     private TextView mCarrierLabel;
     private View mSystemIconsSuperContainer;
@@ -85,21 +81,8 @@ public class KeyguardStatusBarView extends RelativeLayout
     private View mSystemIconsContainer;
     private TintedIconManager mIconManager;
 
-    private ContentObserver mObserver = new ContentObserver(new Handler()) {
-        public void onChange(boolean selfChange, Uri uri) {
-            showStatusBarCarrier();
-            updateVisibilities();
-        }
-    };
-
     public KeyguardStatusBarView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        showStatusBarCarrier();
-    }
-
-    private void showStatusBarCarrier() {
-        mShowCarrierLabel = Settings.System.getIntForUser(getContext().getContentResolver(),
-                Settings.System.STATUS_BAR_CARRIER, 1, UserHandle.USER_CURRENT);
     }
 
     @Override
@@ -117,16 +100,10 @@ public class KeyguardStatusBarView extends RelativeLayout
         mBatteryController = Dependency.get(BatteryController.class);
     }
 
-    public void updateSettings() {
-        if (mBatteryView != null) {
-            mBatteryView.updateSettings(true);
-        }
-    }
-
     @Override
     protected void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-
+        Typeface tf = Typeface.create(FONT_FAMILY, Typeface.NORMAL);
         MarginLayoutParams lp = (MarginLayoutParams) mMultiUserAvatar.getLayoutParams();
         lp.width = lp.height = getResources().getDimensionPixelSize(
                 R.dimen.multi_user_avatar_keyguard_size);
@@ -159,6 +136,7 @@ public class KeyguardStatusBarView extends RelativeLayout
         mCarrierLabel.setTextSize(TypedValue.COMPLEX_UNIT_PX,
                 getResources().getDimensionPixelSize(
                         com.android.internal.R.dimen.text_size_small_material));
+        mCarrierLabel.setTypeface(tf);
         lp = (MarginLayoutParams) mCarrierLabel.getLayoutParams();
         lp.setMarginStart(
                 getResources().getDimensionPixelSize(R.dimen.keyguard_carrier_text_margin));
@@ -197,14 +175,7 @@ public class KeyguardStatusBarView extends RelativeLayout
                 mMultiUserSwitch.setVisibility(View.GONE);
             }
         }
-        mBatteryView.setForceShowPercent(mBatteryCharging);
-        if (mCarrierLabel != null) {
-            if (mShowCarrierLabel == 1 || mShowCarrierLabel == 3) {
-                mCarrierLabel.setVisibility(View.VISIBLE);
-            } else {
-                mCarrierLabel.setVisibility(View.GONE);
-            }
-        }
+        mBatteryView.setForceShowPercent(true);
     }
 
     private void updateSystemIconsLayoutParams() {
@@ -254,8 +225,6 @@ public class KeyguardStatusBarView extends RelativeLayout
         mIconManager = new TintedIconManager(findViewById(R.id.statusIcons));
         Dependency.get(StatusBarIconController.class).addIconGroup(mIconManager);
         onOverlayChanged();
-        getContext().getContentResolver().registerContentObserver(Settings.System.getUriFor(
-                Settings.System.STATUS_BAR_CARRIER), false, mObserver);
     }
 
     @Override

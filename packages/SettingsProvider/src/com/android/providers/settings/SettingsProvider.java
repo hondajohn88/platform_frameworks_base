@@ -1687,18 +1687,9 @@ public class SettingsProvider extends ContentProvider {
     }
 
     private List<String> getSettingsNamesLocked(int settingsType, int userId) {
-        boolean instantApp;
-        if (UserHandle.getAppId(Binder.getCallingUid()) < Process.FIRST_APPLICATION_UID) {
-            instantApp = false;
-        } else {
-            ApplicationInfo ai = getCallingApplicationInfoOrThrow();
-            instantApp = ai.isInstantApp();
-        }
-        if (instantApp) {
-            return new ArrayList<String>(getInstantAppAccessibleSettings(settingsType));
-        } else {
-            return mSettingsRegistry.getSettingsNamesLocked(settingsType, userId);
-        }
+        // Don't enforce the instant app whitelist for now -- its too prone to unintended breakage
+        // in the current form.
+        return mSettingsRegistry.getSettingsNamesLocked(settingsType, userId);
     }
 
     private void enforceSettingReadable(String settingName, int settingsType, int userId) {
@@ -1711,8 +1702,10 @@ public class SettingsProvider extends ContentProvider {
         }
         if (!getInstantAppAccessibleSettings(settingsType).contains(settingName)
                 && !getOverlayInstantAppAccessibleSettings(settingsType).contains(settingName)) {
-            throw new SecurityException("Setting " + settingName + " is not accessible from"
-                    + " ephemeral package " + getCallingPackage());
+            // Don't enforce the instant app whitelist for now -- its too prone to unintended
+            // breakage in the current form.
+            Slog.w(LOG_TAG, "Instant App " + ai.packageName
+                    + " trying to access unexposed setting, this will be an error in the future.");
         }
     }
 
@@ -2896,7 +2889,7 @@ public class SettingsProvider extends ContentProvider {
         }
 
         private final class UpgradeController {
-            private static final int SETTINGS_VERSION = 149;
+            private static final int SETTINGS_VERSION = 148;
 
             private final int mUserId;
 
@@ -3453,16 +3446,13 @@ public class SettingsProvider extends ContentProvider {
                                     null, true, SettingsState.SYSTEM_PACKAGE_NAME);
                         }
                     }
-                    currentVersion = 148;
-                }
-
-                if (currentVersion == 148) {
-                    // Version 149: Set the default value for BATTERY_PLUGGED_SOUND.
+					
+					// Version 147: Set the default value for BATTERY_PLUGGED_SOUND.
                     if (userId == UserHandle.USER_SYSTEM) {
                         final SettingsState globalSettings = getGlobalSettingsLocked();
-                        final Setting currentSetting = globalSettings.getSettingLocked(
+                        final Setting curSetting = globalSettings.getSettingLocked(
                                 Settings.Global.BATTERY_PLUGGED_SOUND);
-                        if (currentSetting.isNull()) {
+                        if (curSetting.isNull()) {
                             final String defaultValue = getContext().getResources().getString(
                                     R.string.def_battery_plugged_sound);
                             if (defaultValue != null) {
@@ -3472,8 +3462,8 @@ public class SettingsProvider extends ContentProvider {
                             }
                         }
                     }
-
-                    currentVersion = 149;
+					
+                    currentVersion = 148;
                 }
 
                 // vXXX: Add new settings above this point.

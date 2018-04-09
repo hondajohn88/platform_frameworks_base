@@ -44,6 +44,8 @@ import com.android.systemui.qs.CellTileView;
 import com.android.systemui.qs.CellTileView.SignalIcon;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.systemui.statusbar.phone.SystemUIDialog;
+import com.android.systemui.statusbar.policy.KeyguardMonitor;
 import com.android.systemui.statusbar.policy.NetworkController;
 import com.android.systemui.statusbar.policy.NetworkController.IconState;
 import com.android.systemui.statusbar.policy.NetworkController.SignalCallback;
@@ -68,11 +70,13 @@ public class CellularTile extends QSTileImpl<SignalState> {
 
     private final CellSignalCallback mSignalCallback = new CellSignalCallback();
     private final ActivityStarter mActivityStarter;
+    private final KeyguardMonitor mKeyguardMonitor;
 
     public CellularTile(QSHost host) {
         super(host);
         mController = Dependency.get(NetworkController.class);
         mActivityStarter = Dependency.get(ActivityStarter.class);
+        mKeyguardMonitor = Dependency.get(KeyguardMonitor.class);
         mDataController = mController.getMobileDataController();
         mDetailAdapter = new CellularDetailAdapter();
     }
@@ -109,6 +113,22 @@ public class CellularTile extends QSTileImpl<SignalState> {
     @Override
     protected void handleClick() {
         mDataController.setMobileDataEnabled(!mDataController.isMobileDataEnabled());
+    }
+
+    private void showDisableDialog() {
+        mHost.collapsePanels();
+        AlertDialog dialog = new Builder(mContext)
+                .setMessage(string.data_usage_disable_mobile)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(
+                        com.android.internal.R.string.alert_windows_notification_turn_off_action,
+                        (d, w) -> mDataController.setMobileDataEnabled(false))
+                .create();
+        dialog.getWindow().setType(LayoutParams.TYPE_KEYGUARD_DIALOG);
+        SystemUIDialog.setShowForAllUsers(dialog, true);
+        SystemUIDialog.registerDismissListener(dialog);
+        SystemUIDialog.setWindowOnTop(dialog);
+        dialog.show();
     }
 
     @Override
@@ -216,7 +236,7 @@ public class CellularTile extends QSTileImpl<SignalState> {
         @Override
         public void setMobileDataIndicators(IconState statusIcon, IconState qsIcon, int statusType,
                 int qsType, boolean activityIn, boolean activityOut, String typeContentDescription,
-                String description, boolean isWide, int subId, boolean roaming) {
+                String description, boolean isWide, int subId, boolean roaming, boolean isMobileIms) {
             if (qsIcon == null) {
                 // Not data sim, don't display.
                 return;

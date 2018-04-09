@@ -1076,11 +1076,6 @@
     <string name="permdesc_manageOwnCalls">Allows the app to route its calls through the system in
         order to improve the calling experience.</string>
 
-   <!-- Title of an application permission, listed so the user can choose whether they want to allow the application to do this. -->
-    <string name="permlab_fakePackageSignature">Spoof package signature</string>
-    <!-- Description of an application permission, listed so the user can choose whether they want to allow the application to do this. -->
-    <string name="permdesc_fakePackageSignature">Allows the app to pretend to be a different app. Malicious applications might be able to use this to access private application data. Grant this permission with caution only!</string>
-
     <!-- Title of an application permission, listed so the user can choose whether they want to allow the application to do this. -->
     <string name="permlab_readPhoneNumbers">read phone numbers</string>
     <!-- Description of an application permission, listed so the user can choose whether they want to allow the application to do this. -->
@@ -4422,7 +4417,9 @@
     <string name="stk_cc_ussd_to_dial">USSD request is modified to DIAL request.</string>
     <string name="stk_cc_ussd_to_ss">USSD request is modified to SS request.</string>
     <string name="stk_cc_ussd_to_ussd">USSD request is modified to new USSD request.</string>
+    <string name="stk_cc_ussd_to_dial_video">USSD request is modified to Video DIAL request.</string>
     <string name="stk_cc_ss_to_dial">SS request is modified to DIAL request.</string>
+    <string name="stk_cc_ss_to_dial_video">SS request is modified to Video DIAL request.</string>
     <string name="stk_cc_ss_to_ussd">SS request is modified to USSD request.</string>
     <string name="stk_cc_ss_to_ss">SS request is modified to new SS request.</string>
 

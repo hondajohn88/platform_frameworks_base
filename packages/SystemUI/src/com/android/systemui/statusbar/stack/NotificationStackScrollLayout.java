@@ -127,7 +127,7 @@ public class NotificationStackScrollLayout extends ViewGroup
     private boolean mSwipingInProgress;
     private int mCurrentStackHeight = Integer.MAX_VALUE;
     private final Paint mBackgroundPaint = new Paint();
-    private final boolean mShouldDrawNotificationBackground;
+    private boolean mShouldDrawNotificationBackground;
 
     private float mExpandedHeight;
     private int mOwnScrollY;
@@ -1291,6 +1291,17 @@ public class NotificationStackScrollLayout extends ViewGroup
         }
     }
 
+    public void onOverlayChanged() {
+        mBgColor = getContext().getColor(R.color.notification_shade_background_color);
+        mShouldDrawNotificationBackground =
+                getContext().getResources().getBoolean(R.bool.config_drawNotificationBackground);
+        mFadeNotificationsOnDismiss =
+                getContext().getResources().getBoolean(R.bool.config_fadeNotificationsOnDismiss);
+        initView(getContext());
+        updateWillNotDraw();
+        updateBackgroundDimming();
+    }
+
     @Override
     protected void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
@@ -1531,13 +1542,8 @@ public class NotificationStackScrollLayout extends ViewGroup
             }
             case MotionEvent.ACTION_POINTER_UP:
                 onSecondaryPointerUp(ev);
-                final int pointerIndex = ev.findPointerIndex(mActivePointerId);
-                if (pointerIndex == -1) {
-                    Log.e(TAG, "Invalid pointerId=" + mActivePointerId + " in onTouchEvent");
-                    break;
-                }
-                mLastMotionY = (int) ev.getY(pointerIndex);
-                mDownX = (int) ev.getX(pointerIndex);
+                mLastMotionY = (int) ev.getY(ev.findPointerIndex(mActivePointerId));
+                mDownX = (int) ev.getX(ev.findPointerIndex(mActivePointerId));
                 break;
         }
         return true;
@@ -3839,7 +3845,6 @@ public class NotificationStackScrollLayout extends ViewGroup
     }
 
     public void updateEmptyShadeView(boolean visible) {
-        if (mEmptyShadeView == null) return;
         int oldVisibility = mEmptyShadeView.willBeGone() ? GONE : mEmptyShadeView.getVisibility();
         int newVisibility = visible ? VISIBLE : GONE;
         if (oldVisibility != newVisibility) {

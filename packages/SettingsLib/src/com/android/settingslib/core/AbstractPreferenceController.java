@@ -23,10 +23,8 @@ public abstract class AbstractPreferenceController {
       if (isAvailable()) {
           if (this instanceof Preference.OnPreferenceChangeListener) {
               final Preference preference = screen.findPreference(getPreferenceKey());
-                if (preference != null) {
-                    preference.setOnPreferenceChangeListener(
-                            (Preference.OnPreferenceChangeListener) this);
-                }
+              preference.setOnPreferenceChangeListener(
+                      (Preference.OnPreferenceChangeListener) this);
           }
       } else {
           removePreference(screen, getPreferenceKey());

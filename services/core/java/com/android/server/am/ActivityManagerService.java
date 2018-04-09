@@ -553,7 +553,6 @@ public class ActivityManagerService extends IActivityManager.Stub
 
     // How many bytes to write into the dropbox log before truncating
     static final int DROPBOX_MAX_SIZE = 192 * 1024;
-    static final String PROP_REFRESH_THEME = "sys.refresh_theme";
     // Assumes logcat entries average around 100 bytes; that's not perfect stack traces count
     // as one line, but close enough for now.
     static final int RESERVED_BYTES_PER_LOGCAT_LINE = 100;
@@ -605,6 +604,9 @@ public class ActivityManagerService extends IActivityManager.Stub
     private static final int MAX_BUGREPORT_TITLE_SIZE = 50;
 
     private static final int NATIVE_DUMP_TIMEOUT_MS = 2000; // 2 seconds;
+
+    // System prop for refreshing font
+    private static final String PROP_REFRESH_FONT = "sys.refresh_font";
 
     /** All system services */
     SystemServiceManager mSystemServiceManager;
@@ -1861,11 +1863,14 @@ public class ActivityManagerService extends IActivityManager.Stub
             } break;
             case SHOW_FINGERPRINT_ERROR_UI_MSG: {
                 if (mShowDialogs) {
+                    String buildfingerprint = SystemProperties.get("ro.build.fingerprint");
+                    String[] splitfingerprint = buildfingerprint.split("/");
+                    String vendorid = splitfingerprint[3];
                     AlertDialog d = new BaseErrorDialog(mUiContext);
                     d.getWindow().setType(WindowManager.LayoutParams.TYPE_SYSTEM_ERROR);
                     d.setCancelable(false);
                     d.setTitle(mUiContext.getText(R.string.android_system_label));
-                    d.setMessage(mUiContext.getText(R.string.system_error_manufacturer));
+                    d.setMessage(mUiContext.getString(R.string.system_error_vendorprint, vendorid));
                     d.setButton(DialogInterface.BUTTON_POSITIVE, mUiContext.getText(R.string.ok),
                             obtainMessage(DISMISS_DIALOG_UI_MSG, d));
                     d.show();
@@ -3887,20 +3892,19 @@ public class ActivityManagerService extends IActivityManager.Stub
             if ("1".equals(SystemProperties.get("debug.assert"))) {
                 debugFlags |= Zygote.DEBUG_ENABLE_ASSERT;
             }
-
-            //Check if zygote should refresh its fonts
-            boolean refreshTheme = false;
-            if (SystemProperties.getBoolean(PROP_REFRESH_THEME, false)) {
-				SystemProperties.set(PROP_REFRESH_THEME, "false");
-				refreshTheme = true;
-			}
-
             if (mNativeDebuggingApp != null && mNativeDebuggingApp.equals(app.processName)) {
                 // Enable all debug flags required by the native debugger.
                 debugFlags |= Zygote.DEBUG_ALWAYS_JIT;          // Don't interpret anything
                 debugFlags |= Zygote.DEBUG_GENERATE_DEBUG_INFO; // Generate debug info
                 debugFlags |= Zygote.DEBUG_NATIVE_DEBUGGABLE;   // Disbale optimizations
                 mNativeDebuggingApp = null;
+            }
+
+            // Check if zygote should refresh its fonts
+            boolean refreshFont = false;
+            if (SystemProperties.getBoolean(PROP_REFRESH_FONT, false)) {
+                SystemProperties.set(PROP_REFRESH_FONT, "false");
+                refreshFont = true;
             }
 
             String invokeWith = null;
@@ -3951,12 +3955,12 @@ public class ActivityManagerService extends IActivityManager.Stub
                 startResult = startWebView(entryPoint,
                         app.processName, uid, uid, gids, debugFlags, mountExternal,
                         app.info.targetSdkVersion, seInfo, requiredAbi, instructionSet,
-                        app.info.dataDir, null, refreshTheme, entryPointArgs);
+                        app.info.dataDir, null, entryPointArgs, refreshFont);
             } else {
                 startResult = Process.start(entryPoint,
                         app.processName, uid, uid, gids, debugFlags, mountExternal,
                         app.info.targetSdkVersion, seInfo, requiredAbi, instructionSet,
-                        app.info.dataDir, invokeWith, refreshTheme, entryPointArgs);
+                        app.info.dataDir, invokeWith, entryPointArgs, refreshFont);
             }
             checkTime(startTime, "startProcess: returned from zygote!");
             Trace.traceEnd(Trace.TRACE_TAG_ACTIVITY_MANAGER);
@@ -18527,7 +18531,7 @@ public class ActivityManagerService extends IActivityManager.Stub
         IPackageManager pm = AppGlobals.getPackageManager();
         ApplicationInfo app = null;
         try {
-            app = pm.getApplicationInfo(packageName, STOCK_PM_FLAGS, userId);
+            app = pm.getApplicationInfo(packageName, 0, userId);
         } catch (RemoteException e) {
             // can't happen; package manager is process-local
         }
@@ -22050,6 +22054,18 @@ public class ActivityManagerService extends IActivityManager.Stub
         boolean success = true;
 
         if (app.curRawAdj != app.setRawAdj) {
+            String seempStr = "app_uid=" + app.uid
+                + ",app_pid=" + app.pid + ",oom_adj=" + app.curAdj
+                + ",setAdj=" + app.setAdj + ",hasShownUi=" + (app.hasShownUi ? 1 : 0)
+                + ",cached=" + (app.cached ? 1 : 0)
+                + ",fA=" + (app.foregroundActivities ? 1 : 0)
+                + ",fS=" + (app.foregroundServices ? 1 : 0)
+                + ",systemNoUi=" + (app.systemNoUi ? 1 : 0)
+                + ",curSchedGroup=" + app.curSchedGroup
+                + ",curProcState=" + app.curProcState + ",setProcState=" + app.setProcState
+                + ",killed=" + (app.killed ? 1 : 0) + ",killedByAm=" + (app.killedByAm ? 1 : 0)
+                + ",debugging=" + (app.debugging ? 1 : 0);
+            android.util.SeempLog.record_str(385, seempStr);
             app.setRawAdj = app.curRawAdj;
         }
 

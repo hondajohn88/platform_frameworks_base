@@ -266,6 +266,7 @@ public final class AudioFormat implements Parcelable {
     /** Audio data format: DOLBY TRUEHD compressed
      **/
     public static final int ENCODING_DOLBY_TRUEHD = 14;
+
     /** Audio data format: AMRNB
      * @hide
      * */
@@ -290,7 +291,7 @@ public final class AudioFormat implements Parcelable {
      * @hide
      * */
     public static final int ENCODING_EVRCNW = 105;
-
+    
     /** @hide */
     public static String toLogFriendlyEncoding(int enc) {
         switch(enc) {
@@ -322,6 +323,18 @@ public final class AudioFormat implements Parcelable {
                 return "ENCODING_IEC61937";
             case ENCODING_DOLBY_TRUEHD:
                 return "ENCODING_DOLBY_TRUEHD";
+            case ENCODING_AMRNB:
+                return "ENCODING_AMRNB";
+            case ENCODING_AMRWB:
+                return "ENCODING_AMRWB";
+            case ENCODING_EVRC:
+                return "ENCODING_EVRC";
+            case ENCODING_EVRCB:
+                return "ENCODING_EVRCB";
+            case ENCODING_EVRCWB:
+                return "ENCODING_EVRCWB";
+            case ENCODING_EVRCNW:
+                return "ENCODING_EVRCNW";
             default :
                 return "invalid encoding " + enc;
         }
