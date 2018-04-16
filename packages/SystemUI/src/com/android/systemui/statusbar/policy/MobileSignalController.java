@@ -45,7 +45,6 @@ import com.android.systemui.statusbar.policy.NetworkControllerImpl.SubscriptionD
 import java.io.PrintWriter;
 import java.util.BitSet;
 import java.util.Objects;
-
 import java.util.List;
 
 public class MobileSignalController extends SignalController<

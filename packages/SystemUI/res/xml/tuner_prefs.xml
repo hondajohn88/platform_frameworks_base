@@ -17,9 +17,5 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:sysui="http://schemas.android.com/apk/res-auto"
     android:title="@string/system_ui_tuner">
-        
-        <com.android.systemui.tuner.StatusBarSwitch
-            android:key="volte"
-            android:title="@string/status_bar_volte" />
 
 </PreferenceScreen>
