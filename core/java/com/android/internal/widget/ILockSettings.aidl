@@ -34,6 +34,7 @@ interface ILockSettings {
             in ICheckCredentialProgressCallback progressCallback);
     VerifyCredentialResponse verifyCredential(in String credential, int type, long challenge, int userId);
     VerifyCredentialResponse verifyTiedProfileChallenge(String credential, int type, long challenge, int userId);
+    byte getLockPatternSize(int userId);
     boolean checkVoldPassword(int userId);
     boolean havePattern(int userId);
     boolean havePassword(int userId);
@@ -52,6 +53,4 @@ interface ILockSettings {
     boolean setLockCredentialWithToken(String credential, int type, long tokenHandle,
             in byte[] token, int requestedQuality, int userId);
     void unlockUserWithToken(long tokenHandle, in byte[] token, int userId);
-    void sanitizePassword();
-    String getPassword();
 }

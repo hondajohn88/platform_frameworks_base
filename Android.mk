@@ -43,7 +43,6 @@ include $(LOCAL_PATH)/pathmap.mk
 # FRAMEWORKS_BASE_SUBDIRS comes from build/core/pathmap.mk
 LOCAL_SRC_FILES := \
         $(call find-other-java-files,$(FRAMEWORKS_BASE_SUBDIRS)) \
-        $(call all-java-files-under, ../hwkeys-support/java) \
         $(call all-proto-files-under, core/proto)
 
 # EventLogTags files.
@@ -150,7 +149,6 @@ LOCAL_SRC_FILES += \
 	core/java/android/bluetooth/le/IScannerCallback.aidl \
 	core/java/android/content/IClipboard.aidl \
 	core/java/android/content/IContentService.aidl \
-	core/java/android/content/IFontService.aidl \
 	core/java/android/content/IIntentReceiver.aidl \
 	core/java/android/content/IIntentSender.aidl \
 	core/java/android/content/IOnPrimaryClipChangedListener.aidl \
@@ -800,6 +798,7 @@ aidl_files := \
 	frameworks/base/core/java/android/app/usage/UsageEvents.aidl \
 	frameworks/base/core/java/android/app/Notification.aidl \
 	frameworks/base/core/java/android/app/NotificationManager.aidl \
+	frameworks/base/core/java/android/app/NotificationGroup.aidl \
 	frameworks/base/core/java/android/app/WallpaperInfo.aidl \
 	frameworks/base/core/java/android/app/AppOpsManager.aidl \
 	frameworks/base/core/java/android/app/ActivityManager.aidl \

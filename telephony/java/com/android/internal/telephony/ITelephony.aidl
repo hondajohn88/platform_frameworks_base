@@ -1089,11 +1089,6 @@ interface ITelephony {
     boolean isImsRegistered();
 
     /**
-     * Get IMS Registration Status using subId
-     */
-    boolean isImsRegisteredForSubscriber(int subId);
-
-    /**
      * Returns the Status of Wi-Fi Calling
      */
     boolean isWifiCallingAvailable();
@@ -1384,13 +1379,9 @@ interface ITelephony {
     SignalStrength getSignalStrength(int subId);
 
     /**
-     * Get ATR (Answer To Reset; as per ISO/IEC 7816-4) from SIM card
+     * Toggle between 2G and 3G (NT_MODE_GSM, NT_MODE_WCDMA_PREF)
+     * @param boolean to turn on and off 2G
+     * @hide
      */
-    byte[] getAtr();
-
-    /**
-     * Get ATR (Answer To Reset; as per ISO/IEC 7816-4) from SIM card
-     * for a particular subId.
-     */
-    byte[] getAtrUsingSubId(int subId);
+     void toggle2G(boolean on);
 }

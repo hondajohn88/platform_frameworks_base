@@ -22,6 +22,7 @@
         <!-- Misc -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColordynamic">@android:color/transparent</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowAnimationStyle">@null</item>
         <item name="android:ambientShadowAlpha">0.35</item>
@@ -441,6 +442,7 @@
     </style>
 
     <style name="TunerSettings" parent="@android:style/Theme.DeviceDefault.Settings">
+        <item name="android:windowActionBar">false</item>
         <item name="preferenceTheme">@style/TunerPreferenceTheme</item>
     </style>
 
@@ -486,13 +488,6 @@
 
     <style name="edit_theme" parent="qs_base">
         <item name="android:colorBackground">?android:attr/colorSecondary</item>
-    </style>
-
-    <style name="DotStyle">
-        <item name="android:layout_width">wrap_content</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_centerHorizontal">true</item>
-        <item name="android:layout_centerVertical">true</item>
     </style>
 
 </resources>

@@ -150,27 +150,13 @@ public interface WindowManager extends ViewManager {
      * Message for taking fullscreen screenshot
      * @hide
      */
-    int TAKE_SCREENSHOT_FULLSCREEN = 1;
+    final int TAKE_SCREENSHOT_FULLSCREEN = 1;
 
     /**
      * Message for taking screenshot of selected region.
      * @hide
      */
-    int TAKE_SCREENSHOT_SELECTED_REGION = 2;
-
-    /**
-     * Messages for starting a screen record session
-     * @hide
-     */
-    int SCREEN_RECORD_LOW_QUALITY = 0;
-    /**
-     * @hide 
-     */
-    int SCREEN_RECORD_MID_QUALITY = 1;
-    /**
-     * @hide 
-     */
-    int SCREEN_RECORD_HIGH_QUALITY = 2;
+    final int TAKE_SCREENSHOT_SELECTED_REGION = 2;
 
     /**
      * @hide
@@ -1446,6 +1432,22 @@ public interface WindowManager extends ViewManager {
          */
         @RequiresPermission(permission.DEVICE_POWER)
         public static final int PRIVATE_FLAG_ACQUIRES_SLEEP_TOKEN = 0x00200000;
+
+        /**
+         * @hide
+         */
+        public static final int PRIVATE_FLAG_STATUS_HIDE_FORCED = 0x00800000;
+
+        /**
+         * @hide
+         */
+        public static final int PRIVATE_FLAG_NAV_HIDE_FORCED = 0x01000000;
+
+        /**
+         * The window had not set FULLSCREEN flag so don't handle it as fullscreen in layoutWindowLw
+         * @hide
+         */
+        public static final int PRIVATE_FLAG_WAS_NOT_FULLSCREEN = 0x02000000;
 
         /**
          * Window flag: Overrides default power key behavior

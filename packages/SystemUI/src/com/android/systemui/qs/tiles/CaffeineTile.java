@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2016 The CyanogenMod Project
+ * Copyright (c) 2017 The LineageOS Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,20 +21,17 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.database.ContentObserver;
-import android.net.Uri;
 import android.os.CountDownTimer;
 import android.os.PowerManager;
 import android.os.SystemClock;
-import android.provider.Settings;
-
 import android.service.quicksettings.Tile;
-import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 
-import com.android.systemui.R;
-import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.systemui.plugins.qs.QSTile.BooleanState;
+import com.android.systemui.R;
+
+import org.lineageos.internal.logging.LineageMetricsLogger;
 
 /** Quick settings tile: Caffeine **/
 public class CaffeineTile extends QSTileImpl<BooleanState> {
@@ -50,8 +48,6 @@ public class CaffeineTile extends QSTileImpl<BooleanState> {
     private CountDownTimer mCountdownTimer = null;
     public long mLastClickTime = -1;
     private final Receiver mReceiver = new Receiver();
-    private boolean mListening;
-    private final Icon mIcon = ResourceIcon.get(R.drawable.ic_qs_caffeine_on);
 
     public CaffeineTile(QSHost host) {
         super(host);
@@ -70,9 +66,9 @@ public class CaffeineTile extends QSTileImpl<BooleanState> {
         super.handleDestroy();
         stopCountDown();
         mReceiver.destroy();
-      if (mWakeLock.isHeld()) {
+        if (mWakeLock.isHeld()) {
             mWakeLock.release();
-      }
+        }
     }
 
     @Override
@@ -118,6 +114,10 @@ public class CaffeineTile extends QSTileImpl<BooleanState> {
     }
 
     @Override
+    protected void handleLongClick() {
+    }
+
+    @Override
     public Intent getLongClickIntent() {
         return null;
     }
@@ -129,7 +129,7 @@ public class CaffeineTile extends QSTileImpl<BooleanState> {
 
     @Override
     public int getMetricsCategory() {
-        return MetricsEvent.CARBONFIBERS;
+        return LineageMetricsLogger.TILE_CAFFEINE;
     }
 
     private void startCountDown(long duration) {
@@ -140,7 +140,6 @@ public class CaffeineTile extends QSTileImpl<BooleanState> {
             return;
         }
         mCountdownTimer = new CountDownTimer(duration * 1000, 1000) {
-
             @Override
             public void onTick(long millisUntilFinished) {
                 mSecondsRemaining = (int) (millisUntilFinished / 1000);
@@ -175,19 +174,15 @@ public class CaffeineTile extends QSTileImpl<BooleanState> {
     @Override
     protected void handleUpdateState(BooleanState state, Object arg) {
         state.value = mWakeLock.isHeld();
-        if (state.slash == null) {
-            state.slash = new SlashState();
-        }
-        state.icon = mIcon;
-        state.slash.isSlashed = !state.value;
-
         if (state.value) {
             state.label = formatValueWithRemainingTime();
+            state.icon = ResourceIcon.get(R.drawable.ic_qs_caffeine_on);
             state.contentDescription =  mContext.getString(
                     R.string.accessibility_quick_settings_caffeine_on);
             state.state = Tile.STATE_ACTIVE;
         } else {
             state.label = mContext.getString(R.string.quick_settings_caffeine_label);
+            state.icon = ResourceIcon.get(R.drawable.ic_qs_caffeine_off);
             state.contentDescription =  mContext.getString(
                     R.string.accessibility_quick_settings_caffeine_off);
             state.state = Tile.STATE_INACTIVE;

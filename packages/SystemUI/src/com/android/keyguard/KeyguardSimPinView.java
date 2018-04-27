@@ -65,7 +65,7 @@ public class KeyguardSimPinView extends KeyguardPinBasedInputView {
                 // If the SIM is removed, then we must remove the keyguard. It will be put up
                 // again when the PUK locked SIM is re-entered.
                 case ABSENT: {
-                    KeyguardUpdateMonitor.getInstance(getContext()).reportSimUnlocked(subId);
+                    KeyguardUpdateMonitor.getInstance(getContext()).reportSimUnlocked(mSubId);
                     // onSimStateChanged callback can fire when the SIM PIN lock is not currently
                     // active and mCallback is null.
                     if (mCallback != null) {
@@ -167,9 +167,7 @@ public class KeyguardSimPinView extends KeyguardPinBasedInputView {
             ((EmergencyCarrierArea) mEcaView).setCarrierTextVisible(true);
         }
         mSimImageView = findViewById(R.id.keyguard_sim);
-
         mPasswordEntry.setQuickUnlockListener(null);
-        setButtonVisibility(getOkButton(), true /* visible */);
     }
 
     @Override

@@ -33,6 +33,8 @@ import com.android.systemui.qs.customize.QSCustomizer;
 import com.android.systemui.tuner.TunerService;
 import com.android.systemui.tuner.TunerService.Tunable;
 
+import android.provider.Settings.Secure;
+
 import java.util.ArrayList;
 import java.util.Collection;
 
@@ -41,7 +43,7 @@ import java.util.Collection;
  */
 public class QuickQSPanel extends QSPanel {
 
-    public static final String NUM_QUICK_TILES = "sysui_qqs_count";
+    public static final String NUM_QUICK_TILES = Secure.QQS_COUNT;
 
     private int mMaxTiles;
     protected QSPanel mFullPanel;
@@ -122,7 +124,7 @@ public class QuickQSPanel extends QSPanel {
     @Override
     public void onTuningChanged(String key, String newValue) {
         // No tunings for you.
-        if (key.equals(QS_SHOW_BRIGHTNESS)) {
+        if (key.equals(QS_SHOW_BRIGHTNESS_SLIDER)) {
             // No Brightness for you.
             super.onTuningChanged(key, "0");
         }
@@ -252,19 +254,6 @@ public class QuickQSPanel extends QSPanel {
                 mRecords.get(mRecords.size() - 1).tileView.setAccessibilityTraversalBefore(
                         R.id.expand_indicator);
             }
-        }
-        @Override
-        public void updateSettings() {
-        }
-
-        @Override
-        public int getNumColumns() {
-            return getNumQuickTiles(mContext);
-        }
-
-        @Override
-        public boolean isShowTitles() {
-            return false;
         }
     }
 }

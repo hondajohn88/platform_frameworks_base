@@ -574,12 +574,13 @@ public interface WindowManagerPolicy {
         public void shutdown(boolean confirm);
         public void reboot(boolean confirm);
         public void rebootSafeMode(boolean confirm);
+        public void rebootTile();
 
-        /** @hide */
-        void reboot(String reason, boolean confirm);
-
-        /** @hide */
-        void rebootCustom(String reason, boolean confirm);
+        /**
+         * Reboot with a custom reason.
+         * @hide
+         */
+        public void reboot(boolean confirm, String reason);
 
         /**
          * Return the window manager lock needed to correctly call "Lw" methods.
@@ -623,6 +624,8 @@ public interface WindowManagerPolicy {
          * @param listener callback to call when display can be turned off
          */
         void screenTurningOff(ScreenOffListener listener);
+
+        void addSystemUIVisibilityFlag(int flags);
     }
 
     public interface PointerEventListener {
@@ -1590,7 +1593,11 @@ public interface WindowManagerPolicy {
      * Specifies whether there is an on-screen navigation bar separate from the status bar.
      */
     public boolean hasNavigationBar();
-    public boolean hasPermanentMenuKey();
+
+    /**
+     * Device requires a software navigation bar.
+     */
+    public boolean needsNavigationBar();
 
     /**
      * Send some ActionHandler commands to WindowManager.
@@ -1756,7 +1763,10 @@ public interface WindowManagerPolicy {
     boolean canDismissBootAnimation();
 
     /**
-     * Call screen record from WindowManager.
+     * Toggle global menu
+     *
+     * @hide
      */
-    void screenRecordAction(int mode);
+    public void toggleGlobalMenu();
+
 }

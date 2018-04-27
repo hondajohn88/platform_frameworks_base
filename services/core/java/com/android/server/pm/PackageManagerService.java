@@ -248,6 +248,8 @@ import android.util.jar.StrictJarFile;
 import android.util.proto.ProtoOutputStream;
 import android.view.Display;
 
+import lineageos.providers.LineageSettings;
+
 import com.android.internal.R;
 import com.android.internal.annotations.GuardedBy;
 import com.android.internal.app.IMediaContainerService;
@@ -1236,6 +1238,8 @@ public class PackageManagerService extends IPackageManager.Stub
 
     ArrayList<ComponentName> mDisabledComponentsList;
 
+    private AppOpsManager mAppOps;
+
     // Set of pending broadcasts for aggregating enable/disable of components.
     static class PendingPackageBroadcasts {
         // for each user id, a map of <package name -> components within that package>
@@ -1400,7 +1404,6 @@ public class PackageManagerService extends IPackageManager.Stub
             | FLAG_PERMISSION_REVOKE_ON_UPGRADE;
 
     final @Nullable String mRequiredVerifierPackage;
-    final @Nullable String mOptionalVerifierPackage;
     final @NonNull String mRequiredInstallerPackage;
     final @NonNull String mRequiredUninstallerPackage;
     final @Nullable String mSetupWizardPackage;
@@ -2070,6 +2073,18 @@ public class PackageManagerService extends IPackageManager.Stub
                 }
             }
 
+            if (!update && !isSystemApp(res.pkg)) {
+                boolean privacyGuard = LineageSettings.Secure.getIntForUser(
+                        mContext.getContentResolver(),
+                        LineageSettings.Secure.PRIVACY_GUARD_DEFAULT,
+                        0, UserHandle.USER_CURRENT) == 1;
+                if (privacyGuard) {
+                    mAppOps.setPrivacyGuardSettingForPackage(
+                    res.pkg.applicationInfo.uid,
+                    res.pkg.applicationInfo.packageName, true);
+                }
+            }
+
             // Log current value of "unknown sources" setting
             EventLog.writeEvent(EventLogTags.UNKNOWN_SOURCES_ENABLED,
                     getUnknownSourcesSettings());
@@ -2433,7 +2448,7 @@ public class PackageManagerService extends IPackageManager.Stub
                 R.bool.config_permissionReviewRequired);
 
         mVendorPlatformSignatures = createSignatures(context.getResources().getStringArray(
-                    R.array.config_vendorPlatformSignatures));
+                    org.lineageos.platform.internal.R.array.config_vendorPlatformSignatures));
 
         mFactoryTest = factoryTest;
         mOnlyCore = onlyCore;
@@ -2451,6 +2466,8 @@ public class PackageManagerService extends IPackageManager.Stub
                 ApplicationInfo.FLAG_SYSTEM, ApplicationInfo.PRIVATE_FLAG_PRIVILEGED);
         mSettings.addSharedUserLPw("android.uid.shell", SHELL_UID,
                 ApplicationInfo.FLAG_SYSTEM, ApplicationInfo.PRIVATE_FLAG_PRIVILEGED);
+
+        mAppOps = (AppOpsManager) context.getSystemService(Context.APP_OPS_SERVICE);
 
         String separateProcesses = SystemProperties.get("debug.separate_processes");
         if (separateProcesses != null && separateProcesses.length() > 0) {
@@ -3076,7 +3093,6 @@ public class PackageManagerService extends IPackageManager.Stub
 
             if (!mOnlyCore) {
                 mRequiredVerifierPackage = getRequiredButNotReallyRequiredVerifierLPr();
-                mOptionalVerifierPackage = getOptionalVerifierLPr();
                 mRequiredInstallerPackage = getRequiredInstallerLPr();
                 mRequiredUninstallerPackage = getRequiredUninstallerLPr();
                 mIntentFilterVerifierComponent = getIntentFilterVerifierComponentNameLPr();
@@ -3094,7 +3110,6 @@ public class PackageManagerService extends IPackageManager.Stub
                         SharedLibraryInfo.VERSION_UNDEFINED);
             } else {
                 mRequiredVerifierPackage = null;
-                mOptionalVerifierPackage = null;
                 mRequiredInstallerPackage = null;
                 mRequiredUninstallerPackage = null;
                 mIntentFilterVerifierComponent = null;
@@ -3461,38 +3476,11 @@ public class PackageManagerService extends IPackageManager.Stub
                 UserHandle.USER_SYSTEM, false /*allowDynamicSplits*/);
         if (matches.size() == 1) {
             return matches.get(0).getComponentInfo().packageName;
-        } else if (matches.size() > 1) {
-                String optionalVerifierName = mContext.getResources().getString(R.string.config_optionalPackageVerifierName);
-                if (TextUtils.isEmpty(optionalVerifierName))
-                    return matches.get(0).getComponentInfo().packageName;
-            for (int i = 0; i < matches.size(); i++) {
-                if (!matches.get(i).getComponentInfo().packageName.contains(optionalVerifierName))
-                    return matches.get(i).getComponentInfo().packageName;
-            }
         } else if (matches.size() == 0) {
             Log.e(TAG, "There should probably be a verifier, but, none were found");
             return null;
         }
         throw new RuntimeException("There must be exactly one verifier; found " + matches);
-    }
-
-    private @Nullable String getOptionalVerifierLPr() {
-        final Intent intent = new Intent("com.qualcomm.qti.intent.action.PACKAGE_NEEDS_OPTIONAL_VERIFICATION");
-
-        final List<ResolveInfo> matches = queryIntentReceiversInternal(intent, PACKAGE_MIME_TYPE,
-                MATCH_SYSTEM_ONLY | MATCH_DIRECT_BOOT_AWARE | MATCH_DIRECT_BOOT_UNAWARE,
-                UserHandle.USER_SYSTEM, false);
-        if (matches.size() >= 1) {
-            String optionalVerifierName = mContext.getResources().getString(R.string.config_optionalPackageVerifierName);
-            if (TextUtils.isEmpty(optionalVerifierName))
-                return null;
-            for (int i = 0; i < matches.size(); i++) {
-                if (matches.get(i).getComponentInfo().packageName.contains(optionalVerifierName)) {
-                    return matches.get(i).getComponentInfo().packageName;
-                }
-            }
-        }
-        return null;
     }
 
     private @NonNull String getRequiredSharedLibraryLPr(String name, int version) {
@@ -3933,9 +3921,8 @@ public class PackageManagerService extends IPackageManager.Stub
             flags |= MATCH_ANY_USER;
         }
 
-        PackageInfo packageInfo = mayFakeSignature(p, PackageParser
-                .generatePackageInfo(p, gids, flags, ps.firstInstallTime,
-                ps.lastUpdateTime, permissions, state, userId), permissions);
+        PackageInfo packageInfo = PackageParser.generatePackageInfo(p, gids, flags,
+                ps.firstInstallTime, ps.lastUpdateTime, permissions, state, userId);
 
         if (packageInfo == null) {
             return null;
@@ -3945,24 +3932,6 @@ public class PackageManagerService extends IPackageManager.Stub
                 resolveExternalPackageNameLPr(p);
 
         return packageInfo;
-    }
-
-    private PackageInfo mayFakeSignature(PackageParser.Package p, PackageInfo pi,
-            Set<String> permissions) {
-        try {
-            if (permissions.contains("android.permission.FAKE_PACKAGE_SIGNATURE")
-                    && p.applicationInfo.targetSdkVersion > Build.VERSION_CODES.LOLLIPOP_MR1
-                    && p.mAppMetaData != null) {
-                String sig = p.mAppMetaData.getString("fake-signature");
-                if (sig != null) {
-                    pi.signatures = new Signature[] {new Signature(sig)};
-                }
-            }
-        } catch (Throwable t) {
-            // We should never die because of any failures, this is system code!
-            Log.w("PackageManagerService.FAKE_PACKAGE_SIGNATURE", t);
-        }
-        return pi;
     }
 
     @Override
@@ -14799,7 +14768,6 @@ public class PackageManagerService extends IPackageManager.Stub
     @Override
     public void installPackageAsUser(String originPath, IPackageInstallObserver2 observer,
             int installFlags, String installerPackageName, int userId) {
-        android.util.SeempLog.record(90);
         mContext.enforceCallingOrSelfPermission(android.Manifest.permission.INSTALL_PACKAGES, null);
 
         final int callingUid = Binder.getCallingUid();
@@ -16525,14 +16493,9 @@ public class PackageManagerService extends IPackageManager.Stub
                 final int requiredUid = mRequiredVerifierPackage == null ? -1
                         : getPackageUid(mRequiredVerifierPackage, MATCH_DEBUG_TRIAGED_MISSING,
                                 verifierUser.getIdentifier());
-
-                final int optionalUid = mOptionalVerifierPackage == null ? -1
-                        : getPackageUid(mOptionalVerifierPackage, MATCH_DEBUG_TRIAGED_MISSING,
-                                verifierUser.getIdentifier());
-
                 final int installerUid =
                         verificationInfo == null ? -1 : verificationInfo.installerUid;
-                if (!origin.existing && (requiredUid != -1 || optionalUid != -1)
+                if (!origin.existing && requiredUid != -1
                         && isVerificationEnabled(
                                 verifierUser.getIdentifier(), installFlags, installerUid)) {
                     final Intent verification = new Intent(
@@ -16619,31 +16582,6 @@ public class PackageManagerService extends IPackageManager.Stub
                                 sufficientIntent.setComponent(verifierComponent);
                                 mContext.sendBroadcastAsUser(sufficientIntent, verifierUser);
                             }
-                        }
-                    }
-
-                    if (mOptionalVerifierPackage != null) {
-                        final Intent optionalIntent = new Intent(verification);
-                        optionalIntent.setAction("com.qualcomm.qti.intent.action.PACKAGE_NEEDS_OPTIONAL_VERIFICATION");
-                        final List<ResolveInfo> optional_receivers = queryIntentReceiversInternal(optionalIntent,
-                            PACKAGE_MIME_TYPE, 0, verifierUser.getIdentifier(), false);
-                        final ComponentName optionalVerifierComponent = matchComponentForVerifier(
-                            mOptionalVerifierPackage, optional_receivers);
-                        optionalIntent.setComponent(optionalVerifierComponent);
-                        verificationState.addOptionalVerifier(optionalUid);
-                        if (mRequiredVerifierPackage != null) {
-                            mContext.sendBroadcastAsUser(optionalIntent, verifierUser, android.Manifest.permission.PACKAGE_VERIFICATION_AGENT);
-                        } else {
-                            mContext.sendOrderedBroadcastAsUser(optionalIntent, verifierUser, android.Manifest.permission.PACKAGE_VERIFICATION_AGENT,
-                            new BroadcastReceiver() {
-                                @Override
-                                public void onReceive(Context context, Intent intent) {
-                                    final Message msg = mHandler.obtainMessage(CHECK_PENDING_VERIFICATION);
-                                    msg.arg1 = verificationId;
-                                    mHandler.sendMessageDelayed(msg, getVerificationTimeout());
-                                }
-                            }, null, 0, null, null);
-                            mArgs = null;
                         }
                     }
 

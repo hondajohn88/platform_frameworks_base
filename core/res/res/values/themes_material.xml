@@ -173,6 +173,7 @@ please see themes_device_defaults.xml.
         <item name="windowActionBarFullscreenDecorLayout">@layout/screen_toolbar</item>
         <item name="statusBarColor">?attr/colorPrimaryDark</item>
         <item name="navigationBarColor">@color/black</item>
+        <item name="navigationBarColordynamic">?attr/colorPrimaryDark</item>
         <item name="windowEnterTransition">@transition/fade</item>
         <item name="windowSharedElementEnterTransition">@transition/move</item>
         <item name="windowSharedElementExitTransition">@transition/move</item>
@@ -197,7 +198,7 @@ please see themes_device_defaults.xml.
         <item name="presentationTheme">@style/Theme.Material.Dialog.Presentation</item>
 
         <!-- Toast attributes -->
-        <item name="toastFrameBackground">@drawable/toast_frame_cr</item>
+        <item name="toastFrameBackground">@drawable/toast_frame</item>
 
         <!-- Panel attributes -->
         <item name="panelBackground">?attr/colorBackground</item>
@@ -541,6 +542,7 @@ please see themes_device_defaults.xml.
         <item name="windowActionBarFullscreenDecorLayout">@layout/screen_toolbar</item>
         <item name="statusBarColor">?attr/colorPrimaryDark</item>
         <item name="navigationBarColor">@color/black</item>
+        <item name="navigationBarColordynamic">?attr/colorPrimaryDark</item>
         <item name="windowEnterTransition">@transition/fade</item>
         <item name="windowSharedElementEnterTransition">@transition/move</item>
         <item name="windowSharedElementExitTransition">@transition/move</item>
@@ -565,7 +567,7 @@ please see themes_device_defaults.xml.
         <item name="presentationTheme">@style/Theme.Material.Light.Dialog.Presentation</item>
 
         <!-- Toast attributes -->
-        <item name="toastFrameBackground">@drawable/toast_frame_cr</item>
+        <item name="toastFrameBackground">@drawable/toast_frame</item>
 
         <!-- Panel attributes -->
         <item name="panelBackground">?attr/colorBackground</item>

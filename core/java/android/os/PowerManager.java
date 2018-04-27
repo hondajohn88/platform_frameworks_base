@@ -344,6 +344,14 @@ public final class PowerManager {
     public static final int USER_ACTIVITY_FLAG_INDIRECT = 1 << 1;
 
     /**
+     * User activity flag: Certain hardware buttons are not supposed to
+     * activate hardware button illumination.  This flag indicates a
+     * button event from one of those buttons.
+     * @hide
+     */
+    public static final int USER_ACTIVITY_FLAG_NO_BUTTON_LIGHTS = 1 << 2;
+
+    /**
      * Go to sleep reason code: Going to sleep due by application request.
      * @hide
      */
@@ -406,18 +414,6 @@ public final class PowerManager {
     public static final String REBOOT_RECOVERY = "recovery";
 
     /**
-     * The value to pass as the 'reason' argument to reboot() to
-     * reboot into bootloader mode
-     * <p>
-     * Requires the {@link android.Manifest.permission#RECOVERY}
-     * permission (in addition to
-     * {@link android.Manifest.permission#REBOOT}).
-     * </p>
-     * @hide
-     */
-    public static final String REBOOT_BOOTLOADER = "bootloader";
-
-    /**
      * The value to pass as the 'reason' argument to reboot() to reboot into
      * recovery mode for applying system updates.
      * <p>
@@ -428,6 +424,20 @@ public final class PowerManager {
      * @hide
      */
     public static final String REBOOT_RECOVERY_UPDATE = "recovery-update";
+
+    /**
+     * The value to pass as the 'reason' argument to reboot() to
+     * reboot into bootloader mode
+     * @hide
+     */
+    public static final String REBOOT_BOOTLOADER = "bootloader";
+
+    /**
+     * The value to pass as the 'reason' argument to reboot() to
+     * reboot into download mode
+     * @hide
+     */
+    public static final String REBOOT_DOWNLOAD = "download";
 
     /**
      * The value to pass as the 'reason' argument to reboot() when device owner requests a reboot on
@@ -570,6 +580,15 @@ public final class PowerManager {
     public int getDefaultScreenBrightnessForVrSetting() {
         return mContext.getResources().getInteger(
                 com.android.internal.R.integer.config_screenBrightnessForVrSettingDefault);
+    }
+
+    /**
+     * Gets the default button brightness value.
+     * @hide
+     */
+    public int getDefaultButtonBrightness() {
+        return mContext.getResources().getInteger(
+                com.android.internal.R.integer.config_buttonBrightnessSettingDefault);
     }
 
     /**
@@ -811,6 +830,22 @@ public final class PowerManager {
     }
 
     /**
+     * Forces the device to wake up from sleep only if
+     * nothing is blocking the proximity sensor
+     *
+     * @see #wakeUp
+     *
+     * @hide
+     */
+    public void wakeUpWithProximityCheck(long time, String reason) {
+        try {
+            mService.wakeUpWithProximityCheck(time, reason, mContext.getOpPackageName());
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
      * Forces the device to start napping.
      * <p>
      * If the device is currently awake, starts dreaming, otherwise does nothing.
@@ -1005,13 +1040,12 @@ public final class PowerManager {
     }
 
     /**
-     * Reboot the device with custom progress meassges.
-     * Will not return if the reboot is successful.
+     * Reboot the device.  Will not return if the reboot is successful.
      * <p>
      * Requires the {@link android.Manifest.permission#REBOOT} permission.
      * </p>
      *
-     * @param reason code to pass to the kernel (e.g., "recovery") to
+     * @param reason code to pass to the kernel (e.g., "recovery", "bootloader", "download") to
      *               request special boot modes, or null.
      * @hide
      */
@@ -1019,6 +1053,7 @@ public final class PowerManager {
         try {
             mService.rebootCustom(false, reason, true);
         } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
         }
     }
 
@@ -1147,6 +1182,17 @@ public final class PowerManager {
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
+    }
+
+    public String getSeenWakeLocks()
+    {
+	try {
+	    if (mService != null) {
+		return mService.getSeenWakeLocks();
+	    }
+	} catch (RemoteException e) {
+	}
+	return null;
     }
 
     /**
@@ -1546,5 +1592,16 @@ public final class PowerManager {
                 }
             };
         }
+    }
+
+    /**
+     *  powerHint used by some Nvidia devices
+     *  Ignores any bytes of data beyond the first
+     *  @hide
+     */
+    public void powerHint(int hintId, int[] data) {
+        try {
+            mService.powerHint(hintId, data.length > 0 ? data[0] : 0);
+        } catch (RemoteException dummy) {}
     }
 }

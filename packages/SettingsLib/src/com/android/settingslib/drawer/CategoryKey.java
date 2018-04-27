@@ -46,8 +46,6 @@ public final class CategoryKey {
             "com.android.settings.category.ia.development";
     public static final String CATEGORY_NOTIFICATIONS =
             "com.android.settings.category.ia.notifications";
-    public static final String CATEGORY_CARBONFIBERS =
-             "com.android.settings.category.ia.fibers";
 
     public static final Map<String, String> KEY_COMPAT_MAP;
 

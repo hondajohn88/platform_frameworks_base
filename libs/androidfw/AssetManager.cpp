@@ -62,6 +62,7 @@ static const bool kIsDebug = false;
 static const char* kAssetsRoot = "assets";
 static const char* kAppZipName = NULL; //"classes.jar";
 static const char* kSystemAssets = "framework/framework-res.apk";
+static const char* kLineageAssets = "framework/org.lineageos.platform-res.apk";
 static const char* kResourceCache = "resource-cache";
 
 static const char* kExcludeExtension = ".EXCLUDE";
@@ -326,6 +327,17 @@ bool AssetManager::addDefaultAssets()
     path.appendPath(kSystemAssets);
 
     return addAssetPath(path, NULL, false /* appAsLib */, true /* isSystemAsset */);
+}
+
+bool AssetManager::addExtraAssets()
+{
+    const char* root = getenv("ANDROID_ROOT");
+    LOG_ALWAYS_FATAL_IF(root == NULL, "ANDROID_ROOT not set");
+
+    String8 pathLineage(root);
+    pathLineage.appendPath(kLineageAssets);
+
+    return addAssetPath(pathLineage, NULL, false /* appAsLib */, false /* isSystemAsset */);
 }
 
 int32_t AssetManager::nextAssetPath(const int32_t cookie) const

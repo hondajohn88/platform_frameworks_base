@@ -46,6 +46,7 @@
     <uses-permission android:name="android.permission.MANAGE_USERS" />
     <uses-permission android:name="android.permission.READ_PROFILE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.CONFIGURE_WIFI_DISPLAY" />
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
     <uses-permission android:name="android.permission.GET_APP_OPS_STATS" />
 
@@ -198,14 +199,12 @@
     <!-- to change themes - light or dark -->
     <uses-permission android:name="android.permission.CHANGE_OVERLAY_PACKAGES" />
 
-    <!-- Ambient Indication -->
-    <permission android:name="com.google.android.ambientindication.permission.AMBIENT_INDICATION" android:protectionLevel="privileged|signature"/>
-    <uses-permission android:name="com.google.android.ambientindication.permission.AMBIENT_INDICATION"/>
+    <!-- Reboot -->
+    <uses-permission android:name="android.permission.REBOOT" />
+    <uses-permission android:name="android.permission.RECOVERY" />
 
-    <!-- screenrecord -->
-    <uses-permission android:name="android.permission.ACCESS_SURFACE_FLINGER" />
-
-    <!-- Custom permissions -->
+    <!-- DUI permissions -->
+    <uses-permission android:name="android.permission.NAVIGATION_EDITOR" />
     <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -213,8 +212,10 @@
     <uses-permission android:name="android.permission.ACCESS_SURFACE_FLINGER" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
 
-    <!-- Screenshots -->
-    <uses-permission android:name="android.permission.ACCESS_SURFACE_FLINGER" />
+    <protected-broadcast android:name="android.intent.action.SCREEN_STATE_SERVICE_UPDATE" />
+
+    <!-- OmniJaws -->
+    <uses-permission android:name="org.omnirom.omnijaws.READ_WEATHER" />
 
     <application
         android:name=".SystemUIApplication"
@@ -255,6 +256,12 @@
             android:process=":screenshot"
             android:exported="false" />
 
+        <receiver android:name=".BootReceiver" >
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
         <!-- Called from PhoneWindowManager -->
         <receiver android:name=".screenshot.ScreenshotServiceErrorReceiver"
             android:process=":screenshot"
@@ -283,56 +290,33 @@
             </intent-filter>
         </receiver>
 
-        <!-- started from PhoneWindowManager
-             TODO: Should have an android:permission attribute -->
-        <service android:name=".carbon.screenrecord.TakeScreenrecordService"
-            android:process=":screenrecord"
-            android:exported="false" />
+        <service android:name=".CPUInfoService"
+                android:exported="true" />
+
+        <service android:name=".screenstate.ScreenStateService"
+                android:exported="true" >
+            <intent-filter>
+               <action android:name="android.intent.action.SCREEN_STATE_SERVICE_UPDATE"/>
+            </intent-filter>
+        </service>
 
         <service android:name=".ImageWallpaper"
                 android:permission="android.permission.BIND_WALLPAPER"
                 android:exported="true" />
 
-         <activity android:name=".tuner.TunerActivity"
+        <activity android:name=".tuner.TunerActivity"
+                  android:enabled="true"
                   android:icon="@drawable/tuner"
                   android:theme="@style/TunerSettings"
                   android:label="@string/system_ui_tuner"
                   android:process=":tuner"
-                  android:parentActivityName="org.carbonrom.carbonfibers.CarbonFibers"
                   android:exported="true">
-        </activity>
-
-        <activity android:name=".tuner.StatusBarIconsTunerActivity"
-                  android:icon="@drawable/tuner"
-                  android:theme="@style/TunerSettings"
-                  android:label="@string/statusbar_icons_blacklist"
-                  android:process=":tuner"
-                  android:parentActivityName="org.carbonrom.carbonfibers.fragments.statusbar.Statusbar"
-                  android:exported="true">
-        </activity>
-
-        <activity android:name=".tuner.NavBarTunerActivity"
-                  android:theme="@style/TunerSettings"
-                  android:label="@string/navbar_tuner_activity"
-                  android:process=":tuner"
-                  android:parentActivityName="org.carbonrom.carbonfibers.fragments.buttons.NavigationBar"
-                  android:exported="true">
-        </activity>
-
-        <activity android:name=".tuner.LockscreenTunerActivity"
-                  android:theme="@style/TunerSettings"
-                  android:label="@string/lockscreen_tuner_activity"
-                  android:process=":tuner"
-                  android:parentActivityName="org.carbonrom.carbonfibers.fragments.lockscreen.Lockscreen"
-                  android:exported="true">
-        </activity>
-
-        <activity android:name=".tuner.PowerNotificationsTunerActivity"
-                  android:theme="@style/TunerSettings"
-                  android:label="@string/powernotif_tuner_activity"
-                  android:process=":tuner"
-                 android:parentActivityName="org.carbonrom.carbonfibers.fragments.system.NotificationMedia"
-                  android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.settings.action.EXTRA_SETTINGS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data android:name="com.android.settings.category"
+                    android:value="com.android.settings.category.ia.system" />
         </activity>
 
         <activity-alias android:name=".DemoMode"
@@ -347,6 +331,16 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity-alias>
+
+        <activity android:name=".tuner.NavBarActivity"
+                  android:enabled="true"
+                  android:icon="@drawable/tuner"
+                  android:theme="@style/TunerSettings"
+                  android:label="@string/systemui_tuner_navbar_title"
+                  android:parentActivityName="com.android.settings"
+                  android:process=":tuner"
+                  android:exported="true">
+        </activity>
 
         <!-- Service used by secondary users to register themselves with the system user. -->
         <service android:name=".recents.RecentsSystemUserService"
@@ -391,21 +385,6 @@
         <!-- Callback for deleting screenshot notification -->
         <receiver android:name=".screenshot.GlobalScreenshot$DeleteScreenshotReceiver"
             android:process=":screenshot"
-            android:exported="false" />
-
-        <!-- Springboard for launching the share activity -->
-        <receiver android:name=".carbon.screenrecord.GlobalScreenrecord$ShareReceiver"
-            android:process=":screenrecord"
-            android:exported="false" />
-
-        <!-- Callback for dismissing screenrecord notification after a share target is picked -->
-        <receiver android:name=".carbon.screenrecord.GlobalScreenrecord$TargetChosenReceiver"
-            android:process=":screenrecord"
-            android:exported="false" />
-
-        <!-- Callback for deleting screenrecord notification -->
-        <receiver android:name=".carbon.screenrecord.GlobalScreenrecord$DeleteScreenrecordReceiver"
-            android:process=":screenrecord"
             android:exported="false" />
 
         <!-- started from UsbDeviceSettingsManager -->
@@ -590,6 +569,19 @@
             </intent-filter>
         </activity>
 
+        <!-- App picker activity -->
+        <activity
+            android:name=".aokp.apppicker.AppPickerActivity"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:label="@string/quick_settings_apppicker"
+            android:enabled="true"
+            android:excludeFromRecents="true" >
+            <intent-filter>
+                <action android:name=".aokp.apppicker.AppPickerActivity" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".settings.BrightnessDialog"
             android:label="@string/quick_settings_brightness_dialog_title"
@@ -621,6 +613,14 @@
             android:exported="true"
             android:singleUser="true"
             android:permission="android.permission.BIND_DREAM_SERVICE" />
+
+        <receiver
+            android:name=".tuner.TunerService$ClearReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.android.systemui.action.CLEAR_TUNER" />
+            </intent-filter>
+        </receiver>
 
         <provider
             android:name="android.support.v4.content.FileProvider"

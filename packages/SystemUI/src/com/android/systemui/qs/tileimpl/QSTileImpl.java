@@ -33,6 +33,7 @@ import android.os.Looper;
 import android.os.Message;
 import android.service.quicksettings.Tile;
 import android.text.format.DateUtils;
+import android.util.ArraySet;
 import android.util.Log;
 import android.util.SparseArray;
 
@@ -69,7 +70,7 @@ public abstract class QSTileImpl<TState extends State> implements QSTile {
     // @NonFinalForTesting
     protected H mHandler = new H(Dependency.get(Dependency.BG_LOOPER));
     protected final Handler mUiHandler = new Handler(Looper.getMainLooper());
-    private final ArrayList<Object> mListeners = new ArrayList<>();
+    private final ArraySet<Object> mListeners = new ArraySet<>();
     private final MetricsLogger mMetricsLogger = Dependency.get(MetricsLogger.class);
 
     private final ArrayList<Callback> mCallbacks = new ArrayList<>();
@@ -87,11 +88,6 @@ public abstract class QSTileImpl<TState extends State> implements QSTile {
     abstract protected void handleClick();
 
     abstract protected void handleUpdateState(TState state, Object arg);
-
-    @Override
-    public boolean isDualTarget() {
-        return false;
-    }
 
     /**
      * Declare the category of this tile.
@@ -276,10 +272,8 @@ public abstract class QSTileImpl<TState extends State> implements QSTile {
     }
 
     protected void handleLongClick() {
-        if (getLongClickIntent() != null) {
-            Dependency.get(ActivityStarter.class).postStartActivityDismissingKeyguard(
-                    getLongClickIntent(), 0);
-        }
+        Dependency.get(ActivityStarter.class).postStartActivityDismissingKeyguard(
+                getLongClickIntent(), 0);
     }
 
     public abstract Intent getLongClickIntent();

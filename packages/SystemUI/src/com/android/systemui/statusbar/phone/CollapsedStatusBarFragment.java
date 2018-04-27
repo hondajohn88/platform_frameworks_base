@@ -22,8 +22,7 @@ import static com.android.systemui.statusbar.phone.StatusBar.reinflateSignalClus
 import android.annotation.Nullable;
 import android.app.Fragment;
 import android.app.StatusBarManager;
-import android.content.ContentResolver;
-import android.content.Context;
+import android.database.ContentObserver;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.UserHandle;
@@ -32,10 +31,8 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewStub;
-import android.widget.ImageSwitcher;
 import android.widget.LinearLayout;
 
-import com.android.internal.utils.cr.UserContentObserver;
 import com.android.systemui.Dependency;
 import com.android.systemui.Interpolators;
 import com.android.systemui.R;
@@ -43,8 +40,6 @@ import com.android.systemui.SysUiServiceProvider;
 import com.android.systemui.statusbar.CommandQueue;
 import com.android.systemui.statusbar.SignalClusterView;
 import com.android.systemui.statusbar.phone.StatusBarIconController.DarkIconManager;
-import com.android.systemui.statusbar.phone.TickerView;
-import com.android.systemui.statusbar.policy.Clock;
 import com.android.systemui.statusbar.policy.DarkIconDispatcher;
 import com.android.systemui.statusbar.policy.EncryptionHelper;
 import com.android.systemui.statusbar.policy.KeyguardMonitor;
@@ -70,15 +65,28 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
     private DarkIconManager mDarkIconManager;
     private SignalClusterView mSignalClusterView;
 
-    private View mClock;
-    private View mLeftClock;
+    private View mWeatherImageView;
+    private View mWeatherTextView;
+    private int mShowWeather;
+    private final Handler mHandler = new Handler();
 
-    private int mNotificationStyle;
-    private boolean mHeadsUpEnabled;
-    private boolean mTickerEnabled;
-    private TickerObserver mTickerObserver;
-    private ContentResolver mContentResolver;
-    private View mTickerViewFromStub;
+    private class UserSettingsObserver extends ContentObserver {
+        UserSettingsObserver(Handler handler) {
+            super(handler);
+        }
+
+        void observe() {
+            getContext().getContentResolver().registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.STATUS_BAR_SHOW_WEATHER_TEMP),
+                    false, this, UserHandle.USER_ALL);
+        }
+
+        @Override
+        public void onChange(boolean selfChange) {
+            updateSettings(true);
+        }
+    }
+    private UserSettingsObserver mUserSettingsObserver;
 
     private SignalCallback mSignalCallback = new SignalCallback() {
         @Override
@@ -90,65 +98,10 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        mContentResolver = getContext().getContentResolver();
         mKeyguardMonitor = Dependency.get(KeyguardMonitor.class);
         mNetworkController = Dependency.get(NetworkController.class);
         mStatusBarComponent = SysUiServiceProvider.getComponent(getContext(), StatusBar.class);
-        mTickerObserver = new TickerObserver(new Handler());
-    }
-
-    class TickerObserver extends UserContentObserver {
-
-        TickerObserver(Handler handler) {
-            super(handler);
-        }
-
-        protected void unobserve() {
-            super.unobserve();
-            getContext().getContentResolver().unregisterContentObserver(this);
-        }
-
-        protected void observe() {
-            super.observe();
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUS_BAR_NOTIFICATION_STYLE),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUS_BAR_CLOCK),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUSBAR_CLOCK_STYLE),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUS_BAR_CLOCK_SECONDS),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUSBAR_CLOCK_AM_PM_STYLE),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUSBAR_CLOCK_DATE_DISPLAY),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUSBAR_CLOCK_DATE_STYLE),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUSBAR_CLOCK_DATE_FORMAT),
-                    false, this, UserHandle.USER_ALL);
-            mContentResolver.registerContentObserver(Settings.System.getUriFor(
-                    Settings.System.STATUSBAR_CLOCK_DATE_POSITION),
-                    false, this, UserHandle.USER_ALL);
-        }
-
-        @Override
-        protected void update() {
-            mNotificationStyle = Settings.System.getIntForUser(mContentResolver,
-                    Settings.System.STATUS_BAR_NOTIFICATION_STYLE, 1,
-                    UserHandle.USER_CURRENT);
-            initTickerView();
-            initHeadsUpView();
-            ((Clock)mClock).updateSettings();
-            ((Clock)mLeftClock).updateSettings();
-        }
+        mUserSettingsObserver = new UserSettingsObserver(mHandler);
     }
 
     @Override
@@ -168,16 +121,14 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
         Dependency.get(StatusBarIconController.class).addIconGroup(mDarkIconManager);
         mSystemIconArea = mStatusBar.findViewById(R.id.system_icon_area);
         mSignalClusterView = mStatusBar.findViewById(R.id.signal_cluster);
-        mClock = mStatusBar.findViewById(R.id.clock);
-        mLeftClock = mStatusBar.findViewById(R.id.left_clock);
         Dependency.get(DarkIconDispatcher.class).addDarkReceiver(mSignalClusterView);
+        mWeatherTextView = mStatusBar.findViewById(R.id.weather_temp);
+        mWeatherImageView = mStatusBar.findViewById(R.id.weather_image);
+        updateSettings(false);
         // Default to showing until we know otherwise.
         showSystemIconArea(false);
         initEmergencyCryptkeeperText();
-
-        mTickerObserver.observe();
-        mTickerObserver.update();
-
+        mUserSettingsObserver.observe();
     }
 
     @Override
@@ -206,7 +157,6 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
         if (mNetworkController.hasEmergencyCryptKeeperText()) {
             mNetworkController.removeCallback(mSignalCallback);
         }
-        mTickerObserver.unobserve();
     }
 
     public void initNotificationIconArea(NotificationIconAreaController
@@ -283,16 +233,10 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
 
     public void hideNotificationIconArea(boolean animate) {
         animateHide(mNotificationIconAreaInner, animate);
-        if (((Clock)mLeftClock).isEnabled()) {
-            animateHide(mLeftClock, animate);
-        }
     }
 
     public void showNotificationIconArea(boolean animate) {
         animateShow(mNotificationIconAreaInner, animate);
-        if (((Clock)mLeftClock).isEnabled()) {
-            animateShow(mLeftClock, animate);
-        }
     }
 
     /**
@@ -357,24 +301,11 @@ public class CollapsedStatusBarFragment extends Fragment implements CommandQueue
         }
     }
 
-    private void initTickerView() {
-        mTickerEnabled = mNotificationStyle == 2 || mNotificationStyle == 3;
-        if (mTickerEnabled) {
-            View tickerStub = mStatusBar.findViewById(R.id.ticker_stub);
-            if (mTickerViewFromStub == null && tickerStub != null) {
-                mTickerViewFromStub = ((ViewStub) tickerStub).inflate();
-            }
-            TickerView tickerView = (TickerView) mStatusBar.findViewById(R.id.tickerText);
-            ImageSwitcher tickerIcon = (ImageSwitcher) mStatusBar.findViewById(R.id.tickerIcon);
-            mStatusBarComponent.createTicker(
-                    mTickerEnabled, getContext(), mStatusBar, tickerView, tickerIcon, mTickerViewFromStub);
-        } else {
-            mStatusBarComponent.disableTicker();
-        }
+    public void updateSettings(boolean animate) {
+        mStatusBarComponent.updateBatterySettings();
+        mShowWeather = Settings.System.getIntForUser(
+                getContext().getContentResolver(), Settings.System.STATUS_BAR_SHOW_WEATHER_TEMP, 0,
+                UserHandle.USER_CURRENT);
     }
 
-    private void initHeadsUpView() {
-        mHeadsUpEnabled = mNotificationStyle == 1 || mNotificationStyle == 3;
-        mStatusBarComponent.toggleHeadsUp(mHeadsUpEnabled);
-    }
 }

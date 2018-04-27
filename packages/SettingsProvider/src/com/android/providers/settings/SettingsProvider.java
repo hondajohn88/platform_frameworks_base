@@ -3049,6 +3049,15 @@ public class SettingsProvider extends ContentProvider {
                                 Settings.Secure.NFC_PAYMENT_DEFAULT_COMPONENT,
                                 defaultComponent, null, true, SettingsState.SYSTEM_PACKAGE_NAME);
                     }
+                    // Allow OEMs to set default time format.
+                    final SettingsState dateAndTimeSettings = getSystemSettingsLocked(userId);
+                    String defaultStringComponent;
+                    defaultStringComponent = getContext().getResources().getString(
+                            R.string.def_time_format);
+                    if (!TextUtils.isEmpty(defaultStringComponent)) {
+                        dateAndTimeSettings.insertSettingLocked(Settings.System.TIME_12_24,
+                                defaultStringComponent, null, true, SettingsState.SYSTEM_PACKAGE_NAME);
+                    }
                     currentVersion = 122;
                 }
 
@@ -3446,23 +3455,6 @@ public class SettingsProvider extends ContentProvider {
                                     null, true, SettingsState.SYSTEM_PACKAGE_NAME);
                         }
                     }
-					
-					// Version 147: Set the default value for BATTERY_PLUGGED_SOUND.
-                    if (userId == UserHandle.USER_SYSTEM) {
-                        final SettingsState globalSettings = getGlobalSettingsLocked();
-                        final Setting curSetting = globalSettings.getSettingLocked(
-                                Settings.Global.BATTERY_PLUGGED_SOUND);
-                        if (curSetting.isNull()) {
-                            final String defaultValue = getContext().getResources().getString(
-                                    R.string.def_battery_plugged_sound);
-                            if (defaultValue != null) {
-                                globalSettings.insertSettingLocked(
-                                        Settings.Global.BATTERY_PLUGGED_SOUND, defaultValue,
-                                        null, true, SettingsState.SYSTEM_PACKAGE_NAME);
-                            }
-                        }
-                    }
-					
                     currentVersion = 148;
                 }
 

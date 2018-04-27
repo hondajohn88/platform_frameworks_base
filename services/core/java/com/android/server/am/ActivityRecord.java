@@ -126,8 +126,6 @@ import android.app.PendingIntent;
 import android.app.PictureInPictureParams;
 import android.app.ResultInfo;
 import android.content.ComponentName;
-import android.content.ContentResolver;
-import android.content.ContextWrapper;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.content.pm.ApplicationInfo;
@@ -149,7 +147,6 @@ import android.os.Trace;
 import android.os.UserHandle;
 import android.os.storage.StorageManager;
 import android.service.voice.IVoiceInteractionSession;
-import android.provider.Settings;
 import android.util.EventLog;
 import android.util.Log;
 import android.util.MergedConfiguration;
@@ -161,6 +158,9 @@ import android.view.IApplicationToken;
 import android.view.WindowManager.LayoutParams;
 
 import com.android.internal.annotations.VisibleForTesting;
+
+import lineageos.providers.LineageSettings;
+
 import com.android.internal.app.ResolverActivity;
 import com.android.internal.content.ReferrerIntent;
 import com.android.internal.util.XmlUtils;
@@ -892,28 +892,6 @@ final class ActivityRecord extends ConfigurationContainer implements AppWindowCo
 
         if ((aInfo.flags & FLAG_EXCLUDE_FROM_RECENTS) != 0) {
             intent.addFlags(FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
-        }
-
-        String pkgName = aInfo.packageName;
-        String hideFromRecentsString = Settings.System.getStringForUser(service.mContext.getContentResolver(),
-                Settings.System.HIDE_FROM_RECENTS_LIST, UserHandle.USER_CURRENT);
-        ArrayList<String> excludeFromRecentsList = new ArrayList();
-
-        // this converts the String we get from Settings to an actual ArrayList
-        if (hideFromRecentsString!=null && hideFromRecentsString.length()!=0){
-            String[] parts = hideFromRecentsString.split("\\|");
-            for(int i = 0; i < parts.length; i++){
-                excludeFromRecentsList.add(parts[i]);
-            }
-        }
-
-        if (!excludeFromRecentsList.isEmpty()){
-            if (excludeFromRecentsList.contains(pkgName)) {
-                // If our app is inside the ArrayList, hide it from the Recents.
-                // For the case where that flag already was added by some other instance,
-                // it most likely has a good reason to be, so do not force remove it
-                intent.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS);
-            }
         }
 
         packageName = aInfo.applicationInfo.packageName;
@@ -1768,6 +1746,33 @@ final class ActivityRecord extends ConfigurationContainer implements AppWindowCo
             // the keyguard is not showing don't attempt to sleep. Otherwise the Activity will
             // pause and then resume again later, which will result in a double life-cycle event.
             stack.checkReadyForSleep();
+        }
+
+        updatePrivacyGuardNotificationLocked();
+    }
+
+    private final void updatePrivacyGuardNotificationLocked() {
+        String privacyGuardPackageName = mStackSupervisor.mPrivacyGuardPackageName;
+        if (privacyGuardPackageName != null && privacyGuardPackageName.equals(this.packageName)) {
+            return;
+        }
+
+        boolean privacy = service.mAppOpsService.getPrivacyGuardSettingForPackage(
+                this.app.uid, this.packageName);
+        boolean privacyNotification = (LineageSettings.Secure.getInt(
+                service.mContext.getContentResolver(),
+                LineageSettings.Secure.PRIVACY_GUARD_NOTIFICATION, 1) == 1);
+
+        if (privacyGuardPackageName != null && !privacy) {
+            Message msg = service.mHandler.obtainMessage(
+                    ActivityManagerService.CANCEL_PRIVACY_NOTIFICATION_MSG, this.userId);
+            msg.sendToTarget();
+            mStackSupervisor.mPrivacyGuardPackageName = null;
+        } else if (privacy && privacyNotification) {
+            Message msg = service.mHandler.obtainMessage(
+                    ActivityManagerService.POST_PRIVACY_NOTIFICATION_MSG, this);
+            msg.sendToTarget();
+            mStackSupervisor.mPrivacyGuardPackageName = this.packageName;
         }
     }
 

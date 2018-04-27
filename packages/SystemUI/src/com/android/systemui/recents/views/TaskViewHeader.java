@@ -30,6 +30,7 @@ import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.PorterDuff;
 import android.graphics.Rect;
+import android.graphics.drawable.AnimatedVectorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.RippleDrawable;
 import android.os.CountDownTimer;
@@ -256,8 +257,8 @@ public class TaskViewHeader extends FrameLayout
         // Initialize the icon and description views
         mIconView = findViewById(R.id.icon);
         mIconView.setOnLongClickListener(this);
-        mTitleView = findViewById(R.id.title);
-        mDismissButton = findViewById(R.id.dismiss_task);
+        mTitleView = (TextView) findViewById(R.id.title);
+        mDismissButton = (ImageView) findViewById(R.id.dismiss_task);
         mLockTaskButton = (ImageView) findViewById(R.id.lock_task);
         if (ssp.hasFreeformWorkspaceSupport()) {
             mMoveTaskButton = findViewById(R.id.move_task);
@@ -281,7 +282,9 @@ public class TaskViewHeader extends FrameLayout
         lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.START | Gravity.CENTER_VERTICAL);
         lp.setMarginStart(mHeaderBarHeight);
-        lp.setMarginEnd(mMoveTaskButton != null
+        lp.setMarginEnd(secondaryButton != null && tertiaryButton != null
+                ? 3 * mHeaderBarHeight
+                : secondaryButton != null || tertiaryButton != null
                 ? 2 * mHeaderBarHeight
                 : mHeaderBarHeight);
         title.setLayoutParams(lp);
@@ -478,9 +481,18 @@ public class TaskViewHeader extends FrameLayout
     }
 
     private void updateLockTaskDrawable() {
-        mLockTaskButton.setImageDrawable(mTask.useLightOnPrimaryColor ?
-                (Recents.sLockedTasks.contains(mTask) ? mLightLockedDrawable : mLightUnlockedDrawable) :
-                (Recents.sLockedTasks.contains(mTask) ? mDarkLockedDrawable : mDarkUnlockedDrawable));
+        if (Recents.sLockedTasks.contains(mTask)) {
+            mLockTaskButton.setImageDrawable(mTask.useLightOnPrimaryColor ?
+                    mLightLockedDrawable : mDarkLockedDrawable);
+            mLockTaskButton.setContentDescription(
+                    getResources().getString(R.string.accessibility_unlock_task, mTask.title));
+        } else {
+            mLockTaskButton.setImageDrawable(mTask.useLightOnPrimaryColor ?
+                    mLightUnlockedDrawable : mDarkUnlockedDrawable);
+            mLockTaskButton.setContentDescription(
+                    getResources().getString(R.string.accessibility_lock_task, mTask.title));
+        }
+        ((AnimatedVectorDrawable) mLockTaskButton.getDrawable()).start();
     }
 
     /**
@@ -545,21 +557,9 @@ public class TaskViewHeader extends FrameLayout
         // In accessibility, a single click on the focused app info button will show it
         if (touchExplorationEnabled) {
             mIconView.setContentDescription(t.appInfoDescription);
-            mIconView.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick (View v) {
-                    EventBus.getDefault().send(new ShowApplicationInfoEvent(mTask));
-                }
-            });
-        } else {
-            mIconView.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick (View v) {
-                    showAppOverlay();
-                }
-            });
+            mIconView.setOnClickListener(this);
+            mIconView.setClickable(true);
         }
-        mIconView.setClickable(true);
     }
 
     /**
@@ -670,7 +670,10 @@ public class TaskViewHeader extends FrameLayout
 
     @Override
     public void onClick(View v) {
-        if (v == mDismissButton) {
+        if (v == mIconView) {
+            // In accessibility, a single click on the focused app info button will show it
+            EventBus.getDefault().send(new ShowApplicationInfoEvent(mTask));
+        } else if (v == mDismissButton) {
             TaskView tv = Utilities.findParent(this, TaskView.class);
             if (!Recents.sLockedTasks.contains(tv.getTask())) {
                 tv.dismissTask();

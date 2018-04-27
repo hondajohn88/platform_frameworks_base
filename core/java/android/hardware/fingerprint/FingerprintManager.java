@@ -779,7 +779,7 @@ public class FingerprintManager {
                 throw e.rethrowFromSystemServer();
             }
         } else {
-            if (DEBUG) Log.w(TAG, "isFingerprintHardwareDetected(): Service not connected!");
+            Log.w(TAG, "isFingerprintHardwareDetected(): Service not connected!");
         }
         return false;
     }

@@ -87,6 +87,16 @@ public abstract class PowerManagerInternal {
     public abstract void setScreenBrightnessOverrideFromWindowManager(int brightness);
 
     /**
+     * Used by the window manager to override the button brightness based on the
+     * current foreground activity.
+     *
+     * This method must only be called by the window manager.
+     *
+     * @param brightness The overridden brightness, or -1 to disable the override.
+     */
+    public abstract void setButtonBrightnessOverrideFromWindowManager(int brightness);
+
+    /**
      * Used by the window manager to override the user activity timeout based on the
      * current foreground activity.  It can only be used to make the timeout shorter
      * than usual, not longer.
@@ -155,4 +165,10 @@ public abstract class PowerManagerInternal {
      * PowerHint defined in android/hardware/power/<version 1.0 & up>/IPower.h
      */
     public abstract void powerHint(int hintId, int data);
+
+    public abstract boolean setPowerSaveMode(boolean mode);
+
+    public abstract void setFeature(int featureId, int data);
+
+    public abstract int getFeature(int featureId);
 }

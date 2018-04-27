@@ -1031,11 +1031,9 @@
   <java-symbol type="string" name="stk_cc_ss_to_dial" />
   <java-symbol type="string" name="stk_cc_ss_to_ss" />
   <java-symbol type="string" name="stk_cc_ss_to_ussd" />
-  <java-symbol type="string" name="stk_cc_ss_to_dial_video" />
   <java-symbol type="string" name="stk_cc_ussd_to_dial" />
   <java-symbol type="string" name="stk_cc_ussd_to_ss" />
   <java-symbol type="string" name="stk_cc_ussd_to_ussd" />
-  <java-symbol type="string" name="stk_cc_ussd_to_dial_video" />
   <java-symbol type="string" name="safe_media_volume_warning" />
   <java-symbol type="string" name="media_route_status_scanning" />
   <java-symbol type="string" name="media_route_status_connecting" />
@@ -1588,10 +1586,6 @@
   <java-symbol type="dimen" name="navigation_bar_height_landscape_car_mode" />
   <java-symbol type="dimen" name="navigation_bar_width_car_mode" />
   <java-symbol type="dimen" name="status_bar_height" />
-  <java-symbol type="drawable" name="ic_jog_dial_sound_off" />
-  <java-symbol type="drawable" name="ic_jog_dial_sound_on" />
-  <java-symbol type="drawable" name="ic_jog_dial_unlock" />
-  <java-symbol type="drawable" name="ic_jog_dial_vibrate_on" />
   <java-symbol type="drawable" name="ic_lock_airplane_mode" />
   <java-symbol type="drawable" name="ic_lock_airplane_mode_off" />
   <java-symbol type="drawable" name="ic_menu_cc" />
@@ -2679,11 +2673,7 @@
   <java-symbol type="string" name="usb_mtp_launch_notification_description" />
 
   <java-symbol type="color" name="notification_action_list" />
-  <java-symbol type="color" name="notification_legacy_background_color" />
   <java-symbol type="color" name="notification_material_background_color" />
-  <java-symbol type="color" name="notification_material_background_dimmed_color" />
-  <java-symbol type="color" name="notification_material_background_dark_color" />
-  <java-symbol type="color" name="notification_material_background_low_priority_color" />
   <java-symbol type="color" name="notification_action_list_dark" />
 
   <!-- Resolver target actions -->
@@ -2763,6 +2753,8 @@
 
   <java-symbol type="layout" name="unsupported_display_size_dialog_content" />
   <java-symbol type="string" name="unsupported_display_size_message" />
+
+  <java-symbol type="bool" name="config_useDefaultBatchingForAccel" />
 
   <java-symbol type="layout" name="notification_material_action_emphasized" />
 
@@ -3084,4 +3076,8 @@
 
   <java-symbol type="integer" name="config_stableDeviceDisplayWidth" />
   <java-symbol type="integer" name="config_stableDeviceDisplayHeight" />
+
+  <!-- Whether the device supports Smart Pixels -->
+  <java-symbol type="bool" name="config_enableSmartPixels" />
+
 </resources>

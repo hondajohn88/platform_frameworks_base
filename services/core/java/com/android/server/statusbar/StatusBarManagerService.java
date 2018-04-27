@@ -20,6 +20,7 @@ import android.app.ActivityThread;
 import android.app.StatusBarManager;
 import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Rect;
 import android.os.Binder;
 import android.os.Bundle;
@@ -482,12 +483,50 @@ public class StatusBarManagerService extends IStatusBarService.Stub {
         }
     }
 
+    /**
+     * Window manager notifies SystemUI of navigation bar "left in landscape" changes
+     *
+     * @hide
+     */
+    @Override
+    public void leftInLandscapeChanged(boolean isLeft) {
+        enforceStatusBar();
+        if (mBar != null) {
+            try {
+                mBar.leftInLandscapeChanged(isLeft);
+            } catch (RemoteException ex) {
+            }
+        }
+    }
+
     @Override
     public void toggleFlashlight() {
         enforceStatusBarService();
         if (mBar != null) {
             try {
                 mBar.toggleFlashlight();
+            } catch (RemoteException ex) {
+            }
+        }
+    }
+
+    @Override
+    public void toggleNavigationEditor() {
+        enforceNavigationEditor();
+        if (mBar != null) {
+            try {
+                mBar.toggleNavigationEditor();
+            } catch (RemoteException ex) {
+            }
+        }
+    }
+
+    @Override
+    public void dispatchNavigationEditorResults(Intent intent) {
+        enforceNavigationEditor();
+        if (mBar != null) {
+            try {
+                mBar.dispatchNavigationEditorResults(intent);
             } catch (RemoteException ex) {
             }
         }
@@ -533,16 +572,6 @@ public class StatusBarManagerService extends IStatusBarService.Stub {
         if (mBar != null) {
             try {
                 mBar.handleSystemKey(key);
-            } catch (RemoteException ex) {
-            }
-        }
-    }
-
-    @Override
-    public void toggleNavigationBar(boolean enable) {
-        if (mBar != null) {
-            try {
-                mBar.toggleNavigationBar(enable);
             } catch (RemoteException ex) {
             }
         }
@@ -797,6 +826,11 @@ public class StatusBarManagerService extends IStatusBarService.Stub {
 
     private void enforceStatusBarService() {
         mContext.enforceCallingOrSelfPermission(android.Manifest.permission.STATUS_BAR_SERVICE,
+                "StatusBarManagerService");
+    }
+
+    private void enforceNavigationEditor() {
+        mContext.enforceCallingOrSelfPermission(android.Manifest.permission.NAVIGATION_EDITOR,
                 "StatusBarManagerService");
     }
 

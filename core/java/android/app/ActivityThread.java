@@ -5844,7 +5844,7 @@ public final class ActivityThread {
             throw ex.rethrowFromSystemServer();
         }
         if (holder == null) {
-            if (DEBUG_MESSAGES) Slog.e(TAG, "Failed to find provider info for " + auth);
+            Slog.e(TAG, "Failed to find provider info for " + auth);
             return null;
         }
 

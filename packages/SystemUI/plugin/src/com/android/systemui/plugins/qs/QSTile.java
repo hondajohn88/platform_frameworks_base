@@ -67,7 +67,6 @@ public interface QSTile {
     CharSequence getTileLabel();
 
     State getState();
-    boolean isDualTarget();
 
     default LogMaker populate(LogMaker logMaker) {
         return logMaker;
@@ -289,6 +288,33 @@ public interface QSTile {
             SlashState state = new SlashState();
             state.rotation = rotation;
             state.isSlashed = isSlashed;
+            return state;
+        }
+    }
+
+    @ProvidesInterface(version = LiveDisplayState.VERSION)
+    public static class LiveDisplayState extends State {
+        public static final int VERSION = 1;
+        public int mode;
+
+        @Override
+        public boolean copyTo(State other) {
+            final LiveDisplayState o = (LiveDisplayState) other;
+            final boolean changed = mode != o.mode;
+            return super.copyTo(other) || changed;
+        }
+
+        @Override
+        protected StringBuilder toStringBuilder() {
+            final StringBuilder rt = super.toStringBuilder();
+            rt.insert(rt.length() - 1, ",mode=" + mode);
+            return rt;
+        }
+
+        @Override
+        public State copy() {
+            LiveDisplayState state = new LiveDisplayState();
+            copyTo(state);
             return state;
         }
     }

@@ -107,12 +107,18 @@
 
     <!-- The default tiles to display in QuickSettings -->
     <string name="quick_settings_tiles_default" translatable="false">
-        wifi,bt,dnd,flashlight,rotation,battery,cell,airplane,cast
+        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane
     </string>
 
     <!-- Tiles native to System UI. Order should match "quick_settings_tiles_default" -->
     <string name="quick_settings_tiles_stock" translatable="false">
-        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane,location,hotspot,inversion,saver,work,cast,night,nfc,caffeine,screenshot,screenrecord,notification,smartpixels
+        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane,nfc,location,hotspot,inversion,saver,work,
+                cast,night,adb_network,ambient_display,caffeine,heads_up,livedisplay,sync,usb_tether,volume_panel,smartpixels
+    </string>
+
+    <!-- AOKP - Extra tiles to display in QuickSettings -->
+    <string name="quick_settings_tiles_extra" translatable="false">
+        screenshot,expanded_desktop,reboot,power_menu,sleepscreen,romcontrol,app_picker,navigation_bar,weather
     </string>
 
     <!-- The tiles to display in QuickSettings -->
@@ -150,7 +156,7 @@
     <integer name="touch_acceptance_delay">700</integer>
 
     <!-- The duration in seconds to wait before the dismiss buttons are shown. -->
-    <integer name="recents_task_bar_dismiss_delay_seconds">400</integer>
+    <integer name="recents_task_bar_dismiss_delay_seconds">1000</integer>
 
     <!-- The duration for animating the task decorations in after transitioning from an app. -->
     <integer name="recents_task_enter_from_app_duration">200</integer>
@@ -431,8 +437,5 @@
         <item>30</item>
         <item>60</item>
         <item>120</item>
-		<item>300</item>
-		<item>720</item>
-		<item>1440</item>
     </integer-array>
 </resources>

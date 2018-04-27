@@ -36,7 +36,6 @@ public class NotificationChannels extends SystemUI {
     public static String STORAGE     = "DSK";
     public static String TVPIP       = "TPP";
     public static String BATTERY     = "BAT";
-    public static String SCREENRECORDS = "SCR";
 
     @VisibleForTesting
     static void createAll(Context context) {
@@ -70,11 +69,8 @@ public class NotificationChannels extends SystemUI {
                         isTv(context)
                                 ? NotificationManager.IMPORTANCE_DEFAULT
                                 : NotificationManager.IMPORTANCE_LOW),
-                batteryChannel,
-                new NotificationChannel(
-                        SCREENRECORDS,
-                        context.getString(R.string.notification_channel_screenrecord),
-                        NotificationManager.IMPORTANCE_LOW)));
+                batteryChannel
+        ));
 
         if (isTv(context)) {
             // TV specific notification channel for TV PIP controls.

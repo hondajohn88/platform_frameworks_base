@@ -102,6 +102,11 @@ public class LockPatternUtils {
      */
     public static final int MIN_LOCK_PASSWORD_SIZE = 4;
 
+    /*
+     * The default size of the pattern lockscreen. Ex: 3x3
+     */
+    public static final byte PATTERN_SIZE_DEFAULT = 3;
+
     /**
      * The minimum number of dots the user must include in a wrong pattern
      * attempt for it to be counted against the counts that affect
@@ -387,7 +392,7 @@ public class LockPatternUtils {
      */
     public byte[] verifyPattern(List<LockPatternView.Cell> pattern, long challenge, int userId)
             throws RequestThrottledException {
-        return verifyCredential(patternToString(pattern), CREDENTIAL_TYPE_PATTERN, challenge,
+        return verifyCredential(patternToString(pattern, userId), CREDENTIAL_TYPE_PATTERN, challenge,
                 userId);
     }
 
@@ -411,7 +416,7 @@ public class LockPatternUtils {
     public boolean checkPattern(List<LockPatternView.Cell> pattern, int userId,
             @Nullable CheckCredentialProgressCallback progressCallback)
             throws RequestThrottledException {
-        return checkCredential(patternToString(pattern), CREDENTIAL_TYPE_PATTERN, userId,
+        return checkCredential(patternToString(pattern, userId), CREDENTIAL_TYPE_PATTERN, userId,
                 progressCallback);
     }
 
@@ -672,7 +677,7 @@ public class LockPatternUtils {
             }
 
             setLong(PASSWORD_TYPE_KEY, DevicePolicyManager.PASSWORD_QUALITY_SOMETHING, userId);
-            getLockSettings().setLockCredential(patternToString(pattern), CREDENTIAL_TYPE_PATTERN,
+            getLockSettings().setLockCredential(patternToString(pattern, userId), CREDENTIAL_TYPE_PATTERN,
                     savedPattern, DevicePolicyManager.PASSWORD_QUALITY_SOMETHING, userId);
 
             // Update the device encryption password.
@@ -681,7 +686,7 @@ public class LockPatternUtils {
                 if (!shouldEncryptWithCredentials(true)) {
                     clearEncryptionPassword();
                 } else {
-                    String stringPattern = patternToString(pattern);
+                    String stringPattern = patternToString(pattern, userId);
                     updateEncryptionPassword(StorageManager.CRYPT_TYPE_PATTERN, stringPattern);
                 }
             }
@@ -690,17 +695,6 @@ public class LockPatternUtils {
             onAfterChangingPassword(userId);
         } catch (RemoteException re) {
             Log.e(TAG, "Couldn't save lock pattern " + re);
-        }
-    }
-
-    /**
-     * clears stored password.
-     */
-    public void sanitizePassword() {
-        try {
-            getLockSettings().sanitizePassword();
-        } catch (RemoteException re) {
-            Log.e(TAG, "Couldn't sanitize password" + re);
         }
     }
 
@@ -995,17 +989,19 @@ public class LockPatternUtils {
      * @param string The pattern serialized with {@link #patternToString}
      * @return The pattern.
      */
-    public static List<LockPatternView.Cell> stringToPattern(String string) {
+    public static List<LockPatternView.Cell> stringToPattern(String string, byte gridSize) {
         if (string == null) {
             return null;
         }
 
         List<LockPatternView.Cell> result = Lists.newArrayList();
 
+        LockPatternView.Cell.updateSize(gridSize);
+
         final byte[] bytes = string.getBytes();
         for (int i = 0; i < bytes.length; i++) {
             byte b = (byte) (bytes[i] - '1');
-            result.add(LockPatternView.Cell.of(b / 3, b % 3));
+            result.add(LockPatternView.Cell.of(b / gridSize, b % gridSize, gridSize));
         }
         return result;
     }
@@ -1015,16 +1011,26 @@ public class LockPatternUtils {
      * @param pattern The pattern.
      * @return The pattern in string form.
      */
-    public static String patternToString(List<LockPatternView.Cell> pattern) {
+    public String patternToString(List<LockPatternView.Cell> pattern, int userId) {
+        return patternToString(pattern, getLockPatternSize(userId));
+    }
+
+    /**
+     * Serialize a pattern.
+     * @param pattern The pattern.
+     * @return The pattern in string form.
+     */
+    public static String patternToString(List<LockPatternView.Cell> pattern, byte gridSize) {
         if (pattern == null) {
             return "";
         }
         final int patternSize = pattern.size();
+        LockPatternView.Cell.updateSize(gridSize);
 
         byte[] res = new byte[patternSize];
         for (int i = 0; i < patternSize; i++) {
             LockPatternView.Cell cell = pattern.get(i);
-            res[i] = (byte) (cell.getRow() * 3 + cell.getColumn() + '1');
+            res[i] = (byte) (cell.getRow() * gridSize + cell.getColumn() + '1');
         }
         return new String(res);
     }
@@ -1050,7 +1056,7 @@ public class LockPatternUtils {
      * @param pattern the gesture pattern.
      * @return the hash of the pattern in a byte array.
      */
-    public static byte[] patternToHash(List<LockPatternView.Cell> pattern) {
+    public static byte[] patternToHash(List<LockPatternView.Cell> pattern, byte gridSize) {
         if (pattern == null) {
             return null;
         }
@@ -1059,7 +1065,7 @@ public class LockPatternUtils {
         byte[] res = new byte[patternSize];
         for (int i = 0; i < patternSize; i++) {
             LockPatternView.Cell cell = pattern.get(i);
-            res[i] = (byte) (cell.getRow() * 3 + cell.getColumn());
+            res[i] = (byte) (cell.getRow() * gridSize + cell.getColumn());
         }
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-1");
@@ -1231,6 +1237,40 @@ public class LockPatternUtils {
     }
 
     /**
+     * @return the pattern lockscreen size
+     */
+    public byte getLockPatternSize(int userId) {
+        long size = getLong(Settings.Secure.LOCK_PATTERN_SIZE, -1, userId);
+        if (size > 0 && size < 128) {
+            return (byte) size;
+        }
+        return LockPatternUtils.PATTERN_SIZE_DEFAULT;
+    }
+
+    /**
+     * Set the pattern lockscreen size
+     */
+    public void setLockPatternSize(long size, int userId) {
+        setLong(Settings.Secure.LOCK_PATTERN_SIZE, size, userId);
+    }
+
+    public void setVisibleDotsEnabled(boolean enabled, int userId) {
+        setBoolean(Settings.Secure.LOCK_DOTS_VISIBLE, enabled, userId);
+    }
+
+    public boolean isVisibleDotsEnabled(int userId) {
+        return getBoolean(Settings.Secure.LOCK_DOTS_VISIBLE, true, userId);
+    }
+
+    public void setShowErrorPath(boolean enabled, int userId) {
+        setBoolean(Settings.Secure.LOCK_SHOW_ERROR_PATH, enabled, userId);
+    }
+
+    public boolean isShowErrorPath(int userId) {
+        return getBoolean(Settings.Secure.LOCK_SHOW_ERROR_PATH, true, userId);
+    }
+
+    /**
      * Set and store the lockout deadline, meaning the user can't attempt his/her unlock
      * pattern until the deadline has passed.
      * @return the chosen deadline.
@@ -1272,7 +1312,7 @@ public class LockPatternUtils {
         return deadline;
     }
 
-    private boolean getBoolean(String secureSettingKey, boolean defaultValue, int userId) {
+    protected boolean getBoolean(String secureSettingKey, boolean defaultValue, int userId) {
         try {
             return getLockSettings().getBoolean(secureSettingKey, defaultValue, userId);
         } catch (RemoteException re) {
@@ -1280,7 +1320,7 @@ public class LockPatternUtils {
         }
     }
 
-    private void setBoolean(String secureSettingKey, boolean enabled, int userId) {
+    protected void setBoolean(String secureSettingKey, boolean enabled, int userId) {
         try {
             getLockSettings().setBoolean(secureSettingKey, enabled, userId);
         } catch (RemoteException re) {
@@ -1289,7 +1329,7 @@ public class LockPatternUtils {
         }
     }
 
-    private long getLong(String secureSettingKey, long defaultValue, int userHandle) {
+    protected long getLong(String secureSettingKey, long defaultValue, int userHandle) {
         try {
             return getLockSettings().getLong(secureSettingKey, defaultValue, userHandle);
         } catch (RemoteException re) {
@@ -1297,7 +1337,7 @@ public class LockPatternUtils {
         }
     }
 
-    private void setLong(String secureSettingKey, long value, int userHandle) {
+    protected void setLong(String secureSettingKey, long value, int userHandle) {
         try {
             getLockSettings().setLong(secureSettingKey, value, userHandle);
         } catch (RemoteException re) {
@@ -1306,7 +1346,7 @@ public class LockPatternUtils {
         }
     }
 
-    private String getString(String secureSettingKey, int userHandle) {
+    protected String getString(String secureSettingKey, int userHandle) {
         try {
             return getLockSettings().getString(secureSettingKey, null, userHandle);
         } catch (RemoteException re) {
@@ -1314,7 +1354,7 @@ public class LockPatternUtils {
         }
     }
 
-    private void setString(String secureSettingKey, String value, int userHandle) {
+    protected void setString(String secureSettingKey, String value, int userHandle) {
         try {
             getLockSettings().setString(secureSettingKey, value, userHandle);
         } catch (RemoteException re) {

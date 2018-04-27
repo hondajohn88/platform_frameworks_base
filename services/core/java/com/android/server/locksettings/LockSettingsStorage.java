@@ -27,10 +27,11 @@ import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.os.Environment;
-import android.os.SystemProperties;
+import android.os.RemoteException;
 import android.os.UserHandle;
 import android.os.UserManager;
 import android.os.storage.StorageManager;
+import android.provider.Settings;
 import android.util.ArrayMap;
 import android.util.Log;
 import android.util.Slog;
@@ -89,8 +90,6 @@ class LockSettingsStorage {
     private final Context mContext;
     private final Cache mCache = new Cache();
     private final Object mFileWriteLock = new Object();
-
-    private static final boolean mSecDiscard = SystemProperties.getBoolean("ro.lockscreen.secdiscard", true);
 
     private PersistentDataBlockManagerInternal mPersistentDataBlockManagerInternal;
 
@@ -446,6 +445,18 @@ class LockSettingsStorage {
         writeFile(getLockPatternFilename(userId), patternHash);
     }
 
+    public byte getLockPatternSize(int userId) {
+        long size = Long.valueOf(readKeyValue(Settings.Secure.LOCK_PATTERN_SIZE, "-1", userId));
+        if (size > 0 && size < 128) {
+            return (byte) size;
+        }
+        return LockPatternUtils.PATTERN_SIZE_DEFAULT;
+    }
+
+    public boolean isDefaultSize(int userId) {
+        return getLockPatternSize(userId) == LockPatternUtils.PATTERN_SIZE_DEFAULT;
+    }
+
     @VisibleForTesting
     String getLockPatternFilename(int userId) {
         return getLockCredentialFilePathForUser(userId, LOCK_PATTERN_FILE);
@@ -499,9 +510,7 @@ class LockSettingsStorage {
         File file = new File(path);
         if (file.exists()) {
             try {
-                 if (mSecDiscard) {
-                    mContext.getSystemService(StorageManager.class).secdiscard(file.getAbsolutePath());
-                }
+                mContext.getSystemService(StorageManager.class).secdiscard(file.getAbsolutePath());
             } catch (Exception e) {
                 Slog.w(TAG, "Failed to secdiscard " + path, e);
             } finally {

@@ -19,6 +19,7 @@
 //#define LOG_NDEBUG 0
 
 #include <android/hardware/power/1.1/IPower.h>
+#include <vendor/lineage/power/1.0/ILineagePower.h>
 #include "JNIHelp.h"
 #include "jni.h"
 
@@ -36,6 +37,7 @@
 #include <hardware/power.h>
 #include <hardware_legacy/power.h>
 #include <suspend/autosuspend.h>
+#include <android/keycodes.h>
 
 #include "com_android_server_power_PowerManagerService.h"
 
@@ -45,6 +47,7 @@ using android::hardware::power::V1_1::IPower;
 using android::hardware::power::V1_0::PowerHint;
 using android::hardware::power::V1_0::Feature;
 using android::String8;
+using vendor::lineage::power::V1_0::LineageFeature;
 
 namespace android {
 
@@ -59,7 +62,9 @@ static struct {
 static jobject gPowerManagerServiceObj;
 sp<android::hardware::power::V1_0::IPower> gPowerHalV1_0 = nullptr;
 sp<android::hardware::power::V1_1::IPower> gPowerHalV1_1 = nullptr;
+sp<vendor::lineage::power::V1_0::ILineagePower> gLineagePowerHalV1_0 = nullptr;
 bool gPowerHalExists = true;
+bool gLineagePowerHalExists = true;
 std::mutex gPowerHalMutex;
 static nsecs_t gLastEventTime[USER_ACTIVITY_EVENT_LAST + 1];
 
@@ -94,6 +99,21 @@ bool getPowerHal() {
     return gPowerHalV1_0 != nullptr;
 }
 
+// Check validity of current handle to the Lineage power HAL service, and call getService() if necessary.
+// The caller must be holding gPowerHalMutex.
+bool getLineagePowerHal() {
+    if (gLineagePowerHalExists && gLineagePowerHalV1_0 == nullptr) {
+        gLineagePowerHalV1_0 = vendor::lineage::power::V1_0::ILineagePower::getService();
+        if (gLineagePowerHalV1_0 != nullptr) {
+            ALOGI("Loaded power HAL service");
+        } else {
+            ALOGI("Couldn't load power HAL service");
+            gLineagePowerHalExists = false;
+        }
+    }
+    return gLineagePowerHalV1_0 != nullptr;
+}
+
 // Check if a call to a power HAL function failed; if so, log the failure and invalidate the
 // current handle to the power HAL service. The caller must be holding gPowerHalMutex.
 static void processReturn(const Return<void> &ret, const char* functionName) {
@@ -103,7 +123,8 @@ static void processReturn(const Return<void> &ret, const char* functionName) {
     }
 }
 
-void android_server_PowerManagerService_userActivity(nsecs_t eventTime, int32_t eventType) {
+void android_server_PowerManagerService_userActivity(nsecs_t eventTime, int32_t eventType,
+        int32_t keyCode) {
     if (gPowerManagerServiceObj) {
         // Throttle calls into user activity by event type.
         // We're a little conservative about argument checking here in case the caller
@@ -137,9 +158,14 @@ void android_server_PowerManagerService_userActivity(nsecs_t eventTime, int32_t 
 
         JNIEnv* env = AndroidRuntime::getJNIEnv();
 
+        int flags = 0;
+        if (keyCode == AKEYCODE_VOLUME_UP || keyCode == AKEYCODE_VOLUME_DOWN) {
+            flags |= USER_ACTIVITY_FLAG_NO_BUTTON_LIGHTS;
+        }
+
         env->CallVoidMethod(gPowerManagerServiceObj,
                 gPowerManagerServiceClassInfo.userActivityFromNative,
-                nanoseconds_to_milliseconds(eventTime), eventType, 0);
+                nanoseconds_to_milliseconds(eventTime), eventType, flags);
         checkAndClearExceptionFromCallback(env, "userActivityFromNative");
     }
 }
@@ -214,6 +240,17 @@ static void nativeSetFeature(JNIEnv *env, jclass clazz, jint featureId, jint dat
     }
 }
 
+static jint nativeGetFeature(JNIEnv *env, jclass clazz, jint featureId) {
+    int value = -1;
+
+    std::lock_guard<std::mutex> lock(gPowerHalMutex);
+    if (getLineagePowerHal()) {
+        value = gLineagePowerHalV1_0->getFeature((LineageFeature)featureId);
+    }
+
+    return (jint)value;
+}
+
 // ----------------------------------------------------------------------------
 
 static const JNINativeMethod gPowerManagerServiceMethods[] = {
@@ -232,6 +269,8 @@ static const JNINativeMethod gPowerManagerServiceMethods[] = {
             (void*) nativeSendPowerHint },
     { "nativeSetFeature", "(II)V",
             (void*) nativeSetFeature },
+    { "nativeGetFeature", "(I)I",
+            (void*) nativeGetFeature },
 };
 
 #define FIND_CLASS(var, className) \

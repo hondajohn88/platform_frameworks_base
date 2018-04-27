@@ -112,7 +112,15 @@ public class CellularTile extends QSTileImpl<SignalState> {
 
     @Override
     protected void handleClick() {
-        mDataController.setMobileDataEnabled(!mDataController.isMobileDataEnabled());
+        if (mDataController.isMobileDataEnabled()) {
+            if (mKeyguardMonitor.isSecure() && !mKeyguardMonitor.canSkipBouncer()) {
+                mActivityStarter.postQSRunnableDismissingKeyguard(this::showDisableDialog);
+            } else {
+                mUiHandler.post(this::showDisableDialog);
+            }
+        } else {
+            mDataController.setMobileDataEnabled(true);
+        }
     }
 
     private void showDisableDialog() {
@@ -236,7 +244,7 @@ public class CellularTile extends QSTileImpl<SignalState> {
         @Override
         public void setMobileDataIndicators(IconState statusIcon, IconState qsIcon, int statusType,
                 int qsType, boolean activityIn, boolean activityOut, String typeContentDescription,
-                String description, boolean isWide, int subId, boolean roaming, boolean isMobileIms) {
+                String description, boolean isWide, int subId, boolean roaming) {
             if (qsIcon == null) {
                 // Not data sim, don't display.
                 return;
