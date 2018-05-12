@@ -4,6 +4,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.os.UserHandle;
 import android.provider.Settings;
 import android.support.v4.view.PagerAdapter;
 import android.support.v4.view.ViewPager;
@@ -174,11 +175,16 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
         }
     }
 
+    @Override
+    public boolean isShowTitles() {
+        return mPages.get(0).isShowTitles();
+    }
+
     public void setPageListener(PageListener listener) {
         mPageListener = listener;
     }
 
-    private void postDistributeTiles() {
+    public void postDistributeTiles() {
         removeCallbacks(mDistribute);
         post(mDistribute);
     }
@@ -281,15 +287,15 @@ public class PagedTileLayout extends ViewPager implements QSTileLayout {
         private int getRows() {
             final Resources res = getContext().getResources();
             final ContentResolver resolver = mContext.getContentResolver();
-            final boolean isPortrait = res.getConfiguration().orientation
-                    == Configuration.ORIENTATION_PORTRAIT;
-            final int columnsPortrait = Settings.Secure.getInt(resolver,
-                    Settings.Secure.QS_ROWS_PORTRAIT, 3);
-            final int columnsLandscape = Settings.Secure.getInt(resolver,
-                    Settings.Secure.QS_ROWS_LANDSCAPE, res.getInteger(
-                    com.android.internal.R.integer.config_qs_num_rows_landscape_default));
-            final int columns = Math.max(1, isPortrait ? columnsPortrait : columnsLandscape);
-            return Math.max(1, isPortrait ? columnsPortrait : columnsLandscape);
+
+            if (res.getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT) {
+                return Settings.System.getIntForUser(resolver,
+                        Settings.System.QS_ROWS_PORTRAIT, 3,
+                        UserHandle.USER_CURRENT);
+            }
+            return Settings.System.getIntForUser(resolver,
+                        Settings.System.QS_ROWS_LANDSCAPE, 2,
+                        UserHandle.USER_CURRENT);
         }
 
         public void setMaxRows(int maxRows) {

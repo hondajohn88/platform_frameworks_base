@@ -107,18 +107,12 @@
 
     <!-- The default tiles to display in QuickSettings -->
     <string name="quick_settings_tiles_default" translatable="false">
-        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane
+        wifi,bt,dnd,flashlight,rotation,battery,cell,airplane,cast,aicp_extras,assist,voiceassist,google
     </string>
 
     <!-- Tiles native to System UI. Order should match "quick_settings_tiles_default" -->
     <string name="quick_settings_tiles_stock" translatable="false">
-        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane,nfc,location,hotspot,inversion,saver,work,
-                cast,night,adb_network,ambient_display,caffeine,heads_up,livedisplay,sync,usb_tether,volume_panel,smartpixels
-    </string>
-
-    <!-- AOKP - Extra tiles to display in QuickSettings -->
-    <string name="quick_settings_tiles_extra" translatable="false">
-        screenshot,expanded_desktop,reboot,power_menu,sleepscreen,romcontrol,app_picker,navigation_bar,weather
+        wifi,cell,battery,dnd,flashlight,rotation,bt,airplane,nfc,location,hotspot,inversion,saver,work,cast,night,aicp_extras,compass,screenshot,usb_tether,locale,music,sound,ambient_display,caffeine,sync,volume,screenrecord,heads_up,weather,always_on_display,livedisplay,navigation,assist,voiceassist,google,expanded_desktop,smartpixels
     </string>
 
     <!-- The tiles to display in QuickSettings -->
@@ -328,7 +322,7 @@
     <!-- Nav bar button default ordering/layout -->
     <string name="config_navBarLayout" translatable="false">left[.5W],back[1WC];home;recent[1WC],right[.5W]</string>
 
-    <bool name="quick_settings_show_full_alarm">false</bool>
+    <bool name="quick_settings_show_full_alarm">true</bool>
 
     <!-- Whether to show a warning notification when the device reaches a certain temperature. -->
     <integer name="config_showTemperatureWarning">0</integer>

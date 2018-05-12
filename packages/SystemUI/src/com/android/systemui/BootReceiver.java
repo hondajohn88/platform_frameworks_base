@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 The Android Open Source Project
+ * Copyright (C) 2011 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -35,7 +35,7 @@ public class BootReceiver extends BroadcastReceiver {
         try {
             // Start the cpu info overlay, if activated
             ContentResolver res = context.getContentResolver();
-            if (Settings.Global.getInt(res, Settings.Global.SHOW_CPU, 0) != 0) {
+            if (Settings.Global.getInt(res, Settings.Global.SHOW_CPU_OVERLAY, 0) != 0) {
                 Intent cpuinfo = new Intent(context, com.android.systemui.CPUInfoService.class);
                 context.startService(cpuinfo);
             }
@@ -47,7 +47,7 @@ public class BootReceiver extends BroadcastReceiver {
             }
 
         } catch (Exception e) {
-            Log.e(TAG, "Can't start cpu info overlay", e);
+            Log.e(TAG, "Can't start cpuinfo service", e);
         }
     }
 }

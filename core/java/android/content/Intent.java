@@ -755,22 +755,6 @@ public class Intent implements Parcelable, Cloneable {
     public static final String ACTION_CREATE_SHORTCUT = "android.intent.action.CREATE_SHORTCUT";
 
     /**
-     *  Global Action: Shows power menu dialog
-     *  <p>Input: nothing
-     *  <p>Output: nothing
-     *  @hide
-     */
-    public static final String ACTION_POWERMENU = "android.intent.action.POWERMENU";
-
-    /**
-     *  Global Action: Shows power menu reboot dialog
-     *  <p>Input: nothing
-     *  <p>Output: nothing
-     *  @hide
-     */
-    public static final String ACTION_POWERMENU_REBOOT = "android.intent.action.POWERMENU_REBOOT";
-
-    /**
      * The name of the extra used to define the Intent of a shortcut.
      *
      * @see #ACTION_CREATE_SHORTCUT
@@ -2790,6 +2774,21 @@ public class Intent implements Parcelable, Cloneable {
      */
     @SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
     public static final String ACTION_AIRPLANE_MODE_CHANGED = "android.intent.action.AIRPLANE_MODE";
+
+    /**
+     * <p>Broadcast Action: The user has changed carrier label:</p>
+     * <ul>
+     *   <li><em>state</em> - String value.</li>
+     * </ul>
+     *
+     * <p class="note">This is a protected intent that can only be sent
+     * by the system.
+     *
+     * @hide
+     */
+    //@SdkConstant(SdkConstantType.BROADCAST_INTENT_ACTION)
+    public static final String ACTION_CUSTOM_CARRIER_LABEL_CHANGED
+            = "android.intent.action.CUSTOM_CARRIER_LABEL";
 
     /**
      * Broadcast Action: Some content providers have parts of their namespace

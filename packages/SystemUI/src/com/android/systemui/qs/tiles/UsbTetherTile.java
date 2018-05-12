@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2015 The Android Open Source Project
- * Copyright (C) 2017-2018 The LineageOS Project
+ * Copyright (C) 2017 AICP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -25,28 +25,25 @@ import android.content.IntentFilter;
 import android.hardware.usb.UsbManager;
 import android.provider.Settings;
 import android.net.ConnectivityManager;
-import android.service.quicksettings.Tile;
 
+import com.android.internal.logging.MetricsLogger;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
+import com.android.systemui.R;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
-import com.android.systemui.R;
-
-import org.lineageos.internal.logging.LineageMetricsLogger;
 
 /**
  * USB Tether quick settings tile
  */
 public class UsbTetherTile extends QSTileImpl<BooleanState> {
-    static final Intent TETHER_SETTINGS = new Intent().setComponent(new ComponentName(
-             "com.android.settings", "com.android.settings.TetherSettings"));
 
     private final ConnectivityManager mConnectivityManager;
 
     private boolean mListening;
 
+    private boolean mUsbTethered = false;
     private boolean mUsbConnected = false;
-    private boolean mUsbTetherEnabled = false;
 
     public UsbTetherTile(QSHost host) {
         super(host);
@@ -54,20 +51,21 @@ public class UsbTetherTile extends QSTileImpl<BooleanState> {
                 .getSystemService(Context.CONNECTIVITY_SERVICE);
     }
 
+    @Override
     public BooleanState newTileState() {
         return new BooleanState();
     }
 
     @Override
     public void handleSetListening(boolean listening) {
-        if (mListening == listening) {
+        if (mListening == listening)
             return;
-        }
         mListening = listening;
         if (listening) {
             final IntentFilter filter = new IntentFilter();
             filter.addAction(UsbManager.ACTION_USB_STATE);
             mContext.registerReceiver(mReceiver, filter);
+            refreshState();
         } else {
             mContext.unregisterReceiver(mReceiver);
         }
@@ -75,34 +73,13 @@ public class UsbTetherTile extends QSTileImpl<BooleanState> {
 
     @Override
     protected void handleClick() {
-        mConnectivityManager.setUsbTethering(!mUsbTetherEnabled);
+        mConnectivityManager.setUsbTethering(!mUsbTethered);
     }
 
     @Override
     public Intent getLongClickIntent() {
-        return new Intent(TETHER_SETTINGS);
-    }
-
-    private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            mUsbConnected = intent.getBooleanExtra(UsbManager.USB_CONNECTED, false);
-            if (mUsbConnected && mConnectivityManager.isTetheringSupported()) {
-                mUsbTetherEnabled = intent.getBooleanExtra(UsbManager.USB_FUNCTION_RNDIS, false);
-            } else {
-                mUsbTetherEnabled = false;
-            }
-            refreshState();
-        }
-    };
-
-    @Override
-    protected void handleUpdateState(BooleanState state, Object arg) {
-        state.value = mUsbTetherEnabled;
-        state.label = mContext.getString(R.string.quick_settings_usb_tether_label);
-        state.icon = mUsbTetherEnabled ? ResourceIcon.get(R.drawable.ic_qs_usb_tether_on)
-                : ResourceIcon.get(R.drawable.ic_qs_usb_tether_off);
-        state.state = mUsbTetherEnabled ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE;
+        return new Intent().setComponent(new ComponentName(
+            "com.android.settings", "com.android.settings.Settings$WirelessSettingsActivity"));
     }
 
     @Override
@@ -112,6 +89,60 @@ public class UsbTetherTile extends QSTileImpl<BooleanState> {
 
     @Override
     public int getMetricsCategory() {
-        return LineageMetricsLogger.TILE_USB_TETHER;
+        return MetricsEvent.AICP_METRICS;
+    }
+
+    private void updateState() {
+        String[] tetheredIfaces = mConnectivityManager.getTetheredIfaces();
+        String[] usbRegexs = mConnectivityManager.getTetherableUsbRegexs();
+
+        mUsbTethered = false;
+        for (String s : tetheredIfaces) {
+            for (String regex : usbRegexs) {
+                if (s.matches(regex)) {
+                    mUsbTethered = true;
+                    return;
+                }
+            }
+        }
+    }
+
+    private final BroadcastReceiver mReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            mUsbConnected = intent.getBooleanExtra(UsbManager.USB_CONNECTED, false);
+            if (mUsbConnected && mConnectivityManager.isTetheringSupported()) {
+                updateState();
+            } else {
+                mUsbTethered = false;
+            }
+            refreshState();
+        }
+    };
+
+    @Override
+    protected void handleUpdateState(BooleanState state, Object arg) {
+        state.value = mUsbTethered;
+        state.label = mContext.getString(R.string.quick_settings_usb_tether_label);
+        if (mUsbTethered) {
+            state.icon = ResourceIcon.get(R.drawable.ic_qs_usb_tether_on);
+            state.contentDescription = mContext.getString(
+                    R.string.accessibility_quick_settings_usb_tether_on);
+        } else {
+            state.icon = ResourceIcon.get(R.drawable.ic_qs_usb_tether_off);
+            state.contentDescription = mContext.getString(
+                    R.string.accessibility_quick_settings_usb_tether_off);
+        }
+    }
+
+    @Override
+    protected String composeChangeAnnouncement() {
+        if (mState.value) {
+            return mContext.getString(
+                    R.string.accessibility_quick_settings_usb_tether_changed_on);
+        } else {
+            return mContext.getString(
+                    R.string.accessibility_quick_settings_usb_tether_changed_off);
+        }
     }
 }

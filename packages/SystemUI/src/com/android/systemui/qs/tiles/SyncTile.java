@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2015 The CyanogenMod Project
- * Copyright (C) 2017 The LineageOS Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,17 +16,18 @@
 
 package com.android.systemui.qs.tiles;
 
+import android.content.ComponentName;
 import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.SyncStatusObserver;
 import android.service.quicksettings.Tile;
 
-import com.android.systemui.plugins.qs.QSTile.BooleanState;
-import com.android.systemui.qs.QSHost;
-import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.R;
-
-import org.lineageos.internal.logging.LineageMetricsLogger;
+import com.android.systemui.Dependency;
+import com.android.systemui.qs.QSHost;
+import com.android.systemui.plugins.qs.QSTile.BooleanState;
+import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 
 /** Quick settings tile: Sync **/
 public class SyncTile extends QSTileImpl<BooleanState> {
@@ -51,10 +51,24 @@ public class SyncTile extends QSTileImpl<BooleanState> {
     }
 
     @Override
+    public void handleLongClick() {
+        ContentResolver.setMasterSyncAutomatically(!mState.value);
+        refreshState();
+    }
+
+    @Override
     public Intent getLongClickIntent() {
-        Intent intent = new Intent("android.settings.SYNC_SETTINGS");
-        intent.addCategory(Intent.CATEGORY_DEFAULT);
-        return intent;
+        return null;
+    }
+
+    @Override
+    public CharSequence getTileLabel() {
+        return mContext.getString(R.string.quick_settings_sync_label);
+    }
+
+    @Override
+    public int getMetricsCategory() {
+        return MetricsEvent.AICP_METRICS;
     }
 
     @Override
@@ -65,23 +79,11 @@ public class SyncTile extends QSTileImpl<BooleanState> {
             state.icon = ResourceIcon.get(R.drawable.ic_qs_sync_on);
             state.contentDescription =  mContext.getString(
                     R.string.accessibility_quick_settings_sync_on);
-            state.state = Tile.STATE_ACTIVE;
         } else {
             state.icon = ResourceIcon.get(R.drawable.ic_qs_sync_off);
             state.contentDescription =  mContext.getString(
                     R.string.accessibility_quick_settings_sync_off);
-            state.state = Tile.STATE_INACTIVE;
         }
-    }
-
-    @Override
-    public CharSequence getTileLabel() {
-        return mContext.getString(R.string.quick_settings_sync_label);
-    }
-
-    @Override
-    public int getMetricsCategory() {
-        return LineageMetricsLogger.TILE_SYNC;
     }
 
     @Override
@@ -95,6 +97,7 @@ public class SyncTile extends QSTileImpl<BooleanState> {
 
     @Override
     public void handleSetListening(boolean listening) {
+        if (mSyncObserver == null) return;
         if (mListening == listening) return;
         mListening = listening;
 

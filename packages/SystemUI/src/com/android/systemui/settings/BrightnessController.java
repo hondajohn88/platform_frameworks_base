@@ -33,6 +33,7 @@ import android.provider.Settings;
 import android.service.vr.IVrManager;
 import android.service.vr.IVrStateCallbacks;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.ImageView;
 
@@ -65,6 +66,7 @@ public class BrightnessController implements ToggleSlider.Listener {
 
     private final Context mContext;
     private final ImageView mIcon;
+    private final ImageView mIconLeft;
     private final ToggleSlider mControl;
     private final boolean mAutomaticAvailable;
     private final IPowerManager mPower;
@@ -246,7 +248,7 @@ public class BrightnessController implements ToggleSlider.Listener {
             try {
                 switch (msg.what) {
                     case MSG_UPDATE_ICON:
-                        updateIcon(msg.arg1 != 0);
+                        updateIcon();
                         break;
                     case MSG_UPDATE_SLIDER:
                         mControl.setMax(msg.arg1);
@@ -273,10 +275,13 @@ public class BrightnessController implements ToggleSlider.Listener {
         }
     };
 
-    public BrightnessController(Context context, ImageView icon, ToggleSlider control) {
+    public BrightnessController(Context context, ImageView icon, ImageView iconLeft,
+                                ToggleSlider control) {
         mContext = context;
         mIcon = icon;
+        mIconLeft = iconLeft;
         mControl = control;
+        Dependency.initDependencies(context.getApplicationContext());
         mBackgroundHandler = new Handler((Looper) Dependency.get(Dependency.BG_LOOPER));
         mUserTracker = new CurrentUserTracker(mContext) {
             @Override
@@ -300,16 +305,26 @@ public class BrightnessController implements ToggleSlider.Listener {
         mVrManager = IVrManager.Stub.asInterface(ServiceManager.getService(
                 Context.VR_SERVICE));
 
-        mIcon.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Settings.System.putIntForUser(mContext.getContentResolver(),
-                        Settings.System.SCREEN_BRIGHTNESS_MODE, mAutomatic ?
-                            Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL :
-                            Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC,
-                        UserHandle.USER_CURRENT);
+        if (mIcon != null || mIconLeft != null) {
+            if (mAutomaticAvailable) {
+                View.OnTouchListener iconTouchListener = new View.OnTouchListener() {
+                    @Override
+                    public boolean onTouch(View v, MotionEvent event) {
+                        int newMode = mAutomatic
+                                ? Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                                : Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC;
+                        setMode(newMode);
+                        return false;
+                    }
+                };
+                if (mIcon != null) {
+                    mIcon.setOnTouchListener(iconTouchListener);
+                }
+                if (mIconLeft != null) {
+                    mIconLeft.setOnTouchListener(iconTouchListener);
+                }
             }
-        });
+        }
     }
 
     public void addStateChangedCallback(BrightnessStateChangeCallback cb) {
@@ -364,7 +379,8 @@ public class BrightnessController implements ToggleSlider.Listener {
     @Override
     public void onChanged(ToggleSlider toggleSlider, boolean tracking, boolean automatic,
             int value, boolean stopTracking) {
-        updateIcon(mAutomatic);
+        // icon cannot change while tracking
+        //updateIcon(mAutomatic);
         if (mExternalChange) return;
 
         if (mIsVrModeEnabled) {
@@ -439,9 +455,14 @@ public class BrightnessController implements ToggleSlider.Listener {
         }
     }
 
-    private void updateIcon(boolean automatic) {
+    private void updateIcon() {
         if (mIcon != null) {
             mIcon.setImageResource(mAutomatic ?
+                    com.android.systemui.R.drawable.ic_qs_brightness_auto_on :
+                    com.android.systemui.R.drawable.ic_qs_brightness_auto_off);
+        }
+        if (mIconLeft != null) {
+            mIconLeft.setImageResource(mAutomatic ?
                     com.android.systemui.R.drawable.ic_qs_brightness_auto_on :
                     com.android.systemui.R.drawable.ic_qs_brightness_auto_off);
         }

@@ -21,6 +21,7 @@ import android.annotation.DrawableRes;
 import android.annotation.LayoutRes;
 import android.app.StatusBarManager;
 import android.content.Context;
+import android.content.ContentResolver;
 import android.content.res.Configuration;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
@@ -36,6 +37,8 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.ActionMode;
@@ -788,6 +791,22 @@ public class StatusBarWindowView extends FrameLayout implements TunerService.Tun
         public void reportActivityRelaunched() {
         }
     };
+
+    public void setStatusBarWindowViewOptions() {
+        ContentResolver resolver = mContext.getContentResolver();
+        boolean isDoubleTapEnabled = Settings.System.getIntForUser(resolver,
+                Settings.System.DOUBLE_TAP_SLEEP_LOCKSCREEN, 0, UserHandle.USER_CURRENT) == 1;
+        int qsSmartPullDown = Settings.System.getIntForUser(resolver,
+                Settings.System.QS_SMART_PULLDOWN, 0, UserHandle.USER_CURRENT);
+        boolean isQsSecureExpandDisabled = Settings.Secure.getIntForUser(
+                resolver, Settings.Secure.LOCK_QS_DISABLED, 0,
+                UserHandle.USER_CURRENT) != 0;
+        if (mNotificationPanel != null) {
+            mNotificationPanel.setLockscreenDoubleTapToSleep(isDoubleTapEnabled);
+            mNotificationPanel.setQsSmartPulldown(qsSmartPullDown);
+            mNotificationPanel.setQsSecureExpandDisabled(isQsSecureExpandDisabled);
+        }
+    }
 
     @Override
     public void onTuningChanged(String key, String newValue) {

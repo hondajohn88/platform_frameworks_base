@@ -34,6 +34,7 @@ LOCAL_SRC_FILES += $(call all-java-files-under, ../../../../packages/apps/DUI/sr
 LOCAL_STATIC_ANDROID_LIBRARIES := \
     SystemUIPluginLib \
     android-support-v4 \
+    android-support-v7-cardview \
     android-support-v7-recyclerview \
     android-support-v7-preference \
     android-support-v7-appcompat \
@@ -62,6 +63,10 @@ LOCAL_PROGUARD_FLAG_FILES := proguard.flags
 LOCAL_RESOURCE_DIR := $(LOCAL_PATH)/res-keyguard $(LOCAL_PATH)/res
 LOCAL_RESOURCE_DIR += packages/apps/DUI/res
 
+ifndef LOCAL_JACK_ENABLED
+LOCAL_PROGUARD_ENABLED := disabled
+LOCAL_DX_FLAGS := --multi-dex
+endif
 
 ifneq ($(INCREMENTAL_BUILDS),)
     LOCAL_PROGUARD_ENABLED := disabled
@@ -69,6 +74,11 @@ ifneq ($(INCREMENTAL_BUILDS),)
     LOCAL_DX_FLAGS := --multi-dex
     LOCAL_JACK_FLAGS := --multi-dex native
 endif
+
+# Slim recents
+SLIM_RECENT_DIR := frameworks/opt/slimrecent
+LOCAL_SRC_FILES += $(call all-java-files-under, ../../../../$(SLIM_RECENT_DIR)/src)
+LOCAL_RESOURCE_DIR += $(SLIM_RECENT_DIR)/res
 
 include frameworks/base/packages/SettingsLib/common.mk
 

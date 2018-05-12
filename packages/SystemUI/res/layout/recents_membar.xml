@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright (C) 2015 Exodus
+<!--
+     Copyright (c) 2016, crDroid Android Project
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -41,7 +42,6 @@
         android:layout_gravity="top|left"
         android:layout_marginTop="5dp"
         android:layout_marginRight="5dp"
-        android:textColor="@color/recents_membar_text_color"
         android:layout_marginLeft="25dp"
         />
 </LinearLayout>

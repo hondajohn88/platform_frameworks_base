@@ -551,6 +551,16 @@
     <protected-broadcast android:name="android.media.tv.action.CHANNEL_BROWSABLE_REQUESTED" />
     <protected-broadcast android:name="com.android.server.InputMethodManagerService.SHOW_INPUT_METHOD_PICKER" />
 
+    <!-- OmniSwitch -->
+    <protected-broadcast android:name="org.omnirom.omniswitch.ACTION_TOGGLE_OVERLAY2" />
+    <protected-broadcast android:name="org.omnirom.omniswitch.ACTION_RESTORE_HOME_STACK" />
+    <protected-broadcast android:name="org.omnirom.omniswitch.ACTION_PRELOAD_TASKS" />
+    <protected-broadcast android:name="org.omnirom.omniswitch.ACTION_HIDE_OVERLAY" />
+
+    <!-- Added in O : DPM  -->
+    <protected-broadcast android:name="com.qti.dpmframework.DPM_INTERNET_CONNECTED" />
+    <protected-broadcast android:name="com.qti.dpmframework.DPM_PREFERENCE_CHANGED" />
+
     <protected-broadcast android:name="projekt.substratum.APP_CRASHED" />
     <protected-broadcast android:name="com.android.systemui.action.RESTART_THEME" />
     <protected-broadcast android:name="com.android.systemui.action.REFRESH_SOUND" />
@@ -1409,6 +1419,12 @@
         android:label="@string/permlab_nfc"
         android:protectionLevel="normal" />
 
+    <!-- Allows applications to receive NFC transaction events.
+         <p>Protection level: normal
+         @hide -->
+    <permission android:name="android.permission.NFC_TRANSACTION_EVENT"
+        android:protectionLevel="normal" />
+
     <!-- @SystemApi Allows an internal user to use privileged ConnectivityManager APIs.
          @hide -->
     <permission android:name="android.permission.CONNECTIVITY_INTERNAL"
@@ -2152,6 +2168,13 @@
         android:label="@string/permlab_getPackageSize"
         android:description="@string/permdesc_getPackageSize"
         android:protectionLevel="normal" />
+
+    <!-- @hide Allows an application to change the package signature as
+         seen by applications -->
+    <permission android:name="android.permission.FAKE_PACKAGE_SIGNATURE"
+        android:protectionLevel="dangerous"
+        android:label="@string/permlab_fakePackageSignature"
+        android:description="@string/permdesc_fakePackageSignature" />
 
     <!-- @deprecated No longer useful, see
          {@link android.content.pm.PackageManager#addPackageToPreferred}
@@ -3068,6 +3091,13 @@
     <!-- @SystemApi Allows an application to collect battery statistics -->
     <permission android:name="android.permission.BATTERY_STATS"
         android:protectionLevel="signature|privileged|development" />
+
+    <!-- @SystemApi Allows an application to reset the device battery statistics.
+    <p>Not for use by third-party applications.
+         @hide -->
+    <permission android:name="android.permission.RESET_BATTERY_STATS"
+        android:permissionGroup="android.permission-group.SYSTEM_TOOLS"
+        android:protectionLevel="signature|system|development" />
 
     <!-- @SystemApi Allows an application to control the backup and restore process.
     <p>Not for use by third-party applications.

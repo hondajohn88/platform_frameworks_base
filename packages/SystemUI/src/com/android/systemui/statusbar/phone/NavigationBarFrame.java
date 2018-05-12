@@ -62,4 +62,5 @@ public class NavigationBarFrame extends FrameLayout {
         }
         return super.dispatchTouchEvent(event);
     }
+
 }

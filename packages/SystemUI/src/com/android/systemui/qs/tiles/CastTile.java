@@ -42,6 +42,7 @@ import com.android.internal.app.MediaRouteControllerDialog;
 import com.android.internal.app.MediaRouteDialogPresenter;
 import com.android.internal.logging.MetricsLogger;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
+import android.service.quicksettings.Tile;
 import com.android.systemui.Dependency;
 import com.android.systemui.R;
 import com.android.systemui.plugins.ActivityStarter;
@@ -64,6 +65,8 @@ public class CastTile extends QSTileImpl<BooleanState> {
     private static final Intent CAST_SETTINGS =
             new Intent(Settings.ACTION_CAST_SETTINGS);
 
+    private final Icon mIcon = ResourceIcon.get(R.drawable.ic_qs_cast_on);
+
     private final CastController mController;
     private final CastDetailAdapter mDetailAdapter;
     private final KeyguardMonitor mKeyguard;
@@ -78,6 +81,11 @@ public class CastTile extends QSTileImpl<BooleanState> {
         mDetailAdapter = new CastDetailAdapter();
         mKeyguard = Dependency.get(KeyguardMonitor.class);
         mActivityStarter = Dependency.get(ActivityStarter.class);
+    }
+
+    @Override
+    public boolean isDualTarget() {
+        return true;
     }
 
     @Override
@@ -117,11 +125,6 @@ public class CastTile extends QSTileImpl<BooleanState> {
     }
 
     @Override
-    protected void handleSecondaryClick() {
-        handleClick();
-    }
-
-    @Override
     protected void handleClick() {
         if (mKeyguard.isSecure() && !mKeyguard.canSkipBouncer()) {
             mActivityStarter.postQSRunnableDismissingKeyguard(() -> {
@@ -157,9 +160,14 @@ public class CastTile extends QSTileImpl<BooleanState> {
 
     @Override
     protected void handleUpdateState(BooleanState state, Object arg) {
+        if (state.slash == null) {
+            state.slash = new SlashState();
+        }
+        state.icon = mIcon;
         state.label = mContext.getString(R.string.quick_settings_cast_title);
         state.contentDescription = state.label;
         state.value = false;
+        if (mController == null) return;
         final Set<CastDevice> devices = mController.getCastDevices();
         boolean connecting = false;
         for (CastDevice device : devices) {
@@ -176,8 +184,7 @@ public class CastTile extends QSTileImpl<BooleanState> {
             state.label = mContext.getString(R.string.quick_settings_connecting);
         }
         state.state = state.value ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE;
-        state.icon = ResourceIcon.get(state.value ? R.drawable.ic_qs_cast_on
-                : R.drawable.ic_qs_cast_off);
+        state.slash.isSlashed = !state.value;
         mDetailAdapter.updateItems(devices);
         state.expandedAccessibilityClassName = Button.class.getName();
         state.contentDescription = state.contentDescription + ","

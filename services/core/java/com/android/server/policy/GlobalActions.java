@@ -37,7 +37,6 @@ class GlobalActions implements GlobalActionsListener {
     private boolean mDeviceProvisioned;
     private boolean mStatusBarConnected;
     private boolean mShowing;
-    private boolean showReboot;
 
     public GlobalActions(Context context, WindowManagerFuncs windowManagerFuncs) {
         mContext = context;
@@ -59,11 +58,6 @@ class GlobalActions implements GlobalActionsListener {
 
     public void showDialog(boolean keyguardShowing, boolean deviceProvisioned) {
         if (DEBUG) Slog.d(TAG, "showDialog " + keyguardShowing + " " + deviceProvisioned);
-        showDialog(keyguardShowing, deviceProvisioned, false);
-    }
-
-    public void showDialog(boolean keyguardShowing, boolean deviceProvisioned, boolean mShowReboot) {
-        showReboot = mShowReboot;
         mKeyguardShowing = keyguardShowing;
         mDeviceProvisioned = deviceProvisioned;
         mShowing = true;

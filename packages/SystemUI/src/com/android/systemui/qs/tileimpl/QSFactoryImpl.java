@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2017 The Android Open Source Project
- * Copyright (C) 2017 The LineageOS Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License"); you may not use mHost file
  * except in compliance with the License. You may obtain a copy of the License at
@@ -23,37 +22,41 @@ import com.android.systemui.R;
 import com.android.systemui.plugins.qs.*;
 import com.android.systemui.plugins.qs.QSTileView;
 import com.android.systemui.qs.external.CustomTile;
-import com.android.systemui.qs.tiles.AdbOverNetworkTile;
+import com.android.systemui.qs.tiles.AicpExtrasTile;
 import com.android.systemui.qs.tiles.AirplaneModeTile;
 import com.android.systemui.qs.tiles.AmbientDisplayTile;
-import com.android.systemui.qs.tiles.AppPickerTile;
+import com.android.systemui.qs.tiles.AlwaysOnDisplayTile;
 import com.android.systemui.qs.tiles.BatterySaverTile;
 import com.android.systemui.qs.tiles.BluetoothTile;
-import com.android.systemui.qs.tiles.CaffeineTile;
 import com.android.systemui.qs.tiles.CastTile;
 import com.android.systemui.qs.tiles.CellularTile;
+import com.android.systemui.qs.tiles.CaffeineTile;
 import com.android.systemui.qs.tiles.ColorInversionTile;
+import com.android.systemui.qs.tiles.CompassTile;
 import com.android.systemui.qs.tiles.DataSaverTile;
 import com.android.systemui.qs.tiles.DndTile;
 import com.android.systemui.qs.tiles.ExpandedDesktopTile;
 import com.android.systemui.qs.tiles.FlashlightTile;
+import com.android.systemui.qs.tiles.GoogleAssistTile;
+import com.android.systemui.qs.tiles.GoogleNowTile;
+import com.android.systemui.qs.tiles.GoogleVoiceAssistTile;
 import com.android.systemui.qs.tiles.HeadsUpTile;
 import com.android.systemui.qs.tiles.HotspotTile;
 import com.android.systemui.qs.tiles.IntentTile;
+import com.android.systemui.qs.tiles.LocaleTile;
 import com.android.systemui.qs.tiles.LiveDisplayTile;
 import com.android.systemui.qs.tiles.LocationTile;
+import com.android.systemui.qs.tiles.MusicTile;
 import com.android.systemui.qs.tiles.NavigationBarTile;
 import com.android.systemui.qs.tiles.NfcTile;
 import com.android.systemui.qs.tiles.NightDisplayTile;
-import com.android.systemui.qs.tiles.PowerMenuTile;
-import com.android.systemui.qs.tiles.RebootTile;
-import com.android.systemui.qs.tiles.ROMControlTile;
 import com.android.systemui.qs.tiles.RotationLockTile;
 import com.android.systemui.qs.tiles.ScreenshotTile;
-import com.android.systemui.qs.tiles.SleepScreenTile;
+import com.android.systemui.qs.tiles.ScreenrecordTile;
+import com.android.systemui.qs.tiles.SmartPixelsTile;
+import com.android.systemui.qs.tiles.SoundTile;
 import com.android.systemui.qs.tiles.SyncTile;
 import com.android.systemui.qs.tiles.UsbTetherTile;
-import com.android.systemui.qs.tiles.SmartPixelsTile;
 import com.android.systemui.qs.tiles.UserTile;
 import com.android.systemui.qs.tiles.VolumeTile;
 import com.android.systemui.qs.tiles.WeatherTile;
@@ -74,6 +77,7 @@ public class QSFactoryImpl implements QSFactory {
         if (tileSpec.equals("wifi")) return new WifiTile(mHost);
         else if (tileSpec.equals("bt")) return new BluetoothTile(mHost);
         else if (tileSpec.equals("cell")) return new CellularTile(mHost);
+        else if (tileSpec.equals("caffeine")) return new CaffeineTile(mHost);
         else if (tileSpec.equals("dnd")) return new DndTile(mHost);
         else if (tileSpec.equals("inversion")) return new ColorInversionTile(mHost);
         else if (tileSpec.equals("airplane")) return new AirplaneModeTile(mHost);
@@ -88,26 +92,27 @@ public class QSFactoryImpl implements QSFactory {
         else if (tileSpec.equals("saver")) return new DataSaverTile(mHost);
         else if (tileSpec.equals("night")) return new NightDisplayTile(mHost);
         else if (tileSpec.equals("nfc")) return new NfcTile(mHost);
-        // Custom tiles.
-        else if (tileSpec.equals("adb_network")) return new AdbOverNetworkTile(mHost);
+        else if (tileSpec.equals("aicp_extras")) return new AicpExtrasTile(mHost);
+        else if (tileSpec.equals("compass")) return new CompassTile(mHost);
+        else if (tileSpec.equals("screenshot")) return new ScreenshotTile(mHost);
+        else if (tileSpec.equals("usb_tether")) return new UsbTetherTile(mHost);
+        else if (tileSpec.equals("locale")) return new LocaleTile(mHost);
+        else if (tileSpec.equals("music")) return new MusicTile(mHost);
+        else if (tileSpec.equals("sound")) return new SoundTile(mHost);
         else if (tileSpec.equals("ambient_display")) return new AmbientDisplayTile(mHost);
-        else if (tileSpec.equals("caffeine")) return new CaffeineTile(mHost);
-        else if (tileSpec.equals("heads_up")) return new HeadsUpTile(mHost);
         else if (tileSpec.equals("livedisplay")) return new LiveDisplayTile(mHost);
         else if (tileSpec.equals("sync")) return new SyncTile(mHost);
-        else if (tileSpec.equals("usb_tether")) return new UsbTetherTile(mHost);
-        else if (tileSpec.equals("volume_panel")) return new VolumeTile(mHost);
-        else if (tileSpec.equals("smartpixels")) return new SmartPixelsTile(mHost);
-        // AOKP
-        else if (tileSpec.equals("screenshot")) return new ScreenshotTile(mHost);
-        else if (tileSpec.equals("expanded_desktop")) return new ExpandedDesktopTile(mHost);
-        else if (tileSpec.equals("reboot")) return new RebootTile(mHost);
-        else if (tileSpec.equals("power_menu")) return new PowerMenuTile(mHost);
-        else if (tileSpec.equals("sleepscreen")) return new SleepScreenTile(mHost);
-        else if (tileSpec.equals("romcontrol")) return new ROMControlTile(mHost);
-        else if (tileSpec.equals("app_picker")) return new AppPickerTile(mHost);
-        else if (tileSpec.equals("navigation_bar")) return new NavigationBarTile(mHost);
+        else if (tileSpec.equals("volume")) return new VolumeTile(mHost);
+        else if (tileSpec.equals("screenrecord")) return new ScreenrecordTile(mHost);
+        else if (tileSpec.equals("heads_up")) return new HeadsUpTile(mHost);
         else if (tileSpec.equals("weather")) return new WeatherTile(mHost);
+        else if (tileSpec.equals("always_on_display")) return new AlwaysOnDisplayTile(mHost);
+        else if (tileSpec.equals("navigation")) return new NavigationBarTile(mHost);
+        else if (tileSpec.equals("assist")) return new GoogleAssistTile(mHost);
+        else if (tileSpec.equals("voiceassist")) return new GoogleVoiceAssistTile(mHost);
+        else if (tileSpec.equals("google")) return new GoogleNowTile(mHost);
+        else if (tileSpec.equals("expanded_desktop")) return new ExpandedDesktopTile(mHost);
+        else if (tileSpec.equals("smartpixels")) return new SmartPixelsTile(mHost);
         // Intent tiles.
         else if (tileSpec.startsWith(IntentTile.PREFIX)) return IntentTile.create(mHost, tileSpec);
         else if (tileSpec.startsWith(CustomTile.PREFIX)) return CustomTile.create(mHost, tileSpec);

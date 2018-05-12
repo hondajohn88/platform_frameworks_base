@@ -32,6 +32,7 @@ import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.UserHandle;
 import android.os.UserManager;
+import android.provider.Settings;
 import android.text.TextUtils;
 import android.text.format.Formatter;
 import android.util.Log;
@@ -45,6 +46,7 @@ import com.android.keyguard.KeyguardUpdateMonitorCallback;
 import com.android.settingslib.Utils;
 import com.android.systemui.Dependency;
 import com.android.systemui.R;
+import com.android.systemui.omni.OmniJawsClient;
 import com.android.systemui.statusbar.phone.KeyguardIndicationTextView;
 import com.android.systemui.statusbar.phone.LockIcon;
 import com.android.systemui.statusbar.phone.StatusBarKeyguardViewManager;
@@ -52,17 +54,24 @@ import com.android.systemui.statusbar.policy.UserInfoController;
 import com.android.systemui.util.wakelock.SettableWakeLock;
 import com.android.systemui.util.wakelock.WakeLock;
 
+import java.text.NumberFormat;
+
 /**
  * Controls the indications and error messages shown on the Keyguard
  */
-public class KeyguardIndicationController {
+public class KeyguardIndicationController implements
+        OmniJawsClient.OmniJawsObserver {
 
     private static final String TAG = "KeyguardIndication";
     private static final boolean DEBUG_CHARGING_SPEED = false;
+    private static final boolean DEBUG = false;
 
     private static final int MSG_HIDE_TRANSIENT = 1;
     private static final int MSG_CLEAR_FP_MSG = 2;
     private static final long TRANSIENT_FP_ERROR_TIMEOUT = 1300;
+
+    private static final int AMBIENT_BOTTOM_DISPLAY_BATTERYPERCENT = 1;
+    private static final int AMBIENT_BOTTOM_DISPLAY_WEATHER = 2;
 
     private final Context mContext;
     private ViewGroup mIndicationArea;
@@ -86,13 +95,23 @@ public class KeyguardIndicationController {
     private boolean mPowerPluggedIn;
     private boolean mPowerCharged;
     private int mChargingSpeed;
+    private int mChargingCurrent;
+    private double mChargingVoltage;
     private int mChargingWattage;
+    private int mTemperature;
     private String mMessageToShowOnScreenOn;
+    private int mLevel;
 
     private KeyguardUpdateMonitorCallback mUpdateMonitorCallback;
 
     private final DevicePolicyManager mDevicePolicyManager;
     private boolean mDozing;
+
+    private OmniJawsClient mWeatherClient;
+    private OmniJawsClient.WeatherInfo mWeatherData;
+    private boolean mWeatherEnabled;
+    private String mWeatherCurrentTemp;
+    private String mWeatherConditionText;
 
     /**
      * Creates a new KeyguardIndicationController and registers callbacks.
@@ -132,6 +151,11 @@ public class KeyguardIndicationController {
         mDevicePolicyManager = (DevicePolicyManager) context.getSystemService(
                 Context.DEVICE_POLICY_SERVICE);
 
+        mWeatherClient = new OmniJawsClient(mContext);
+        mWeatherEnabled = mWeatherClient.isOmniJawsEnabled();
+        mWeatherClient.addObserver(this);
+        queryAndUpdateWeather();
+
         updateDisclosure();
     }
 
@@ -158,6 +182,32 @@ public class KeyguardIndicationController {
             mUpdateMonitorCallback = new BaseKeyguardCallback();
         }
         return mUpdateMonitorCallback;
+    }
+
+    @Override
+    public void weatherUpdated() {
+        queryAndUpdateWeather();
+    }
+
+    @Override
+    public void weatherError(int errorReason) {
+        if (DEBUG) Log.d(TAG, "weatherError " + errorReason);
+    }
+
+    public void queryAndUpdateWeather() {
+        try {
+                if (mWeatherEnabled) {
+                    mWeatherClient.queryWeather();
+                    mWeatherData = mWeatherClient.getWeatherInfo();
+                    mWeatherCurrentTemp = mWeatherData.temp + mWeatherData.tempUnits;
+                    mWeatherConditionText = mWeatherData.condition;
+                } else {
+                    mWeatherCurrentTemp = "";
+                    mWeatherConditionText = "";
+                }
+       } catch(Exception e) {
+          // Do nothing
+       }
     }
 
     private void updateDisclosure() {
@@ -292,7 +342,24 @@ public class KeyguardIndicationController {
                     mTextView.setTextColor(Color.WHITE);
                     mTextView.switchIndication(mTransientIndication);
                 } else {
-                    mTextView.switchIndication(null);
+                    // Use the high voltage symbol ⚡ (u26A1 unicode) but prevent the system
+                    // to load its emoji colored variant with the uFE0E flag
+                    int showAmbientBottomInfo = Settings.System.getIntForUser(mContext.getContentResolver(),
+                        Settings.System.AMBIENT_BOTTOM_DISPLAY, 0, UserHandle.USER_CURRENT);
+                    if (showAmbientBottomInfo == AMBIENT_BOTTOM_DISPLAY_BATTERYPERCENT) {
+                        String bolt = "\u26A1\uFE0E";
+                        CharSequence chargeIndicator = (mPowerPluggedIn ? (bolt + " ") : "") +
+                                NumberFormat.getPercentInstance().format(mLevel / 100f);
+                        mTextView.switchIndication(chargeIndicator);
+                    } else if (showAmbientBottomInfo == AMBIENT_BOTTOM_DISPLAY_WEATHER){
+                        if (mWeatherEnabled && !mPowerPluggedIn) {
+                            CharSequence weatherIndicator = String.format(mContext.getResources().getString(R.string.ambient_weather_info),
+                                  mWeatherCurrentTemp, mWeatherConditionText);
+                            mTextView.switchIndication(weatherIndicator);
+                        }
+                    } else {
+                        mTextView.switchIndication(null);
+                    }
                 }
                 return;
             }
@@ -352,6 +419,16 @@ public class KeyguardIndicationController {
                         ? R.string.keyguard_indication_charging_time_fast
                         : R.string.keyguard_plugged_in_charging_fast;
                 break;
+            case KeyguardUpdateMonitor.BatteryStatus.CHARGING_DASH:
+                chargingId = hasChargingTime
+                        ? R.string.keyguard_indication_dash_charging_time
+                        : R.string.keyguard_plugged_in_dash_charging;
+                break;
+            case KeyguardUpdateMonitor.BatteryStatus.CHARGING_TURBO_POWER:
+                chargingId = hasChargingTime
+                        ? R.string.keyguard_indication_turbo_power_time
+                        : R.string.keyguard_plugged_in_turbo_power_charging;
+                break;
             case KeyguardUpdateMonitor.BatteryStatus.CHARGING_SLOWLY:
                 chargingId = hasChargingTime
                         ? R.string.keyguard_indication_charging_time_slowly
@@ -364,12 +441,37 @@ public class KeyguardIndicationController {
                 break;
         }
 
+        String batteryInfo = "";
+        boolean showbatteryInfo = Settings.System.getIntForUser(mContext.getContentResolver(),
+            Settings.System.LOCKSCREEN_BATTERY_INFO, 0, UserHandle.USER_CURRENT) == 1;
+
+        if (showbatteryInfo) {
+            if (mChargingCurrent > 0) {
+                batteryInfo = batteryInfo + (mChargingCurrent < 5 ?
+                          (mChargingCurrent * 1000) : (mChargingCurrent < 4000 ?
+                          mChargingCurrent : (mChargingCurrent / 1000))) + "mA" ;
+            }
+            if (mChargingVoltage > 0) {
+                batteryInfo = (batteryInfo == "" ? "" : batteryInfo + " · ") +
+                        String.format("%.1f", (mChargingVoltage / 1000 / 1000)) + "V";
+            }
+            if (mTemperature > 0) {
+                batteryInfo = (batteryInfo == "" ? "" : batteryInfo + " · ") +
+                        mTemperature / 10 + "°C";
+            }
+            if (batteryInfo != "") {
+                batteryInfo = "\n" + batteryInfo;
+            }
+        }
+
         if (hasChargingTime) {
             String chargingTimeFormatted = Formatter.formatShortElapsedTimeRoundingUpToMinutes(
                     mContext, chargingTimeRemaining);
-            return mContext.getResources().getString(chargingId, chargingTimeFormatted);
+            String chargingText = mContext.getResources().getString(chargingId, chargingTimeFormatted);
+            return chargingText + batteryInfo;
         } else {
-            return mContext.getResources().getString(chargingId);
+            String chargingText = mContext.getResources().getString(chargingId);
+            return chargingText + batteryInfo;
         }
     }
 
@@ -420,8 +522,12 @@ public class KeyguardIndicationController {
             boolean wasPluggedIn = mPowerPluggedIn;
             mPowerPluggedIn = status.isPluggedIn() && isChargingOrFull;
             mPowerCharged = status.isCharged();
+            mChargingCurrent = status.maxChargingCurrent;
+            mChargingVoltage = status.maxChargingVoltage;
             mChargingWattage = status.maxChargingWattage;
+            mTemperature = status.temperature;
             mChargingSpeed = status.getChargingSpeed(mSlowThreshold, mFastThreshold);
+            mLevel  = status.level;
             updateIndication();
             if (mDozing) {
                 if (!wasPluggedIn && mPowerPluggedIn) {

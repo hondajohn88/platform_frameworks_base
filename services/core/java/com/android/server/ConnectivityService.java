@@ -182,7 +182,7 @@ public class ConnectivityService extends IConnectivityManager.Stub
     public static final String SHORT_ARG = "--short";
     public static final String TETHERING_ARG = "tethering";
 
-    private static final boolean DBG = true;
+    private static final boolean DBG = false;
     private static final boolean VDBG = false;
 
     private static final boolean LOGD_RULES = false;
@@ -4972,6 +4972,9 @@ public class ConnectivityService extends IConnectivityManager.Stub
                     if (VDBG) log("rematch for " + newNetwork.name());
                     if (currentNetwork != null) {
                         if (VDBG) log("   accepting network in place of " + currentNetwork.name());
+                        // Also need to send score of network which is being replaced
+                        sendUpdatedScoreToFactories(nri.request, currentNetwork.getCurrentScore());
+
                         currentNetwork.removeRequest(nri.request.requestId);
                         currentNetwork.lingerRequest(nri.request, now, mLingerDelayMs);
                         affectedNetworks.add(currentNetwork);

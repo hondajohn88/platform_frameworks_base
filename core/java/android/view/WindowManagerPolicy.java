@@ -49,6 +49,7 @@ import static android.view.WindowManager.LayoutParams.TYPE_QS_DIALOG;
 import static android.view.WindowManager.LayoutParams.TYPE_SCREENSHOT;
 import static android.view.WindowManager.LayoutParams.TYPE_SEARCH_BAR;
 import static android.view.WindowManager.LayoutParams.TYPE_SECURE_SYSTEM_OVERLAY;
+import static android.view.WindowManager.LayoutParams.TYPE_SLIM_RECENTS;
 import static android.view.WindowManager.LayoutParams.TYPE_STATUS_BAR;
 import static android.view.WindowManager.LayoutParams.TYPE_STATUS_BAR_PANEL;
 import static android.view.WindowManager.LayoutParams.TYPE_STATUS_BAR_SUB_PANEL;
@@ -574,7 +575,6 @@ public interface WindowManagerPolicy {
         public void shutdown(boolean confirm);
         public void reboot(boolean confirm);
         public void rebootSafeMode(boolean confirm);
-        public void rebootTile();
 
         /**
          * Reboot with a custom reason.
@@ -859,8 +859,10 @@ public interface WindowManagerPolicy {
                 // changes the device volume
                 return  21;
             case TYPE_SYSTEM_OVERLAY:
+            case TYPE_SLIM_RECENTS:
                 // the on-screen volume indicator and controller shown when the user
                 // changes the device volume
+                // slim recents panel, navbar shows atop this to keep visible buttons
                 return  canAddInternalSystemWindow ? 22 : 11;
             case TYPE_NAVIGATION_BAR:
                 // the navigation bar, if available, shows atop most things
@@ -1593,11 +1595,7 @@ public interface WindowManagerPolicy {
      * Specifies whether there is an on-screen navigation bar separate from the status bar.
      */
     public boolean hasNavigationBar();
-
-    /**
-     * Device requires a software navigation bar.
-     */
-    public boolean needsNavigationBar();
+    public boolean hasPermanentMenuKey();
 
     /**
      * Send some ActionHandler commands to WindowManager.
@@ -1763,10 +1761,7 @@ public interface WindowManagerPolicy {
     boolean canDismissBootAnimation();
 
     /**
-     * Toggle global menu
-     *
-     * @hide
+     * Call screen record from WindowManager.
      */
-    public void toggleGlobalMenu();
-
+    public void screenRecordAction(int mode);
 }

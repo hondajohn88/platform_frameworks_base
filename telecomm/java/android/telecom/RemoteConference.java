@@ -97,7 +97,6 @@ public final class RemoteConference {
          *
          * @param conference The {@code RemoteConference} invoking this method.
          * @param connectionProperties The new properties of the {@code RemoteConference}.
-         * @hide
          */
         public void onConnectionPropertiesChanged(
                 RemoteConference conference,
@@ -381,7 +380,6 @@ public final class RemoteConference {
      * {@link Connection} for valid values.
      *
      * @return A bitmask of the properties of the conference call.
-     * @hide
      */
     public final int getConnectionProperties() {
         return mConnectionProperties;

@@ -57,10 +57,8 @@ public class Build {
     /** The name of the underlying board, like "goldfish". */
     public static final String BOARD = getString("ro.product.board");
 
-    /**
-     * The build date
-     * @hide
-     */
+    /** The build date
+        @hide */
     public static final String DATE = getString("ro.build.date");
 
     /**
@@ -815,12 +813,10 @@ public class Build {
         return finger;
     }
 
-    /*
-     * Some apps like to compare the build type embedded in fingerprint
-     * to the actual build type. As the fingerprint in our case is almost
-     * always hardcoded to the stock ROM fingerprint, provide that instead
-     * of the actual one if possible.
-     */
+    // Some apps like to compare the build type embedded in fingerprint
+    // to the actual build type. As the fingerprint in our case is almost
+    // always hardcoded to the stock ROM fingerprint, provide that instead
+    // of the actual one if possible.
     private static String parseBuildTypeFromFingerprint() {
         final String fingerprint = SystemProperties.get("ro.build.fingerprint");
         if (TextUtils.isEmpty(fingerprint)) {

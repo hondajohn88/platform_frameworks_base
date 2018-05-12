@@ -22,13 +22,13 @@ import android.provider.Settings;
 import android.provider.Settings.Global;
 import android.service.quicksettings.Tile;
 
+import com.android.internal.logging.MetricsLogger;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.GlobalSetting;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.R;
-
-import org.lineageos.internal.logging.LineageMetricsLogger;
 
 /** Quick settings tile: Heads up **/
 public class HeadsUpTile extends QSTileImpl<BooleanState> {
@@ -73,6 +73,7 @@ public class HeadsUpTile extends QSTileImpl<BooleanState> {
 
     @Override
     protected void handleUpdateState(BooleanState state, Object arg) {
+        if (mSetting == null) return;
         final int value = arg instanceof Integer ? (Integer)arg : mSetting.getValue();
         final boolean headsUp = value != 0;
         state.value = headsUp;
@@ -106,7 +107,7 @@ public class HeadsUpTile extends QSTileImpl<BooleanState> {
 
     @Override
     public int getMetricsCategory() {
-        return LineageMetricsLogger.TILE_HEADS_UP;
+        return MetricsEvent.AICP_METRICS;
     }
 
     @Override

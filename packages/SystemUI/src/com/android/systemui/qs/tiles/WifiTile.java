@@ -104,6 +104,11 @@ public class WifiTile extends QSTileImpl<SignalState> {
     }
 
     @Override
+    public boolean isDualTarget() {
+        return true;
+    }
+
+    @Override
     public QSIconView createTileView(Context context) {
         return new AlphaControlledSignalTileView(context);
     }
@@ -140,6 +145,7 @@ public class WifiTile extends QSTileImpl<SignalState> {
 
     @Override
     protected void handleUpdateState(SignalState state, Object arg) {
+        if (mSignalCallback == null) return;
         if (DEBUG) Log.d(TAG, "handleUpdateState arg=" + arg);
         CallbackInfo cb = (CallbackInfo) arg;
         if (cb == null) {

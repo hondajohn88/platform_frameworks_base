@@ -509,7 +509,6 @@ public class NavigationBarFragment extends Fragment implements Callbacks, Naviga
         ButtonDispatcher homeButton = mNavigationBarView.getHomeButton();
         if (homeButton != null) {
             homeButton.setOnTouchListener(this::onHomeTouch);
-            homeButton.setLongClickable(true);
             homeButton.setOnLongClickListener(this::onHomeLongClick);
         }
 
@@ -520,6 +519,7 @@ public class NavigationBarFragment extends Fragment implements Callbacks, Naviga
             updateAccessibilityServicesState(mAccessibilityManager);
         }
     }
+
     private boolean onHomeTouch(View v, MotionEvent event) {
         if (!isUsingStockNav()) {
             return false;
@@ -563,11 +563,17 @@ public class NavigationBarFragment extends Fragment implements Callbacks, Naviga
 
     @VisibleForTesting
     boolean onHomeLongClick(View v) {
-        KeyButtonView keyButtonView = (KeyButtonView) v;
-        keyButtonView.sendEvent(KeyEvent.ACTION_DOWN, KeyEvent.FLAG_LONG_PRESS);
-        keyButtonView.sendAccessibilityEvent(AccessibilityEvent.TYPE_VIEW_LONG_CLICKED);
         if (!isUsingStockNav()) {
             return false;
+        }
+        if (shouldDisableNavbarGestures()) {
+            return false;
+        }
+        MetricsLogger.action(getContext(), MetricsEvent.ACTION_ASSIST_LONG_PRESS);
+        mAssistManager.startAssist(new Bundle() /* args */);
+        mStatusBar.awakenDreams();
+        if (mNavigationBarView != null) {
+            mNavigationBarView.abortCurrentGesture();
         }
         return true;
     }
@@ -927,6 +933,12 @@ public class NavigationBarFragment extends Fragment implements Callbacks, Naviga
     public void setPanelExpanded(boolean expanded) {
         if (mNavigationBarView != null) {
             mNavigationBarView.setNotificationPanelExpanded(expanded);
+        }
+    }
+
+    public void setPulseColors(boolean colorizedMedia, int[] colors) {
+        if (mNavigationBarView != null) {
+            mNavigationBarView.setPulseColors(colorizedMedia, colors);
         }
     }
 }

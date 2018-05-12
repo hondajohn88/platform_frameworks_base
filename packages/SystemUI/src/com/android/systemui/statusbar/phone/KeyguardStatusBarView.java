@@ -16,19 +16,23 @@
 
 package com.android.systemui.statusbar.phone;
 
+import android.animation.Animator;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
+import android.animation.AnimatorListenerAdapter;
 import android.annotation.ColorInt;
 import android.content.Context;
-import android.database.ContentObserver;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.graphics.Color;
 import android.graphics.Rect;
+import android.database.ContentObserver;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Handler;
-import android.provider.Settings;
 import android.os.UserHandle;
+import android.provider.Settings;
 import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.View;
@@ -69,14 +73,13 @@ public class KeyguardStatusBarView extends RelativeLayout
     private boolean mKeyguardUserSwitcherShowing;
     private boolean mBatteryListening;
 
+    private int mShowCarrierLabel;
+
     private TextView mCarrierLabel;
     private View mSystemIconsSuperContainer;
     private MultiUserSwitch mMultiUserSwitch;
     private ImageView mMultiUserAvatar;
     private BatteryMeterView mBatteryView;
-
-    private TextView mKeyguardClock;
-    private int mShowKeyguardClock;
 
     private BatteryController mBatteryController;
     private KeyguardUserSwitcher mKeyguardUserSwitcher;
@@ -91,19 +94,21 @@ public class KeyguardStatusBarView extends RelativeLayout
 
     private ContentObserver mObserver = new ContentObserver(new Handler()) {
         public void onChange(boolean selfChange, Uri uri) {
-            showKeyguardClock();
+            showStatusBarCarrier();
             updateVisibilities();
         }
     };
 
+    private boolean mHideContents;
+
     public KeyguardStatusBarView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        showKeyguardClock();
+        showStatusBarCarrier();
     }
 
-    private void showKeyguardClock() {
-        mShowKeyguardClock = Settings.System.getIntForUser(getContext().getContentResolver(),
-                Settings.System.KEYGUARD_SHOW_CLOCK, 1, UserHandle.USER_CURRENT);
+    private void showStatusBarCarrier() {
+        mShowCarrierLabel = Settings.System.getIntForUser(getContext().getContentResolver(),
+                Settings.System.STATUS_BAR_SHOW_CARRIER, 1, UserHandle.USER_CURRENT);
     }
 
     @Override
@@ -116,7 +121,6 @@ public class KeyguardStatusBarView extends RelativeLayout
         mCarrierLabel = (TextView) findViewById(R.id.keyguard_carrier_text);
         mBatteryView = (BatteryMeterView) mSystemIconsContainer.findViewById(R.id.battery);
         mBatteryView.setIsQuickSbHeaderOrKeyguard(true);
-        mKeyguardClock = (TextView) findViewById(R.id.keyguard_clock);
         mSignalClusterView = (SignalClusterView) findViewById(R.id.signal_cluster);
         mSignalClusterView.setIsKeyguard(true);
 
@@ -163,10 +167,6 @@ public class KeyguardStatusBarView extends RelativeLayout
                 R.dimen.status_bar_height);
         mSystemIconsContainer.setLayoutParams(lp);
 
-        mKeyguardClock.setTextSize(TypedValue.COMPLEX_UNIT_PX,
-                getResources().getDimensionPixelSize(
-                        com.android.internal.R.dimen.text_size_small_material));
-
         // Respect font size setting.
         mCarrierLabel.setTextSize(TypedValue.COMPLEX_UNIT_PX,
                 getResources().getDimensionPixelSize(
@@ -204,18 +204,18 @@ public class KeyguardStatusBarView extends RelativeLayout
             // we don't show the multi-user avatar unless there is more than 1 user on the device.
             if (mUserSwitcherController != null
                     && mUserSwitcherController.getSwitchableUserCount() > 1) {
-                mMultiUserSwitch.setVisibility(View.VISIBLE);
+                mMultiUserSwitch.setVisibility(mHideContents ? View.INVISIBLE : View.VISIBLE);
             } else {
                 mMultiUserSwitch.setVisibility(View.GONE);
             }
         }
         mBatteryView.setForceShowPercent(mBatteryCharging);
-
-        if (Settings.System.getInt(mContext.getContentResolver(),
-                Settings.System.KEYGUARD_SHOW_CLOCK, 0) == 1) {
-            mKeyguardClock.setVisibility(View.VISIBLE);
-        } else {
-            mKeyguardClock.setVisibility(View.GONE);
+        if (mCarrierLabel != null) {
+            if (mShowCarrierLabel == 1 || mShowCarrierLabel == 3) {
+                mCarrierLabel.setVisibility(mHideContents ? View.INVISIBLE : View.VISIBLE);
+            } else {
+                mCarrierLabel.setVisibility(View.GONE);
+            }
         }
     }
 
@@ -265,9 +265,10 @@ public class KeyguardStatusBarView extends RelativeLayout
         Dependency.get(ConfigurationController.class).addCallback(this);
         mIconManager = new TintedIconManager(findViewById(R.id.statusIcons));
         Dependency.get(StatusBarIconController.class).addIconGroup(mIconManager);
-        getContext().getContentResolver().registerContentObserver(Settings.System.getUriFor(
-                "keyguard_show_clock"), false, mObserver);
         onOverlayChanged();
+
+        getContext().getContentResolver().registerContentObserver(Settings.System.getUriFor(
+		        Settings.System.STATUS_BAR_SHOW_CARRIER), false, mObserver);
     }
 
     @Override
@@ -403,6 +404,98 @@ public class KeyguardStatusBarView extends RelativeLayout
         View v = findViewById(id);
         if (v instanceof DarkReceiver) {
             ((DarkReceiver) v).onDarkChanged(tintArea, intensity, color);
+        }
+    }
+
+    public void toggleContents(boolean hideContents) {
+        boolean shouldHideContents = Settings.System.getIntForUser(
+                getContext().getContentResolver(), Settings.System.LOCK_HIDE_STATUS_BAR, 0,
+                UserHandle.USER_CURRENT) == 1;
+        if (!shouldHideContents) {
+            hideContents = false;
+        }
+        if (mHideContents == hideContents) {
+            return;
+        }
+
+        mHideContents = hideContents;
+        if (mHideContents) {
+            Animator fadeAnimator1 = null;
+            if (mMultiUserSwitch.getVisibility() != View.GONE) {
+                fadeAnimator1 = ObjectAnimator.ofFloat(mMultiUserSwitch, "alpha", 1f, 0f);
+                fadeAnimator1.setDuration(500);
+                fadeAnimator1.setInterpolator(Interpolators.ALPHA_OUT);
+                fadeAnimator1.addListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        mMultiUserSwitch.setVisibility(View.INVISIBLE);
+                    }
+                });
+            }
+            Animator fadeAnimator2 = ObjectAnimator.ofFloat(mSystemIconsSuperContainer, "alpha", 1f, 0f);
+            fadeAnimator2.setDuration(500);
+            fadeAnimator2.setInterpolator(Interpolators.ALPHA_OUT);
+            fadeAnimator2.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    mSystemIconsSuperContainer.setVisibility(View.INVISIBLE);
+                }
+            });
+            Animator fadeAnimator3 = null;
+            if (mCarrierLabel.getVisibility() != View.GONE) {
+                fadeAnimator3 = ObjectAnimator.ofFloat(mCarrierLabel, "alpha", 1f, 0f);
+                fadeAnimator3.setDuration(500);
+                fadeAnimator3.setInterpolator(Interpolators.ALPHA_OUT);
+                fadeAnimator3.addListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        mCarrierLabel.setVisibility(View.INVISIBLE);
+                    }
+                });
+            }
+            AnimatorSet set = new AnimatorSet();
+            set.playTogether(fadeAnimator2);
+            if (fadeAnimator3 != null) {
+                set.playTogether(fadeAnimator3);
+            }
+            if (fadeAnimator1 != null) {
+                set.playTogether(fadeAnimator1);
+            }
+            set.start();
+        } else {
+            Animator fadeAnimator1 = null;
+            if (mMultiUserSwitch.getVisibility() != View.GONE) {
+                mMultiUserSwitch.setAlpha(0f);
+                mMultiUserSwitch.setVisibility(View.VISIBLE);
+                fadeAnimator1 = ObjectAnimator.ofFloat(mMultiUserSwitch, "alpha", 0f, 1f);
+                fadeAnimator1.setDuration(500);
+                fadeAnimator1.setInterpolator(Interpolators.ALPHA_IN);
+            }
+
+            mSystemIconsSuperContainer.setAlpha(0f);
+            mSystemIconsSuperContainer.setVisibility(View.VISIBLE);
+            Animator fadeAnimator2 = ObjectAnimator.ofFloat(mSystemIconsSuperContainer, "alpha", 0f, 1f);
+            fadeAnimator2.setDuration(500);
+            fadeAnimator2.setInterpolator(Interpolators.ALPHA_IN);
+
+            Animator fadeAnimator3 = null;
+            if (mCarrierLabel.getVisibility() != View.GONE) {
+                mCarrierLabel.setAlpha(0f);
+                mCarrierLabel.setVisibility(View.VISIBLE);
+                fadeAnimator3 = ObjectAnimator.ofFloat(mCarrierLabel, "alpha", 0f, 1f);
+                fadeAnimator3.setDuration(500);
+                fadeAnimator3.setInterpolator(Interpolators.ALPHA_IN);
+            }
+
+            AnimatorSet set = new AnimatorSet();
+            set.playTogether(fadeAnimator2);
+            if (fadeAnimator3 != null) {
+                set.playTogether(fadeAnimator3);
+            }
+            if (fadeAnimator1 != null) {
+                set.playTogether(fadeAnimator1);
+            }
+            set.start();
         }
     }
 }

@@ -113,6 +113,10 @@ public class NotificationData {
             }
         }
 
+        public View getContentView() {
+            return row.getPrivateLayout().getContractedChild();
+        }
+
         public View getExpandedContentView() {
             return row.getPrivateLayout().getExpandedChild();
         }
@@ -351,6 +355,19 @@ public class NotificationData {
         return mSortedAndFiltered;
     }
 
+    public ArrayList<Entry> getAllNotifications() {
+        ArrayList<Entry> list = new ArrayList<>();
+        synchronized (mEntries) {
+            final int N = mEntries.size();
+            for (int i = 0; i < N; i++) {
+                Entry entry = mEntries.valueAt(i);
+                StatusBarNotification sbn = entry.notification;
+                list.add(entry);
+            }
+        }
+        return list;
+    }
+
     public Entry get(String key) {
         return mEntries.get(key);
     }
@@ -536,6 +553,32 @@ public class NotificationData {
             return true;
         }
 
+        return false;
+    }
+
+    /**
+     * Return whether there are any visible notifications (i.e. without an error).
+     */
+    public boolean hasActiveVisibleNotifications() {
+        for (Entry e : mSortedAndFiltered) {
+            if (e.getContentView() != null) { // the view successfully inflated
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Return whether there are any ongoing notifications (that aren't errors).
+     */
+    public boolean hasActiveOngoingNotifications() {
+        for (Entry e : mSortedAndFiltered) {
+            if (e.getContentView() != null) { // the view successfully inflated
+                if (e.notification.isOngoing()) {
+                    return true;
+                }
+            }
+        }
         return false;
     }
 

@@ -296,14 +296,14 @@ interface IWindowManager
     oneway void setPipVisibility(boolean visible);
 
     /**
-     * Device requires a software navigation bar.
-     */
-    boolean needsNavigationBar();
-
-    /**
      * Device has a software navigation bar (separate from the status bar).
      */
     boolean hasNavigationBar();
+
+    /**
+     * Simulate a hardware menu key
+     */
+    boolean hasPermanentMenuKey();
 
     /**
      * Lock the device immediately with the specified options (can be null).
@@ -408,4 +408,9 @@ interface IWindowManager
      * Return the touch region for the current IME window, or an empty region if there is none.
      */
     Region getCurrentImeTouchRegion();
+
+    /**
+     * Call screen record from WindowManager.
+     */
+    void screenRecordAction(int mode);
 }

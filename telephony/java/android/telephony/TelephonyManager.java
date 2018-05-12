@@ -1185,6 +1185,13 @@ public class TelephonyManager {
     }
 
     /**
+     * @hide
+     */
+    public CellLocation getCellLocationBySubId(int subId) {
+        return getCellLocation();
+    }
+
+    /**
      * Enables location update notifications.  {@link PhoneStateListener#onCellLocationChanged
      * PhoneStateListener.onCellLocationChanged} will be called on location updates.
      *
@@ -1611,6 +1618,13 @@ public class TelephonyManager {
         CarrierConfigManager carrierConfigManager = mContext
                 .getSystemService(CarrierConfigManager.class);
         return carrierConfigManager.getConfigForSubId(getSubId());
+    }
+
+    /**
+     * @hide
+     */
+    public String getNetworkOperatorForSubscription(int subId) {
+        return getNetworkOperatorForPhone(subId);
     }
 
     /**
@@ -6121,6 +6135,12 @@ public class TelephonyManager {
         if (SubscriptionManager.isValidPhoneId(phoneId)) {
             String prop = TelephonyProperties.PROPERTY_BASEBAND_VERSION +
                     ((phoneId == 0) ? "" : Integer.toString(phoneId));
+            if (version != null && version.length() > SystemProperties.PROP_VALUE_MAX) {
+                Log.e(TAG, "setBasebandVersionForPhone(): version string '" + version +
+                        "' too long! (" + version.length() +
+                        " > " + SystemProperties.PROP_VALUE_MAX + ")");
+                version = version.substring(0, SystemProperties.PROP_VALUE_MAX);
+            }
             SystemProperties.set(prop, version);
         }
     }

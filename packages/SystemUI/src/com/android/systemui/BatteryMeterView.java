@@ -85,7 +85,15 @@ public class BatteryMeterView extends LinearLayout implements
     private final int mEndPadding;
 
     private boolean mQsHeaderOrKeyguard;
+
     private boolean mAttached;
+
+    private boolean mClockEnabled;
+    private int mClockStyle = STYLE_CLOCK_RIGHT;
+    public static final int STYLE_CLOCK_RIGHT = 0;
+    public static final int STYLE_CLOCK_CENTER = 1;
+    public static final int STYLE_CLOCK_LEFT = 2;
+
     private boolean mPowerSave;
 
     public BatteryMeterView(Context context) {
@@ -211,6 +219,10 @@ public class BatteryMeterView extends LinearLayout implements
                 || mStyle == BatteryMeterDrawableBase.BATTERY_STYLE_DOTTED_CIRCLE;
     }
 
+    private boolean isRightClock() {
+        return mClockEnabled && mClockStyle == STYLE_CLOCK_RIGHT;
+    }
+
     @Override
     public void onPowerSaveChanged(boolean isPowerSave) {
         mDrawable.setPowerSave(isPowerSave);
@@ -257,11 +269,15 @@ public class BatteryMeterView extends LinearLayout implements
                 mBatteryPercentView = null;
             }
         }
+
+        // Fix padding dinamically. It's safe to call this here because View.setPadding doesn't call a
+        // requestLayout() if values aren't different from previous ones
         if (mBatteryPercentView != null) {
             mBatteryPercentView.setPaddingRelative(0, 0,
                     (mStyle == BatteryMeterDrawableBase.BATTERY_STYLE_TEXT || isHiddenButQsOrKeyguard())
-                    ? 0 : mEndPadding, 0);
+                    ? (isRightClock() ? mEndPadding : 0) : mEndPadding, 0);
         }
+
         mDrawable.showPercentInsideCircle(!mShowPercentText);
     }
 
@@ -286,7 +302,8 @@ public class BatteryMeterView extends LinearLayout implements
 
         LinearLayout.LayoutParams scaledLayoutParams = new LinearLayout.LayoutParams(
                 (int) (batteryWidth * iconScaleFactor), (int) (batteryHeight * iconScaleFactor));
-        scaledLayoutParams.setMargins(0, 0, 0, marginBottom);
+        scaledLayoutParams.setMargins(0, 0, isCircleBattery() && isRightClock()
+                ? mEndPadding : 0, marginBottom);
 
         if (mBatteryIconView != null) {
             mBatteryIconView.setLayoutParams(scaledLayoutParams);
@@ -368,6 +385,10 @@ public class BatteryMeterView extends LinearLayout implements
                 QS_HEADER_BATTERY_PERCENT, 0, mUser);
         mStyle = Settings.Secure.getIntForUser(mContext.getContentResolver(),
                 STATUS_BAR_BATTERY_STYLE, BatteryMeterDrawableBase.BATTERY_STYLE_PORTRAIT, mUser);
+        mClockStyle = Settings.System.getIntForUser(mContext.getContentResolver(),
+                Settings.System.STATUSBAR_CLOCK_STYLE, STYLE_CLOCK_RIGHT, mUser);
+        mClockEnabled = Settings.System.getIntForUser(mContext.getContentResolver(),
+                Settings.System.STATUS_BAR_CLOCK, 1, mUser) == 1;
         if (fromObserver && mAttached) {
             updateBatteryStyle();
         }

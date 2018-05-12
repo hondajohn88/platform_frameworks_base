@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2015 The CyanogenMod Project
- * Copyright (C) 2017 The LineageOS Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,26 +16,25 @@
 
 package com.android.systemui.qs.tiles;
 
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.SystemProperties;
 import android.provider.Settings;
 import android.provider.Settings.Secure;
-import android.service.quicksettings.Tile;
 import android.text.TextUtils;
 
+import com.android.internal.logging.MetricsLogger;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
+
+import com.android.systemui.R;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.QSHost;
-import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.qs.SecureSetting;
-import com.android.systemui.R;
+import com.android.systemui.qs.tileimpl.QSTileImpl;
 
-import org.lineageos.internal.logging.LineageMetricsLogger;
-
-/** Quick settings tile: Ambient Display **/
 public class AmbientDisplayTile extends QSTileImpl<BooleanState> {
-
-    private static final Intent DISPLAY_SETTINGS = new Intent("android.settings.DISPLAY_SETTINGS");
 
     private final SecureSetting mSetting;
 
@@ -66,14 +64,20 @@ public class AmbientDisplayTile extends QSTileImpl<BooleanState> {
     }
 
     @Override
-    protected void handleClick() {
+    public void handleClick() {
         setEnabled(!mState.value);
         refreshState();
     }
 
     @Override
     public Intent getLongClickIntent() {
-        return DISPLAY_SETTINGS;
+        return new Intent().setComponent(new ComponentName(
+            "com.android.settings", "com.android.settings.Settings$DisplaySettingsActivity"));
+    }
+
+    @Override
+    public CharSequence getTileLabel() {
+        return mContext.getString(R.string.quick_settings_ambient_display_label);
     }
 
     private void setEnabled(boolean enabled) {
@@ -82,8 +86,14 @@ public class AmbientDisplayTile extends QSTileImpl<BooleanState> {
                 enabled ? 1 : 0);
     }
 
+    private boolean isAmbientDisplayEnabled() {
+        return Settings.Secure.getInt(mContext.getContentResolver(),
+                Settings.Secure.DOZE_ENABLED, 0) == 1;
+    }
+
     @Override
     protected void handleUpdateState(BooleanState state, Object arg) {
+        if (mSetting == null) return;
         final int value = arg instanceof Integer ? (Integer)arg : mSetting.getValue();
         final boolean enable = value != 0;
         state.value = enable;
@@ -92,23 +102,11 @@ public class AmbientDisplayTile extends QSTileImpl<BooleanState> {
             state.icon = ResourceIcon.get(R.drawable.ic_qs_ambientdisplay_on);
             state.contentDescription =  mContext.getString(
                     R.string.accessibility_quick_settings_ambient_display_on);
-            state.state = Tile.STATE_ACTIVE;
         } else {
             state.icon = ResourceIcon.get(R.drawable.ic_qs_ambientdisplay_off);
             state.contentDescription =  mContext.getString(
                     R.string.accessibility_quick_settings_ambient_display_off);
-            state.state = Tile.STATE_INACTIVE;
         }
-    }
-
-    @Override
-    public CharSequence getTileLabel() {
-        return mContext.getString(R.string.quick_settings_ambient_display_label);
-    }
-
-    @Override
-    public int getMetricsCategory() {
-        return LineageMetricsLogger.TILE_AMBIENT_DISPLAY;
     }
 
     @Override
@@ -120,6 +118,11 @@ public class AmbientDisplayTile extends QSTileImpl<BooleanState> {
             return mContext.getString(
                     R.string.accessibility_quick_settings_ambient_display_changed_off);
         }
+    }
+
+    @Override
+    public int getMetricsCategory() {
+        return MetricsEvent.AICP_METRICS;
     }
 
     @Override

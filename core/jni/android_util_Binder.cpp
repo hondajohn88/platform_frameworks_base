@@ -153,7 +153,7 @@ static volatile int32_t gNumDeathRefs = 0;
 static void incRefsCreated(JNIEnv* env)
 {
     int old = android_atomic_inc(&gNumRefsCreated);
-    if (old == 200) {
+    if (old == 2000) {
         android_atomic_and(0, &gNumRefsCreated);
         env->CallStaticVoidMethod(gBinderInternalOffsets.mClass,
                 gBinderInternalOffsets.mForceGc);
@@ -517,8 +517,8 @@ protected:
 
 private:
     JavaVM* const mVM;
-    jobject mObject;
-    jweak mObjectWeak; // will be a weak ref to the same VM-side DeathRecipient after binderDied()
+    jobject mObject;  // Initial strong ref to Java-side DeathRecipient. Cleared on binderDied().
+    jweak mObjectWeak; // weak ref to the same Java-side DeathRecipient after binderDied().
     wp<DeathRecipientList> mList;
 };
 
@@ -590,7 +590,7 @@ static void proxy_cleanup(const void* id, void* obj, void* cleanupCookie)
     env->DeleteGlobalRef((jobject)obj);
 }
 
-static Mutex mProxyLock;
+static Mutex gProxyLock;
 
 jobject javaObjectForIBinder(JNIEnv* env, const sp<IBinder>& val)
 {
@@ -605,7 +605,7 @@ jobject javaObjectForIBinder(JNIEnv* env, const sp<IBinder>& val)
 
     // For the rest of the function we will hold this lock, to serialize
     // looking/creation/destruction of Java proxies for native Binder proxies.
-    AutoMutex _l(mProxyLock);
+    AutoMutex _l(gProxyLock);
 
     // Someone else's...  do we know about it?
     jobject object = (jobject)val->findObject(&gBinderProxyOffsets);
@@ -865,7 +865,7 @@ static void android_os_Binder_init(JNIEnv* env, jobject obj)
     env->SetLongField(obj, gBinderOffsets.mObject, (jlong)jbh);
 }
 
-static void android_os_Binder_destroyBinder(JNIEnv* env, jobject obj)
+static void android_os_Binder_destroy(JNIEnv* env, jobject obj)
 {
     JavaBBinderHolder* jbh = (JavaBBinderHolder*)
         env->GetLongField(obj, gBinderOffsets.mObject);
@@ -876,7 +876,7 @@ static void android_os_Binder_destroyBinder(JNIEnv* env, jobject obj)
     } else {
         // Encountering an uninitialized binder is harmless.  All it means is that
         // the Binder was only partially initialized when its finalizer ran and called
-        // destroyBinder().  The Binder could be partially initialized for several reasons.
+        // destroy().  The Binder could be partially initialized for several reasons.
         // For example, a Binder subclass constructor might have thrown an exception before
         // it could delegate to its superclass's constructor.  Consequently init() would
         // not have been called and the holder pointer would remain NULL.
@@ -901,7 +901,7 @@ static const JNINativeMethod gBinderMethods[] = {
     { "getThreadStrictModePolicy", "()I", (void*)android_os_Binder_getThreadStrictModePolicy },
     { "flushPendingCommands", "()V", (void*)android_os_Binder_flushPendingCommands },
     { "init", "()V", (void*)android_os_Binder_init },
-    { "destroyBinder", "()V", (void*)android_os_Binder_destroyBinder },
+    { "destroy", "()V", (void*)android_os_Binder_destroy },
     { "blockUntilThreadAvailable", "()V", (void*)android_os_Binder_blockUntilThreadAvailable }
 };
 
@@ -1281,7 +1281,7 @@ static jboolean android_os_BinderProxy_unlinkToDeath(JNIEnv* env, jobject obj,
 static void android_os_BinderProxy_destroy(JNIEnv* env, jobject obj)
 {
     // Don't race with construction/initialization
-    AutoMutex _l(mProxyLock);
+    AutoMutex _l(gProxyLock);
 
     IBinder* b = (IBinder*)
             env->GetLongField(obj, gBinderProxyOffsets.mObject);

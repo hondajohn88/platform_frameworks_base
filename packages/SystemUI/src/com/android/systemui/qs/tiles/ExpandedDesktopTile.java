@@ -30,15 +30,12 @@ import android.view.View;
 import android.view.WindowManagerGlobal;
 import android.view.WindowManagerPolicyControl;
 
-import com.android.internal.logging.MetricsLogger;
-import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
-
-import com.android.systemui.plugins.qs.QSTile.BooleanState;
-import com.android.systemui.qs.GlobalSetting;
-import com.android.systemui.qs.QSHost;
-import com.android.systemui.qs.tileimpl.QSTileImpl;
-
 import com.android.systemui.R;
+import com.android.systemui.Dependency;
+import com.android.systemui.qs.QSHost;
+import com.android.systemui.plugins.qs.QSTile.BooleanState;
+import com.android.systemui.qs.tileimpl.QSTileImpl;
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 
 /** Quick settings tile: Expanded desktop **/
 public class ExpandedDesktopTile extends QSTileImpl<BooleanState> {
@@ -70,7 +67,7 @@ public class ExpandedDesktopTile extends QSTileImpl<BooleanState> {
     @Override
     public Intent getLongClickIntent() {
         return new Intent().setComponent(new ComponentName(
-            "com.android.settings", "com.android.settings.Settings$ExpandedDesktopSettingsActivity"));
+            "org.lineageos.lineageparts", "org.lineageos.lineageparts.applications.ExpandedDesktopSettings"));
     }
 
     @Override
@@ -80,7 +77,7 @@ public class ExpandedDesktopTile extends QSTileImpl<BooleanState> {
 
     @Override
     public int getMetricsCategory() {
-        return MetricsEvent.QUICK_SETTINGS;
+        return MetricsEvent.AICP_METRICS;
     }
 
     @Override
@@ -133,6 +130,7 @@ public class ExpandedDesktopTile extends QSTileImpl<BooleanState> {
     @Override
     public void handleSetListening(boolean listening) {
         if (mListening == listening) return;
+        if (mObserver == null) return;
         if (listening) {
             mObserver.startObserving();
         } else {

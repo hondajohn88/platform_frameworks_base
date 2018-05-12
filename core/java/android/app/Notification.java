@@ -463,6 +463,23 @@ public class Notification implements Parcelable
     public int defaults;
 
     /**
+     * @hide
+     */
+    public int backgroundColor;
+    /**
+     * @hide
+     */
+    public int foregroundColor;
+    /**
+     * @hide
+     */
+    public int primaryTextColor;
+    /**
+     * @hide
+     */
+    public int secondaryTextColor;
+
+    /**
      * Bit to be bitwise-ored into the {@link #flags} field that should be
      * set if you want the LED on for this notification.
      * <ul>
@@ -1138,6 +1155,7 @@ public class Notification implements Parcelable
 
     private Icon mSmallIcon;
     private Icon mLargeIcon;
+    private Icon mOriginalLargeIcon;
 
     private String mChannelId;
     private long mTimeout;
@@ -1903,6 +1921,9 @@ public class Notification implements Parcelable
         if (parcel.readInt() != 0) {
             mLargeIcon = Icon.CREATOR.createFromParcel(parcel);
         }
+        if (parcel.readInt() != 0) {
+            mOriginalLargeIcon = Icon.CREATOR.createFromParcel(parcel);
+        }
         defaults = parcel.readInt();
         flags = parcel.readInt();
         if (parcel.readInt() != 0) {
@@ -1967,6 +1988,11 @@ public class Notification implements Parcelable
         }
 
         mGroupAlertBehavior = parcel.readInt();
+
+        backgroundColor = parcel.readInt();
+        foregroundColor = parcel.readInt();
+        primaryTextColor = parcel.readInt();
+        secondaryTextColor = parcel.readInt();
     }
 
     @Override
@@ -2004,6 +2030,9 @@ public class Notification implements Parcelable
         }
         if (heavy && this.mLargeIcon != null) {
             that.mLargeIcon = this.mLargeIcon;
+        }
+        if (heavy && this.mOriginalLargeIcon != null) {
+            that.mOriginalLargeIcon = this.mOriginalLargeIcon;
         }
         that.iconLevel = this.iconLevel;
         that.sound = this.sound; // android.net.Uri is immutable
@@ -2085,6 +2114,11 @@ public class Notification implements Parcelable
         if (!heavy) {
             that.lightenPayload(); // will clean out extras
         }
+
+        that.backgroundColor = this.backgroundColor;
+        that.foregroundColor = this.foregroundColor;
+        that.primaryTextColor = this.primaryTextColor;
+        that.secondaryTextColor = this.secondaryTextColor;
     }
 
     /**
@@ -2098,6 +2132,7 @@ public class Notification implements Parcelable
         bigContentView = null;
         headsUpContentView = null;
         mLargeIcon = null;
+        mOriginalLargeIcon = null;
         if (extras != null && !extras.isEmpty()) {
             final Set<String> keyset = extras.keySet();
             final int N = keyset.size();
@@ -2189,10 +2224,13 @@ public class Notification implements Parcelable
             PendingIntent.setOnMarshaledListener(
                     (PendingIntent intent, Parcel out, int outFlags) -> {
                 if (parcel == out) {
-                    if (allPendingIntents == null) {
-                        allPendingIntents = new ArraySet<>();
+                    // make the allPendingIntents add operation thread-safe.
+                    synchronized (Notification.this) {
+                        if (allPendingIntents == null) {
+                            allPendingIntents = new ArraySet<>();
+                        }
+                        allPendingIntents.add(intent);
                     }
-                    allPendingIntents.add(intent);
                 }
             });
         }
@@ -2260,9 +2298,17 @@ public class Notification implements Parcelable
             // you snuck an icon in here without using the builder; let's try to keep it
             mLargeIcon = Icon.createWithBitmap(largeIcon);
         }
+
         if (mLargeIcon != null) {
             parcel.writeInt(1);
             mLargeIcon.writeToParcel(parcel, 0);
+        } else {
+            parcel.writeInt(0);
+        }
+
+        if (mOriginalLargeIcon != null) {
+            parcel.writeInt(1);
+            mOriginalLargeIcon.writeToParcel(parcel, 0);
         } else {
             parcel.writeInt(0);
         }
@@ -2360,6 +2406,11 @@ public class Notification implements Parcelable
         }
 
         parcel.writeInt(mGroupAlertBehavior);
+
+        parcel.writeInt(backgroundColor);
+        parcel.writeInt(foregroundColor);
+        parcel.writeInt(primaryTextColor);
+        parcel.writeInt(secondaryTextColor);
     }
 
     /**
@@ -2655,6 +2706,13 @@ public class Notification implements Parcelable
      */
     public Icon getLargeIcon() {
         return mLargeIcon;
+    }
+
+    /**
+     * @hide
+     */
+    public Icon getOriginalLargeIcon() {
+        return mOriginalLargeIcon;
     }
 
     /**
@@ -3354,6 +3412,14 @@ public class Notification implements Parcelable
         public Builder setLargeIcon(Icon icon) {
             mN.mLargeIcon = icon;
             mN.extras.putParcelable(EXTRA_LARGE_ICON, icon);
+            return this;
+        }
+
+        /**
+         * @hide
+         */
+        public Builder setOriginalLargeIcon(Icon icon) {
+            mN.mOriginalLargeIcon = icon;
             return this;
         }
 
@@ -4080,6 +4146,11 @@ public class Notification implements Parcelable
                 mActionBarColor = NotificationColorUtil.resolveActionBarColor(mThemeContext,
                         backgroundColor);
             }
+
+            mN.backgroundColor = backgroundColor;
+            mN.foregroundColor = mForegroundColor;
+            mN.primaryTextColor = mPrimaryTextColor;
+            mN.secondaryTextColor = mSecondaryTextColor;
         }
 
         private void updateBackgroundColor(RemoteViews contentView) {
@@ -5232,6 +5303,9 @@ public class Notification implements Parcelable
             }
             if (mLargeIcon != null) {
                 mLargeIcon.scaleDownIfNecessary(maxWidth, maxHeight);
+            }
+            if (mOriginalLargeIcon != null) {
+                mOriginalLargeIcon.scaleDownIfNecessary(maxWidth, maxHeight);
             }
             if (largeIcon != null) {
                 largeIcon = Icon.scaleDownIfNecessary(largeIcon, maxWidth, maxHeight);

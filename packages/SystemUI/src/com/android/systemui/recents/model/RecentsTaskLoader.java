@@ -38,6 +38,7 @@ import com.android.systemui.recents.Recents;
 import com.android.systemui.recents.RecentsConfiguration;
 import com.android.systemui.recents.RecentsDebugFlags;
 import com.android.systemui.recents.events.activity.PackagesChangedEvent;
+import com.android.systemui.slimrecent.icons.IconsHandler;
 import com.android.systemui.recents.misc.SystemServicesProxy;
 
 import java.io.PrintWriter;
@@ -108,10 +109,13 @@ class BackgroundTaskLoader implements Runnable {
 
     private final OnIdleChangedListener mOnIdleChangedListener;
 
+    private IconsHandler mIconsHandler;
+
     /** Constructor, creates a new loading thread that loads task resources in the background */
-    public BackgroundTaskLoader(TaskResourceLoadQueue loadQueue,
+    public BackgroundTaskLoader(IconsHandler ih, TaskResourceLoadQueue loadQueue,
             TaskKeyLruCache<Drawable> iconCache, BitmapDrawable defaultIcon,
             OnIdleChangedListener onIdleChangedListener) {
+        mIconsHandler = ih;
         mLoadQueue = loadQueue;
         mIconCache = iconCache;
         mDefaultIcon = defaultIcon;
@@ -206,12 +210,18 @@ class BackgroundTaskLoader implements Runnable {
 
             // Load the icon if it is stale or we haven't cached one yet
             if (cachedIcon == null) {
-                cachedIcon = ssp.getBadgedTaskDescriptionIcon(t.taskDescription,
-                        t.key.userId, mContext.getResources());
+                ActivityInfo info = ssp.getActivityInfo(
+                        t.key.getComponent(), t.key.userId);
+                if (info != null) {
+                    cachedIcon = mIconsHandler.getIconFromHandler(mContext, info);
+                }
 
                 if (cachedIcon == null) {
-                    ActivityInfo info = ssp.getActivityInfo(
-                            t.key.getComponent(), t.key.userId);
+                    cachedIcon = ssp.getBadgedTaskDescriptionIcon(t.taskDescription,
+                            t.key.userId, mContext.getResources());
+                }
+
+                if (cachedIcon == null) {
                     if (info != null) {
                         if (DEBUG) Log.d(TAG, "Loading icon: " + t.key);
                         cachedIcon = ssp.getBadgedActivityIcon(info, t.key.userId);
@@ -277,6 +287,8 @@ public class RecentsTaskLoader {
     int mDefaultTaskViewBackgroundColor;
     BitmapDrawable mDefaultIcon;
 
+    private IconsHandler mIconsHandler;
+
     private TaskKeyLruCache.EvictionCallback mClearActivityInfoOnEviction =
             new TaskKeyLruCache.EvictionCallback() {
         @Override
@@ -287,7 +299,8 @@ public class RecentsTaskLoader {
         }
     };
 
-    public RecentsTaskLoader(Context context) {
+    public RecentsTaskLoader(Context context, IconsHandler ih) {
+        mIconsHandler = ih;
         Resources res = context.getResources();
         mDefaultTaskBarBackgroundColor =
                 context.getColor(R.color.recents_task_bar_default_background_color);
@@ -313,8 +326,12 @@ public class RecentsTaskLoader {
         mContentDescriptionCache = new TaskKeyLruCache<>(numRecentTasks,
                 mClearActivityInfoOnEviction);
         mActivityInfoCache = new LruCache(numRecentTasks);
-        mLoader = new BackgroundTaskLoader(mLoadQueue, mIconCache, mDefaultIcon,
+        mLoader = new BackgroundTaskLoader(mIconsHandler, mLoadQueue, mIconCache, mDefaultIcon,
                 mHighResThumbnailLoader::setTaskLoadQueueIdle);
+    }
+
+    public IconsHandler getIconsHandler() {
+        return mIconsHandler;
     }
 
     /** Returns the size of the app icon cache. */
@@ -444,6 +461,18 @@ public class RecentsTaskLoader {
         }
     }
 
+    public void evictAllCaches() {
+        mIconCache.evictAll();
+        mActivityInfoCache.evictAll();
+        mActivityLabelCache.evictAll();
+        mContentDescriptionCache.evictAll();
+        mThumbnailCache.evictAll();
+    }
+
+    public void resetIconCache() {
+        mIconCache.evictAll();
+    }
+
     /**
      * Returns the cached task label if the task key is not expired, updating the cache if it is.
      */
@@ -507,7 +536,7 @@ public class RecentsTaskLoader {
     /**
      * Returns the cached task icon if the task key is not expired, updating the cache if it is.
      */
-    Drawable getAndUpdateActivityIcon(Task.TaskKey taskKey, ActivityManager.TaskDescription td,
+    Drawable getAndUpdateActivityIcon(Context context, Task.TaskKey taskKey, ActivityManager.TaskDescription td,
             Resources res, boolean loadIfNotCached) {
         SystemServicesProxy ssp = Recents.getSystemServices();
 
@@ -518,6 +547,17 @@ public class RecentsTaskLoader {
         }
 
         if (loadIfNotCached) {
+            ActivityInfo activityInfo = getAndUpdateActivityInfo(taskKey);
+
+            // Return and cache the icon package icon for this app, if available
+            if (activityInfo != null) {
+                icon = mIconsHandler.getIconFromHandler(context, activityInfo);
+                if (icon != null) {
+                    mIconCache.put(taskKey, icon);
+                    return icon;
+                }
+            }
+
             // Return and cache the task description icon if it exists
             icon = ssp.getBadgedTaskDescriptionIcon(td, taskKey.userId, res);
             if (icon != null) {
@@ -526,7 +566,6 @@ public class RecentsTaskLoader {
             }
 
             // Load the icon from the activity info and cache it
-            ActivityInfo activityInfo = getAndUpdateActivityInfo(taskKey);
             if (activityInfo != null) {
                 icon = ssp.getBadgedActivityIcon(activityInfo, taskKey.userId);
                 if (icon != null) {

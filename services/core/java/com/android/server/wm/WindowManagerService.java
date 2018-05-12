@@ -59,6 +59,7 @@ import static android.view.WindowManager.LayoutParams.TYPE_INPUT_METHOD_DIALOG;
 import static android.view.WindowManager.LayoutParams.TYPE_NAVIGATION_BAR;
 import static android.view.WindowManager.LayoutParams.TYPE_PRIVATE_PRESENTATION;
 import static android.view.WindowManager.LayoutParams.TYPE_QS_DIALOG;
+import static android.view.WindowManager.LayoutParams.TYPE_SLIM_RECENTS;
 import static android.view.WindowManager.LayoutParams.TYPE_STATUS_BAR;
 import static android.view.WindowManager.LayoutParams.TYPE_TOAST;
 import static android.view.WindowManager.LayoutParams.TYPE_VOICE_INTERACTION;
@@ -666,14 +667,9 @@ public class WindowManagerService extends IWindowManager.Stub
         private final Uri mAnimationDurationScaleUri =
                 Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE);
 
-        private final Uri mDisableAnimationsUri =
-                Settings.System.getUriFor(Settings.System.DISABLE_TRANSITION_ANIMATIONS);
-
         public SettingsObserver() {
             super(new Handler());
             ContentResolver resolver = mContext.getContentResolver();
-            resolver.registerContentObserver(mDisableAnimationsUri, false, this,
-                    UserHandle.USER_ALL);
             resolver.registerContentObserver(mDisplayInversionEnabledUri, false, this,
                     UserHandle.USER_ALL);
             resolver.registerContentObserver(mWindowAnimationScaleUri, false, this,
@@ -692,8 +688,6 @@ public class WindowManagerService extends IWindowManager.Stub
 
             if (mDisplayInversionEnabledUri.equals(uri)) {
                 updateCircularDisplayMaskIfNeeded();
-            } else if (mDisableAnimationsUri.equals(uri))  {
-                updateAnimationsDisabledSetting(getAnimationsDisabledByUser());
             } else {
                 @UpdateAnimationScaleMode
                 final int mode;
@@ -721,9 +715,9 @@ public class WindowManagerService extends IWindowManager.Stub
     PowerManager mPowerManager;
     PowerManagerInternal mPowerManagerInternal;
 
-    private float mWindowAnimationScaleSetting = 0.75f;
-    private float mTransitionAnimationScaleSetting = 0.75f;
-    private float mAnimatorDurationScaleSetting = 0.75f;
+    private float mWindowAnimationScaleSetting = 0.8f;
+    private float mTransitionAnimationScaleSetting = 0.8f;
+    private float mAnimatorDurationScaleSetting = 0.8f;
     private boolean mAnimationsDisabled = false;
 
     final InputManagerService mInputManager;
@@ -1030,23 +1024,6 @@ public class WindowManagerService extends IWindowManager.Stub
         }, 0);
     }
 
-    private void updateAnimationsDisabledSetting(boolean enabled) {
-        synchronized (mWindowMap) {
-            if (mAnimationsDisabled != enabled) {
-                mAnimationsDisabled = enabled;
-                dispatchNewAnimatorScaleLocked(null);
-            }
-        }
-    }
-
-    private boolean getAnimationsDisabledByUser() {
-        return Settings.System.getIntForUser(
-                mContext.getContentResolver(),
-                Settings.System.DISABLE_TRANSITION_ANIMATIONS,
-                0,
-                mCurrentUserId) == 1;
-    }
-
     private WindowManagerService(Context context, InputManagerService inputManager,
             boolean haveInputMethods, boolean showBootMsgs, boolean onlyCore,
             WindowManagerPolicy policy) {
@@ -1118,7 +1095,7 @@ public class WindowManagerService extends IWindowManager.Stub
                     }
                 }
             });
-            mAnimationsDisabled = getAnimationsDisabledByUser() || mPowerManagerInternal
+            mAnimationsDisabled = mPowerManagerInternal
                     .getLowPowerState(ServiceType.ANIMATION).batterySaverEnabled;
         }
         mScreenFrozenLock = mPowerManager.newWakeLock(
@@ -1215,6 +1192,7 @@ public class WindowManagerService extends IWindowManager.Stub
             case TYPE_STATUS_BAR:
             case TYPE_NAVIGATION_BAR:
             case TYPE_INPUT_METHOD_DIALOG:
+            case TYPE_SLIM_RECENTS:
                 return true;
         }
         return false;
@@ -3383,12 +3361,6 @@ public class WindowManagerService extends IWindowManager.Stub
 
     // Called by window manager policy.  Not exposed externally.
     @Override
-    public void rebootTile() {
-        ShutdownThread.reboot(mContext, null, true);
-    }
-
-    // Called by window manager policy.  Not exposed externally.
-    @Override
     public void rebootSafeMode(boolean confirm) {
         // Pass in the UI context, since ShutdownThread requires it (to show UI).
         ShutdownThread.rebootSafeMode(ActivityThread.currentActivityThread().getSystemUiContext(),
@@ -3538,13 +3510,6 @@ public class WindowManagerService extends IWindowManager.Stub
                 return;
             }
 
-            // Don't enable the screen until all existing windows have been drawn.
-            if (!mForceDisplayEnabled
-                    // TODO(multidisplay): Expand to all displays?
-                    && getDefaultDisplayContentLocked().checkWaitingForWindows()) {
-                return;
-            }
-
             if (!mBootAnimationStopped) {
                 Trace.asyncTraceBegin(TRACE_TAG_WINDOW_MANAGER, "Stop bootanim", 0);
                 // stop boot animation
@@ -3552,6 +3517,13 @@ public class WindowManagerService extends IWindowManager.Stub
                 // can choose where to stop the animation.
                 SystemProperties.set("service.bootanim.exit", "1");
                 mBootAnimationStopped = true;
+            }
+
+            // Don't enable the screen until all existing windows have been drawn.
+            if (!mForceDisplayEnabled
+                    // TODO(multidisplay): Expand to all displays?
+                    && getDefaultDisplayContentLocked().checkWaitingForWindows()) {
+                return;
             }
 
             if (!mForceDisplayEnabled && !checkBootAnimationCompleteLocked()) {
@@ -6452,13 +6424,13 @@ public class WindowManagerService extends IWindowManager.Stub
     }
 
     @Override
-    public boolean needsNavigationBar() {
-        return mPolicy.needsNavigationBar();
+    public void sendCustomAction(Intent intent) {
+        mPolicy.sendCustomAction(intent);
     }
 
     @Override
-    public void sendCustomAction(Intent intent) {
-        mPolicy.sendCustomAction(intent);
+    public boolean hasPermanentMenuKey() {
+        return mPolicy.hasPermanentMenuKey();
     }
 
     @Override
@@ -7774,5 +7746,10 @@ public class WindowManagerService extends IWindowManager.Stub
         mRoot.forAllWindows((w) -> {
             w.setForceHideNonSystemOverlayWindowIfNeeded(hideSystemAlertWindows);
         }, false /* traverseTopToBottom */);
+    }
+
+    @Override
+    public void screenRecordAction(int mode) {
+        mPolicy.screenRecordAction(mode);
     }
 }

@@ -120,6 +120,11 @@ public class DndTile extends QSTileImpl<BooleanState> {
     }
 
     @Override
+    public boolean isDualTarget() {
+        return true;
+    }
+
+    @Override
     public BooleanState newTileState() {
         return new BooleanState();
     }
@@ -174,6 +179,7 @@ public class DndTile extends QSTileImpl<BooleanState> {
 
     @Override
     protected void handleUpdateState(BooleanState state, Object arg) {
+        if (mController == null) return;
         final int zen = arg instanceof Integer ? (Integer) arg : mController.getZen();
         final boolean newValue = zen != ZEN_MODE_OFF;
         final boolean valueChanged = state.value != newValue;
@@ -185,7 +191,7 @@ public class DndTile extends QSTileImpl<BooleanState> {
         checkIfRestrictionEnforcedByAdminOnly(state, UserManager.DISALLOW_ADJUST_VOLUME);
         switch (zen) {
             case Global.ZEN_MODE_IMPORTANT_INTERRUPTIONS:
-                state.icon = ResourceIcon.get(R.drawable.ic_qs_dnd_on);
+                state.icon = ResourceIcon.get(R.drawable.ic_qs_dnd_on_priority);
                 state.label = mContext.getString(R.string.quick_settings_dnd_priority_label);
                 state.contentDescription = mContext.getString(
                         R.string.accessibility_quick_settings_dnd_priority_on);

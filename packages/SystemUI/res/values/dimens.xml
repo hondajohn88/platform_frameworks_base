@@ -192,6 +192,9 @@
     <!-- Height of the status bar header bar -->
     <dimen name="status_bar_header_height">124dp</dimen>
 
+    <!-- Height of the status bar header bar when expanded -->
+    <dimen name="status_bar_header_height_expanded">124dp</dimen>
+
     <!-- Height of the status bar header bar in the car setting. -->
     <dimen name="car_status_bar_header_height">128dp</dimen>
 
@@ -208,9 +211,6 @@
     <!-- The height of the quick settings footer that holds the user switcher, settings icon,
          etc. -->
     <dimen name="qs_footer_height">48dp</dimen>
-
-    <!-- Height of the status bar header bar when expanded -->
-    <dimen name="status_bar_header_height_expanded">124dp</dimen>
 
     <!-- Height of the status bar header bar when on Keyguard -->
     <dimen name="status_bar_header_height_keyguard">40dp</dimen>
@@ -576,7 +576,7 @@
     <!-- How much two taps can be apart to still be recognized as a double tap on the lockscreen -->
     <dimen name="double_tap_slop">32dp</dimen>
 
-    <dimen name="battery_margin_bottom">0dp</dimen>
+    <dimen name="battery_margin_bottom">1dp</dimen>
 
     <!-- Padding at the end of the view that displays the mobile signal icons. If the view is
          empty, then this padding will not be added to that view. -->
@@ -848,6 +848,7 @@
 
     <dimen name="rounded_corner_radius">0dp</dimen>
     <dimen name="rounded_corner_content_padding">0dp</dimen>
+    <dimen name="rounded_corner_content_padding_alt">0dp</dimen>
     <dimen name="nav_content_padding">0dp</dimen>
 
     <!-- Intended corner radius when drawing the mobile signal -->

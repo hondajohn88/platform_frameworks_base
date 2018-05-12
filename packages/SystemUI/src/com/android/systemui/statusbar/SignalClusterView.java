@@ -19,12 +19,18 @@ package com.android.systemui.statusbar;
 import static android.provider.Settings.Secure.STATUS_BAR_BATTERY_STYLE;
 
 import android.annotation.DrawableRes;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.Resources;
+import android.database.ContentObserver;
 import android.graphics.Color;
 import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.net.Uri;
+import android.os.Handler;
+import android.os.UserHandle;
+import android.provider.Settings;
 import android.telephony.SubscriptionInfo;
 import android.util.ArraySet;
 import android.util.AttributeSet;
@@ -69,7 +75,6 @@ public class SignalClusterView extends LinearLayout implements NetworkController
     private static final String SLOT_WIFI = "wifi";
     private static final String SLOT_ETHERNET = "ethernet";
     private static final String SLOT_VPN = "vpn";
-    private static final String SLOT_VOLTE = "volte";
 
     private final NetworkController mNetworkController;
     private final SecurityController mSecurityController;
@@ -123,7 +128,8 @@ public class SignalClusterView extends LinearLayout implements NetworkController
     private boolean mBlockEthernet;
     private boolean mActivityEnabled;
     private boolean mForceBlockWifi;
-    private boolean mBlockVolte;
+
+    private boolean mVoLTEicon;
     private boolean mNoBattery;
     private boolean mIsKeyguard;
 
@@ -181,15 +187,13 @@ public class SignalClusterView extends LinearLayout implements NetworkController
             boolean blockMobile = blockList.contains(SLOT_MOBILE);
             boolean blockWifi = blockList.contains(SLOT_WIFI);
             boolean blockEthernet = blockList.contains(SLOT_ETHERNET);
-            boolean blockVolte = blockList.contains(SLOT_VOLTE);
 
             if (blockAirplane != mBlockAirplane || blockMobile != mBlockMobile
-                || blockEthernet != mBlockEthernet || blockWifi != mBlockWifi || blockVolte != mBlockVolte) {
+                    || blockEthernet != mBlockEthernet || blockWifi != mBlockWifi) {
                 mBlockAirplane = blockAirplane;
                 mBlockMobile = blockMobile;
                 mBlockEthernet = blockEthernet;
                 mBlockWifi = blockWifi || mForceBlockWifi;
-                mBlockVolte = blockVolte;
                 // Re-register to get new callbacks.
                 mNetworkController.removeCallback(this);
                 mNetworkController.addCallback(this);
@@ -262,6 +266,9 @@ public class SignalClusterView extends LinearLayout implements NetworkController
         mMobileSignalGroup.setPaddingRelative(0, 0, endPadding, 0);
 
         Dependency.get(TunerService.class).addTunable(this, StatusBarIconController.ICON_BLACKLIST, STATUS_BAR_BATTERY_STYLE);
+        Handler mHandler = new Handler();
+        SettingsObserver settingsObserver = new SettingsObserver(mHandler);
+        settingsObserver.observe();
 
         apply();
         applyIconTint();
@@ -557,7 +564,7 @@ public class SignalClusterView extends LinearLayout implements NetworkController
             mAirplane.setVisibility(View.GONE);
         }
 
-        if (mMobileIms && !mBlockVolte){
+        if (mMobileIms && mVoLTEicon){
             if (mMobileImsImageView != null)
                 mMobileImsImageView.setVisibility(View.VISIBLE);
         } else {
@@ -605,6 +612,33 @@ public class SignalClusterView extends LinearLayout implements NetworkController
         boolean anythingVisible = mNoSimsVisible || mWifiVisible || mIsAirplaneMode
                 || anyMobileVisible || mVpnVisible || mEthernetVisible;
         setPaddingRelative(0, 0, mNoBattery ? 0 : (anythingVisible ? mEndPadding : mEndPaddingNothingVisible), 0);
+    }
+
+    private class SettingsObserver extends ContentObserver {
+        SettingsObserver(Handler handler) {
+            super(handler);
+        }
+
+        void observe() {
+            mContext.getContentResolver().registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.SHOW_VOLTE_ICON),
+                    false, this, UserHandle.USER_ALL);
+            update();
+        }
+
+        @Override
+        public void onChange(boolean selfChange, Uri uri) {
+            if (uri.equals(Settings.System.getUriFor(
+                    Settings.System.SHOW_VOLTE_ICON))) {
+                update();
+                apply();
+            }
+        }
+
+        public void update() {
+            mVoLTEicon = Settings.System.getIntForUser(mContext.getContentResolver(),
+                Settings.System.SHOW_VOLTE_ICON, 0, UserHandle.USER_CURRENT) == 1;
+        }
     }
 
     /**
