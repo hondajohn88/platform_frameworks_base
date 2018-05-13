@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2015 The CyanogenMod Project
- * Copyright (C) 2017 The LineageOS Project
+ * Copyright (C) 2017 Benzo Rom
+ *           (C) 2017-2018 crDroidAndroid Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,27 +22,24 @@ import android.provider.Settings;
 import android.provider.Settings.Global;
 import android.service.quicksettings.Tile;
 
-import com.android.internal.logging.MetricsLogger;
-import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.systemui.plugins.qs.QSTile.BooleanState;
 import com.android.systemui.qs.GlobalSetting;
 import com.android.systemui.qs.QSHost;
 import com.android.systemui.qs.tileimpl.QSTileImpl;
 import com.android.systemui.R;
 
-/** Quick settings tile: Heads up **/
-public class HeadsUpTile extends QSTileImpl<BooleanState> {
+import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 
-    private static final Intent NOTIFICATION_SETTINGS =
-            new Intent("android.settings.NOTIFICATION_SETTINGS");
+/** Quick settings tile: CPUInfo overlay **/
+public class CPUInfoTile extends QSTileImpl<BooleanState> {
 
     private final GlobalSetting mSetting;
-    private final Icon mIcon = ResourceIcon.get(R.drawable.ic_qs_heads_up_on);
+    private final Icon mIcon = ResourceIcon.get(R.drawable.ic_qs_cpuinfo_on);
 
-    public HeadsUpTile(QSHost host) {
+    public CPUInfoTile(QSHost host) {
         super(host);
 
-        mSetting = new GlobalSetting(mContext, mHandler, Global.HEADS_UP_NOTIFICATIONS_ENABLED) {
+        mSetting = new GlobalSetting(mContext, mHandler, Global.SHOW_CPU_OVERLAY) {
             @Override
             protected void handleValueChanged(int value) {
                 handleRefreshState(value);
@@ -59,48 +56,54 @@ public class HeadsUpTile extends QSTileImpl<BooleanState> {
     protected void handleClick() {
         mSetting.setValue(mState.value ? 0 : 1);
         refreshState();
+        toggleState();
+    }
+
+    protected void toggleState() {
+        Intent service = (new Intent())
+                .setClassName("com.android.systemui",
+                "com.android.systemui.CPUInfoService");
+        if (mSetting.getValue() == 0) {
+            mContext.stopService(service);
+        } else {
+            mContext.startService(service);
+        }
     }
 
     @Override
     public Intent getLongClickIntent() {
-        return NOTIFICATION_SETTINGS;
+        return null;
     }
 
     @Override
     protected void handleUpdateState(BooleanState state, Object arg) {
         if (mSetting == null) return;
         final int value = arg instanceof Integer ? (Integer)arg : mSetting.getValue();
-        final boolean headsUp = value != 0;
+        final boolean cpuInfoEnabled = value != 0;
         if (state.slash == null) {
             state.slash = new SlashState();
         }
-        state.value = headsUp;
-        state.label = mContext.getString(R.string.quick_settings_heads_up_label);
+        state.value = cpuInfoEnabled;
+        state.label = mContext.getString(R.string.quick_settings_cpuinfo_label);
         state.icon = mIcon;
         state.slash.isSlashed = !state.value;
-        if (headsUp) {
-            state.contentDescription =  mContext.getString(
-                    R.string.accessibility_quick_settings_heads_up_on);
+        state.contentDescription =  mContext.getString(
+                R.string.quick_settings_cpuinfo_label);
+        if (cpuInfoEnabled) {
             state.state = Tile.STATE_ACTIVE;
         } else {
-            state.contentDescription =  mContext.getString(
-                    R.string.accessibility_quick_settings_heads_up_off);
             state.state = Tile.STATE_INACTIVE;
         }
     }
 
     @Override
     public CharSequence getTileLabel() {
-        return mContext.getString(R.string.quick_settings_heads_up_label);
+        return mContext.getString(R.string.quick_settings_cpuinfo_label);
     }
 
     @Override
     protected String composeChangeAnnouncement() {
-        if (mState.value) {
-            return mContext.getString(R.string.accessibility_quick_settings_heads_up_changed_on);
-        } else {
-            return mContext.getString(R.string.accessibility_quick_settings_heads_up_changed_off);
-        }
+        return mContext.getString(R.string.quick_settings_cpuinfo_label);
     }
 
     @Override
