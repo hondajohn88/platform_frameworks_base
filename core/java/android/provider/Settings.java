@@ -4670,8 +4670,7 @@ public final class Settings {
          * Force an Ambient notification when a new media track is being played
          * 0 - disabled
          * 1 - show track info within normal Ambient Display notifications
-         * 2 - show track info within normal Ambient Display and also force new notifications when skipping tracks
-         * 3 - like 2, but for forced notifications use a clean layout with hidden clock
+         * 2 - show track info within normal Ambient Display and force a new Ambient clean layout when skipping tracks
          * @hide
          */
         public static final String FORCE_AMBIENT_FOR_MEDIA = "force_ambient_for_media";
@@ -4756,12 +4755,11 @@ public final class Settings {
         public static final String STATUS_BAR_FILE_HEADER_IMAGE = "status_bar_file_header_image";
 
         /**
-        * Wheter to play notification sound and vibration if screen is ON
-        * 0 - never
-        * 1 - always
-        * 2 - if media playing
-        * @hide
-        */
+         * Whether to play notification sound and vibration if screen is ON
+         * 0 - never
+         * 1 - always
+         * @hide
+         */
         public static final String NOTIFICATION_SOUND_VIB_SCREEN_ON = "notification_sound_vib_screen_on";
 
         /**
@@ -5070,6 +5068,126 @@ public final class Settings {
         public static final String SMART_PIXELS_ON_POWER_SAVE = "smart_pixels_on_power_save";
 
         /**
+         * Whether to show minimal quick settings header
+         * @hide
+         */
+        public static final String QS_SHOW_MINI = "qs_show_mini";
+
+        /**
+         * Whether to use the custom quick unlock screen control
+         * @hide
+         */
+        public static final String LOCKSCREEN_QUICK_UNLOCK_CONTROL =
+                "lockscreen_quick_unlock_control";
+
+        /**
+        * Whether allowing pocket service to register sensors and dispatch informations.
+        *   0 = disabled
+        *   1 = enabled
+        * @author Carlo Savignano
+        * @hide
+        */
+        public static final String POCKET_JUDGE = "pocket_judge";
+
+        /**
+         * Whether to launch default music player when headset plugged in
+         * @hide
+         */
+        public static final String HEADSET_CONNECT_PLAYER = "headset_connect_player";
+
+        /**
+        * Select which lockscreen date style to display
+        * @hide
+        */
+        public static final String LOCKSCREEN_DATE_SELECTION = "lockscreen_date_selection";
+
+        /**
+        * Select which lockscreen clock style to display
+        * @hide
+        */
+        public static final String LOCKSCREEN_CLOCK_SELECTION = "lockscreen_clock_selection";
+
+        /**
+        * Defines the global heads up notification snooze
+        * @hide
+        */
+        public static final String HEADS_UP_NOTIFICATION_SNOOZE = "heads_up_notification_snooze";
+
+        /**
+        * Heads up timeout configuration
+        * @hide
+        */
+        public static final String HEADS_UP_TIMEOUT = "heads_up_timeout";
+
+        /**
+         * Whether to display the 4g or lte network icon in the statusbar
+         * @hide
+         */
+        public static final String SHOW_LTE_FOURGEE = "show_lte_fourgee";
+
+        /**
+         * Show the pending notification counts as overlays on the status bar
+         * @hide
+         */
+        public static final String STATUS_BAR_NOTIF_COUNT = "status_bar_notif_count";
+
+        /**
+         * Apps to hide in the ChooserActivity
+         * @hide
+         */
+        public static final String CHOOSER_ACTIVITY_BLACKLIST = "chooser_activity_blacklist";
+
+        /**
+         * Whether to show carrier text in quick settings header
+         * @hide
+         */
+        public static final String QS_CARRIER_TEXT = "qs_carrier_text";
+
+        /**
+        * Whether to change the transparency of the qs panel
+        * @hide
+        */
+        public static final String QS_PANEL_BG_ALPHA = "qs_panel_bg_alpha";
+
+        /**
+         * Which applications to disable heads up notifications for
+         *
+         * @hide
+         */
+        public static final String HEADS_UP_BLACKLIST_VALUES = "heads_up_blacklist_values";
+
+        /**
+         * The alpha value of the On-The-Go overlay.
+         *
+         * @hide
+         */
+        public static final String ON_THE_GO_ALPHA = "on_the_go_alpha";
+
+        /**
+         * Whether the service should restart itself or not.
+         *
+         * @hide
+         */
+        public static final String ON_THE_GO_SERVICE_RESTART = "on_the_go_service_restart";
+
+        /**
+         * The camera instance to use.
+         * 0 = Rear Camera
+         * 1 = Front Camera
+         *
+         * @hide
+         */
+        public static final String ON_THE_GO_CAMERA = "on_the_go_camera";
+
+        /**
+         * Status bar ticker duration in milliseconds.
+         *
+         * @hide
+         */
+        public static final String STATUS_BAR_TICKER_TICK_DURATION =
+                "status_bar_ticker_tick_duration";
+
+        /**
          * --- AICP System settings end
          *  Add new system settings above this comment
          */
@@ -5279,6 +5397,9 @@ public final class Settings {
             PRIVATE_SETTINGS.add(BUTTON_BACKLIGHT_TIMEOUT);
             PRIVATE_SETTINGS.add(BUTTON_BACKLIGHT_ON_TOUCH_ONLY);
             PRIVATE_SETTINGS.add(RECENTS_OMNI_SWITCH_ENABLED);
+
+            // Pocket mode handler.
+            PRIVATE_SETTINGS.add(POCKET_JUDGE);
         }
 
         /**
@@ -8657,8 +8778,9 @@ public final class Settings {
          * 1: Display the battery an icon in landscape mode
          * 2: Display the battery as a circle
          * 3: Display the battery as a dotted circle
-         * 4: Display the battery as text
-         * 5: Do not display the battery
+         * 4: Do not display the battery
+         * 5: Display the battery as text
+         * 6: Do not display the battery
          * default: 0
          * @hide
          */

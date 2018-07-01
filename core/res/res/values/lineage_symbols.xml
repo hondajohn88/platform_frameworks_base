@@ -37,7 +37,8 @@
     <java-symbol type="string" name="lineage_system_error_manufacturer" />
 
     <!-- Privacy Guard -->
-    <java-symbol type="drawable" name="stat_notify_privacy_guard" />
+    <java-symbol type="drawable" name="permission_dialog_trust" />
+    <java-symbol type="drawable" name="stat_notify_trust" />
     <java-symbol type="string" name="privacy_guard_notification" />
     <java-symbol type="string" name="privacy_guard_notification_detail" />
     <java-symbol type="string" name="privacy_guard_dialog_title" />
@@ -51,4 +52,7 @@
     <java-symbol type="layout" name="permission_confirmation_dialog" />
     <java-symbol type="array" name="app_ops_labels" />
     <java-symbol type="string" name="status_bar_su" />
+
+    <!-- Path to fast charging status file to detect whether an oem fast charger is active -->
+    <java-symbol type="array" name="config_oemFastChargerStatusPaths" />
 </resources>

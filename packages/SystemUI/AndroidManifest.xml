@@ -34,6 +34,8 @@
     <uses-permission android:name="android.permission.WRITE_MEDIA_STORAGE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <uses-permission android:name="android.permission.ACCESS_SURFACE_FLINGER" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INJECT_EVENTS" />
     <uses-permission android:name="android.permission.DUMP" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
@@ -212,14 +214,14 @@
     <!-- OmniJaws -->
     <uses-permission android:name="org.omnirom.omnijaws.READ_WEATHER" />
 
-    <!-- DUI permissions -->
+    <!-- DU and Recents permissions -->
     <uses-permission android:name="android.permission.NAVIGATION_EDITOR" />
-    <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MANAGE_DOCUMENTS" />
     <uses-permission android:name="android.permission.ACCESS_SURFACE_FLINGER" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
+    <uses-permission android:name="android.permission.FORCE_STOP_PACKAGES" />
 
     <protected-broadcast android:name="android.intent.action.SCREEN_STATE_SERVICE_UPDATE" />
 
@@ -270,6 +272,12 @@
                 <action android:name="com.android.systemui.screenshot.SHOW_ERROR" />
             </intent-filter>
         </receiver>
+
+        <!-- started from PhoneWindowManager
+             TODO: Should have an android:permission attribute -->
+        <service android:name=".aicp.onthego.OnTheGoService"
+            android:process=":onthego"
+            android:exported="false" />
 
         <receiver android:name=".SysuiRestartReceiver"
             android:exported="false">
@@ -405,17 +413,17 @@
             android:exported="false" />
 
         <!-- Springboard for launching the share activity -->
-        <receiver android:name="omni.screenrecord.GlobalScreenrecord$ShareReceiver"
+        <receiver android:name=".omni.screenrecord.GlobalScreenrecord$ShareReceiver"
             android:process=":screenrecord"
             android:exported="false" />
 
         <!-- Callback for dismissing screenrecord notification after a share target is picked -->
-        <receiver android:name="omni.screenrecord.GlobalScreenrecord$TargetChosenReceiver"
+        <receiver android:name=".omni.screenrecord.GlobalScreenrecord$TargetChosenReceiver"
             android:process=":screenrecord"
             android:exported="false" />
 
         <!-- Callback for deleting screenrecord notification -->
-        <receiver android:name="omni.screenrecord.GlobalScreenrecord$DeleteScreenrecordReceiver"
+        <receiver android:name=".omni.screenrecord.GlobalScreenrecord$DeleteScreenrecordReceiver"
             android:process=":screenrecord"
             android:exported="false" />
 

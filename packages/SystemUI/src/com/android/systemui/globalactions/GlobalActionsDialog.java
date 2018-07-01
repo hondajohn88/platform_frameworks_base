@@ -55,6 +55,7 @@ import android.database.ContentObserver;
 import android.graphics.Bitmap;
 import android.graphics.BitmapShader;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Point;
@@ -116,6 +117,8 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
 
+import com.android.internal.util.aicp.OnTheGoActions;
+
 /**
  * Helper to show the global actions dialog.  Each item is an {@link Action} that
  * may show depending on whether the keyguard is showing, and whether the device
@@ -129,6 +132,9 @@ class GlobalActionsDialog implements DialogInterface.OnDismissListener, DialogIn
     private static final String TAG = "GlobalActionsDialog";
 
     private static final boolean SHOW_SILENT_TOGGLE = false;
+
+    // Default scrim color
+    private static final int SCRIM_DEFAULT_COLOR = Color.BLACK;
 
     private final Context mContext;
     private final GlobalActionsManager mWindowManagerFuncs;
@@ -450,6 +456,8 @@ class GlobalActionsDialog implements DialogInterface.OnDismissListener, DialogIn
                 mItems.add(new ScreenshotAction());
             } else if (GLOBAL_ACTION_KEY_SCREENRECORD.equals(actionKey)) {
                 mItems.add(new ScreenrecordAction());
+            } else if (GLOBAL_ACTION_KEY_ONTHEGO.equals(actionKey)) {
+                mItems.add(getOnTheGoAction());
             } else if (GLOBAL_ACTION_KEY_AIRPLANE.equals(actionKey)) {
                 mItems.add(mAirplaneModeOn);
             } else if (GLOBAL_ACTION_KEY_BUGREPORT.equals(actionKey)) {
@@ -758,6 +766,26 @@ class GlobalActionsDialog implements DialogInterface.OnDismissListener, DialogIn
         }
     }
 
+    private Action getOnTheGoAction() {
+        return new SinglePressAction(com.android.internal.R.drawable.ic_lock_onthego,
+                com.android.systemui.R.string.global_action_onthego) {
+            @Override
+            public void onPress() {
+                OnTheGoActions.processAction(mContext,
+                        OnTheGoActions.ACTION_ONTHEGO_TOGGLE);
+            }
+
+            @Override
+            public boolean showDuringKeyguard() {
+                return true;
+            }
+
+            @Override
+            public boolean showBeforeProvisioning() {
+                return true;
+            }
+        };
+    }
 
     private class BugReportAction extends SinglePressAction implements LongPressAction {
 
@@ -1000,6 +1028,15 @@ class GlobalActionsDialog implements DialogInterface.OnDismissListener, DialogIn
                 }
             }
         }
+    }
+
+    private void startOnTheGo() {
+        final ComponentName cn = new ComponentName("com.android.systemui",
+                "com.android.systemui.aicp.onthego.OnTheGoService");
+        final Intent startIntent = new Intent();
+        startIntent.setComponent(cn);
+        startIntent.setAction("start");
+        mContext.startService(startIntent);
     }
 
     /**
@@ -1812,8 +1849,9 @@ class GlobalActionsDialog implements DialogInterface.OnDismissListener, DialogIn
             mContext.getDisplay().getRealSize(displaySize);
             mColorExtractor.addOnColorsChangedListener(this);
             mGradientDrawable.setScreenSize(displaySize.x, displaySize.y);
-            GradientColors colors = mColorExtractor.getColors(mKeyguardShowing ?
-                    WallpaperManager.FLAG_LOCK : WallpaperManager.FLAG_SYSTEM);
+            GradientColors colors = getDarkGradientColor(
+                    mColorExtractor.getColors(mKeyguardShowing ?
+                    WallpaperManager.FLAG_LOCK : WallpaperManager.FLAG_SYSTEM));
             mGradientDrawable.setColors(colors, false);
         }
 
@@ -1884,13 +1922,23 @@ class GlobalActionsDialog implements DialogInterface.OnDismissListener, DialogIn
         public void onColorsChanged(ColorExtractor extractor, int which) {
             if (mKeyguardShowing) {
                 if ((WallpaperManager.FLAG_LOCK & which) != 0) {
-                    mGradientDrawable.setColors(extractor.getColors(WallpaperManager.FLAG_LOCK));
+                    mGradientDrawable.setColors(getDarkGradientColor(
+                            extractor.getColors(WallpaperManager.FLAG_LOCK)));
                 }
             } else {
                 if ((WallpaperManager.FLAG_SYSTEM & which) != 0) {
-                    mGradientDrawable.setColors(extractor.getColors(WallpaperManager.FLAG_SYSTEM));
+                    mGradientDrawable.setColors(getDarkGradientColor(
+                            extractor.getColors(WallpaperManager.FLAG_SYSTEM)));
                 }
             }
+        }
+
+        private GradientColors getDarkGradientColor(GradientColors fromWallpaper) {
+            GradientColors colors = new GradientColors();
+            colors.setMainColor(SCRIM_DEFAULT_COLOR);
+            colors.setSecondaryColor(SCRIM_DEFAULT_COLOR);
+            colors.setSupportsDarkText(fromWallpaper.supportsDarkText());
+            return colors;
         }
 
         public void setKeyguardShowing(boolean keyguardShowing) {

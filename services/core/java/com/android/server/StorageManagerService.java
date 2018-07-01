@@ -105,6 +105,7 @@ import com.android.internal.util.FastXmlSerializer;
 import com.android.internal.util.HexDump;
 import com.android.internal.util.IndentingPrintWriter;
 import com.android.internal.util.Preconditions;
+import com.android.internal.widget.ILockSettings;
 import com.android.internal.widget.LockPatternUtils;
 import com.android.server.NativeDaemonConnector.Command;
 import com.android.server.NativeDaemonConnector.SensitiveArg;
@@ -1218,8 +1219,10 @@ class StorageManagerService extends IStorageManager.Stub
                 final long destroy = Long.parseLong(cooked[6]);
 
                 final DropBoxManager dropBox = mContext.getSystemService(DropBoxManager.class);
-                dropBox.addText(TAG_STORAGE_BENCHMARK, scrubPath(path)
-                        + " " + ident + " " + create + " " + run + " " + destroy);
+                if (dropBox != null) {
+                    dropBox.addText(TAG_STORAGE_BENCHMARK, scrubPath(path)
+                            + " " + ident + " " + create + " " + run + " " + destroy);
+                }
 
                 final VolumeRecord rec = findRecordForPath(path);
                 if (rec != null) {
@@ -1236,8 +1239,10 @@ class StorageManagerService extends IStorageManager.Stub
                 final long time = Long.parseLong(cooked[3]);
 
                 final DropBoxManager dropBox = mContext.getSystemService(DropBoxManager.class);
-                dropBox.addText(TAG_STORAGE_TRIM, scrubPath(path)
+                if (dropBox != null) {
+                    dropBox.addText(TAG_STORAGE_TRIM, scrubPath(path)
                         + " " + bytes + " " + time);
+                }
 
                 final VolumeRecord rec = findRecordForPath(path);
                 if (rec != null) {
@@ -2706,9 +2711,23 @@ class StorageManagerService extends IStorageManager.Stub
             Slog.i(TAG, "changing encryption password...");
         }
 
+        ILockSettings lockSettings = ILockSettings.Stub.asInterface(
+                ServiceManager.getService("lock_settings"));
+        String currentPassword = "default_password";
+        try {
+            currentPassword = lockSettings.getPassword();
+        } catch (RemoteException e) {
+            Slog.e(TAG, "Couldn't get password", e);
+        }
+
         try {
             NativeDaemonEvent event = mCryptConnector.execute("cryptfs", "changepw", CRYPTO_TYPES[type],
-                        new SensitiveArg(password));
+                        new SensitiveArg(currentPassword), new SensitiveArg(password));
+            try {
+                lockSettings.sanitizePassword();
+            } catch (RemoteException e) {
+                Slog.e(TAG, "Couldn't sanitize password", e);
+            }
             return Integer.parseInt(event.getMessage());
         } catch (NativeDaemonConnectorException e) {
             // Encryption failed

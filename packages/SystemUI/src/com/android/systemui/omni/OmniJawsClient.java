@@ -51,8 +51,10 @@ public class OmniJawsClient {
             = Uri.parse("content://org.omnirom.omnijaws.provider/settings");
 
     private static final String ICON_PACKAGE_DEFAULT = "org.omnirom.omnijaws";
-    private static final String ICON_PREFIX_DEFAULT = "weather";
+    private static final String ICON_PREFIX_DEFAULT = "outline";
     private static final String EXTRA_ERROR = "error";
+    public static final int EXTRA_ERROR_NETWORK = 0;
+    public static final int EXTRA_ERROR_LOCATION = 1;
     public static final int EXTRA_ERROR_DISABLED = 2;
 
     public static final String[] WEATHER_PROJECTION = new String[]{
@@ -124,6 +126,7 @@ public class OmniJawsClient {
     public static interface OmniJawsObserver {
         public void weatherUpdated();
         public void weatherError(int errorReason);
+        default public void updateSettings() {};
     }
 
     private class WeatherUpdateReceiver extends BroadcastReceiver {
@@ -187,14 +190,32 @@ public class OmniJawsClient {
         mSettingsObserver.observe();
     }
 
+    public OmniJawsClient(Context context, boolean settingsObserver) {
+        mContext = context;
+        mObserver = new ArrayList<OmniJawsObserver>();
+        if (settingsObserver) {
+            mSettingsObserver = new OmniJawsSettingsObserver(mHandler);
+            mSettingsObserver.observe();
+        }
+    }
+
+    public void addSettingsObserver() {
+        if (mSettingsObserver == null) {
+            mSettingsObserver = new OmniJawsSettingsObserver(mHandler);
+            mSettingsObserver.observe();
+        }
+    }
+
     public void cleanupObserver() {
-        mSettingsObserver.unregister();
         if (mReceiver != null) {
             try {
                 mContext.unregisterReceiver(mReceiver);
             } catch (Exception e) {
             }
             mReceiver = null;
+        }
+        if (mSettingsObserver != null) {
+            mSettingsObserver.unregister();
         }
     }
 
@@ -421,6 +442,9 @@ public class OmniJawsClient {
             } else if (mSettingIconPackage == null || !iconPack.equals(mSettingIconPackage)) {
                 mSettingIconPackage = iconPack;
                 loadCustomIconPackage();
+            }
+            for (OmniJawsObserver observer : mObserver) {
+                observer.updateSettings();
             }
         }
     }
